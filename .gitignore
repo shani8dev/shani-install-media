@@ -1,0 +1,5 @@
+temp/
+output/
+chimeraos/extra_pkg/
+chimeraos/work/
+chimeraos/pacman.conf
