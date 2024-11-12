@@ -3,22 +3,27 @@
 # Get the directory of this script
 work_dir="$(dirname "$(realpath "$0")")"
 
-# Define your custom fast mirror (NIT Raipur)
-CUSTOM_MIRROR="Server = https://mirrors.kernel.org/arch/\$repo/os/\$arch"
+# Define your custom fast mirror (ensure proper URL format)
+CUSTOM_MIRROR="https://in.mirrors.cicku.me/archlinux/\$repo/os/\$arch"
+
+# Create volumes for pacman cache and flatpak data
+CACHE_DIR="${work_dir}/pacman_cache"
+FLATPAK_DATA_DIR="${work_dir}/flatpak_data"
+FLATPAK_CONFIG_DIR="${work_dir}/flatpak_config"
+
+# Ensure the necessary directories exist
+mkdir -p "$CACHE_DIR" "$FLATPAK_DATA_DIR" "$FLATPAK_CONFIG_DIR"
 
 # Execute the build script directly inside the container
-exec docker run --privileged --rm \
-    -v "${work_dir}:/builduser/build" \     # Mount the working directory
-    -v "$GITHUB_OUTPUT:$GITHUB_OUTPUT" \   # Ensure GITHUB_OUTPUT is mounted
-    -e "GITHUB_OUTPUT=$GITHUB_OUTPUT" \     # Pass the GITHUB_OUTPUT variable
+docker run -it --privileged --rm \
+    -v "${work_dir}:/builduser/build" \
+    -v "$CACHE_DIR:/var/cache/pacman" \
+    -v "$FLATPAK_DATA_DIR:/var/lib/flatpak" \
+    -v "$FLATPAK_CONFIG_DIR:/etc/flatpak" \
     shrinivasvkumbhar/shani-builder bash -c "
-        # Update the mirrorlist with the custom mirror
-        echo \"$CUSTOM_MIRROR\" | tee -a /etc/pacman.d/mirrorlist && 
-
-        # Ensure the working directory is set
-        cd /builduser/build && 
-        
-        # Execute the build script
+        # Update the mirrorlist to only replace the Server lines for each section
+        sed -i 's|^Server = .*|Server = $CUSTOM_MIRROR|' /etc/pacman.d/mirrorlist && \
+        cd /builduser/build && \
         ./build-iso.sh
     "
 

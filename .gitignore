@@ -1,5 +1,6 @@
 temp/
 output/
-chimeraos/extra_pkg/
-chimeraos/work/
-chimeraos/pacman.conf
+pacman_cache/
+flatpak_data/
+flatpak_config/
+mok/MOK*
