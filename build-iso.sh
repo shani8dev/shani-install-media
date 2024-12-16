@@ -23,7 +23,7 @@ check_root() {
 # Prepare working directories
 prepare_directories() {
     log "Preparing directories..."
-    #rm -rf "${temp_dir}"  # Remove old directories
+    rm -rf "${temp_dir}"  # Remove old directories
     mkdir -p "${output_dir}" "${temp_dir}" "${repack_dir}"   # Create new ones
 }
 
@@ -36,23 +36,33 @@ install_flatpak_packages() {
 
     # List of Flatpak packages to install
     local FLATPAK_PACKAGES=(
-        "org.mozilla.firefox" "org.gnome.Epiphany"
-        "org.libreoffice.LibreOffice" "org.gnome.TextEditor"
-        "org.gnome.Calendar" "org.gnome.Contacts" "org.gnome.Todo"
-        "org.gnome.Loupe" "io.bassi.Amberol" "org.gnome.Showtime"
-        "org.gnome.SoundRecorder" "app.fotema.Fotema"
-        "io.github.seadve.Kooha" "org.gnome.Snapshot"
-        "org.gnome.Calculator" "org.gnome.Characters" "org.gnome.Connections"
-        "org.gnome.Firmware" "org.gnome.Logs" "org.gnome.Usage"
-        "org.gnome.clocks" "org.gnome.font-viewer" "org.gnome.Maps"
-        "org.gnome.Weather" "org.gnome.Boxes" "org.gnome.Software"
-        "com.mattjakeman.ExtensionManager" "com.discordapp.Discord"
-        "org.telegram.desktop" "com.slack.Slack" "us.zoom.Zoom"
-        "com.valvesoftware.Steam" "com.heroicgameslauncher.hgl"
-        "com.github.tchx84.Flatseal" "org.gnome.NetworkDisplays"
+        "org.mozilla.firefox" "org.mozilla.Thunderbird" "org.libreoffice.LibreOffice"
+        "org.gnome.NetworkDisplays" "org.gnome.Boxes"
+        "org.gnome.Firmware" "org.gnome.Software"
+        "com.mattjakeman.ExtensionManager" "com.github.tchx84.Flatseal"
+        "com.slack.Slack" "org.telegram.desktop"
+		"com.visualstudio.code" "io.podman_desktop.PodmanDesktop"
+        "com.valvesoftware.Steam" "com.heroicgameslauncher.hgl"  
+		"org.libretro.RetroArch" "net.lutris.Lutris"
     )
 
+    # Remove existing Flatpak packages not in the list
+    log "Removing Flatpak packages not in the defined list..."
+    local installed_packages
+    installed_packages=$(flatpak list --columns=application --system | tail -n +1)
+
+    for installed in $installed_packages; do
+        if [[ ! " ${FLATPAK_PACKAGES[@]} " =~ " ${installed} " ]]; then
+            log "Removing unwanted Flatpak package: $installed"
+            flatpak uninstall --assumeyes --noninteractive --system "$installed" || {
+                log "Failed to remove Flatpak package: $installed"
+                continue
+            }
+        fi
+    done
+
     # Install each Flatpak package to the root filesystem
+    log "Installing desired Flatpak packages..."
     for package in "${FLATPAK_PACKAGES[@]}"; do
         log "Installing Flatpak package: $package"
         flatpak install --verbose --assumeyes --noninteractive --system flathub "$package" || {
@@ -61,7 +71,13 @@ install_flatpak_packages() {
         }
     done
 
-    log "Flatpak packages installed successfully."
+    log "Flatpak packages are up to date."
+
+    # Prune unused runtimes and clean cache
+    log "Cleaning up unused Flatpak data..."
+    flatpak uninstall --unused --system || log "No unused runtimes to remove."
+    flatpak remove --system --unused -y || log "No unused Flatpak data to remove."
+    flatpak repair --system || log "Flatpak system repair completed."
 
     # Now copy Flatpak data to the airootfs
     log "Copying Flatpak data to airootfs..."
@@ -72,11 +88,9 @@ install_flatpak_packages() {
     # Copy the installed Flatpak data (apps and runtime) to airootfs
     cp -r /var/lib/flatpak/* "${temp_dir}/x86_64/airootfs/var/lib/flatpak/" || error_exit "Failed to copy Flatpak data to airootfs"
 
-    # Copy Flatpak remote configuration (repositories)
-    cp -r /etc/flatpak/remotes.d/ "${temp_dir}/x86_64/airootfs/etc/flatpak/remotes.d/" || error_exit "Failed to copy Flatpak remote configuration to airootfs"
-
     log "Flatpak data copied to airootfs successfully."
 }
+
 
 # Copy MOK keys to airootfs
 copy_mok_keys_to_airootfs() {
@@ -95,10 +109,18 @@ create_iso() {
     mkarchiso -v -w "${temp_dir}" -o "${output_dir}" "${script_dir}" || error_exit "Failed to create ISO"
 }
 
+get_latest_iso() {
+    local output_dir="$1"
+    local iso_file
+    iso_file=$(find "$output_dir" -type f -name '*.iso' ! -name '*signed*.iso' -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}')
+
+    [[ -n "$iso_file" ]] && echo "$iso_file" || { echo "No suitable ISO file found." >&2; return 1; }
+}
+
 # Extract and sign EFI files for both 64-bit and 32-bit architectures
 extract_files() {
     log "Extracting boot images for both 64-bit and 32-bit architectures..."
-
+	rm -rf ${repack_dir}/*
     # Extract EFI files directly from the ISO
     osirrox -indev "$iso_file" \
         -extract_boot_images "${repack_dir}/" \
@@ -205,10 +227,10 @@ repack_iso() {
 main() {
     check_root
     prepare_directories
-    #install_flatpak_packages
+    install_flatpak_packages
     copy_mok_keys_to_airootfs
     create_iso
-    iso_file=$(ls "${output_dir}"/*.iso)
+    iso_file=$(get_latest_iso "$output_dir")
     mount_dir="${temp_dir}/iso_mount"
     mkdir -p "$mount_dir"
     mount -o loop "$iso_file" "$mount_dir"
@@ -222,9 +244,9 @@ main() {
 }
 
 # Define configuration variables
-output_dir="${PWD}/output"
+output_dir="${PWD}/cache/output"
 script_dir="${PWD}/shanios"
-temp_dir="${PWD}/temp"
+temp_dir="${PWD}/cache/temp"
 repack_dir="${temp_dir}/repack"
 mok_dir="${PWD}/mok"
 mok_key="$mok_dir/MOK.key"

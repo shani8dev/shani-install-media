@@ -1,6 +1,2 @@
-temp/
-output/
-pacman_cache/
-flatpak_data/
-flatpak_config/
+cache/
 mok/MOK*
