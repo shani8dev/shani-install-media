@@ -104,7 +104,7 @@ copy_mok_keys_to_airootfs() {
 # Create the initial ISO
 create_iso() {
     log "Building Arch ISO..."
-    mkarchiso -v -w "${temp_dir}" -o "${output_dir}" "${script_dir}" || error_exit "Failed to create ISO"
+    mkarchiso -v -w "${temp_dir}" -o "${output_dir}" "${profile_dir}" || error_exit "Failed to create ISO"
 }
 
 
@@ -119,7 +119,7 @@ main() {
 
 # Define configuration variables
 output_dir="${PWD}/cache/output"
-script_dir="${PWD}/shanios"
+profile_dir="${PWD}/shanios"
 temp_dir="${PWD}/cache/temp"
 repack_dir="${temp_dir}/repack"
 mok_dir="${PWD}/mok"

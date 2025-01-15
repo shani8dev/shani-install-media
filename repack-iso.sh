@@ -160,7 +160,6 @@ main() {
 
 # Define configuration variables
 output_dir="${PWD}/cache/output"
-script_dir="${PWD}/shanios"
 temp_dir="${PWD}/cache/temp"
 repack_dir="${temp_dir}/repack"
 mok_dir="${PWD}/mok"
