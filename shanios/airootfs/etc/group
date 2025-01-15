@@ -1,2 +1,4 @@
-shani:x:10000:
-wheel:x:998:shani
+root:x:0:
+shani:x:1001:
+wheel:x:10:shani
+
