@@ -1,3 +1,14 @@
+************************
+* Welcome to Shani OS! *
+************************
 
-Welcome to [33mArkane Linux[0m!
+System Information:
+  - Hostname: shani-os
+  - Kernel: $(uname -r)
+  - Uptime: $(uptime)
+  - Current Date/Time: $(date)
+
+Credentials:
+  - Username: shani
+  - Password: shani
 

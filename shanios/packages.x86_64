@@ -96,6 +96,7 @@ xdg-user-dirs
 xdg-utils
 xdg-desktop-portal-gnome
 baobab
+gdm
 gnome-backgrounds
 gnome-console
 gnome-connections
