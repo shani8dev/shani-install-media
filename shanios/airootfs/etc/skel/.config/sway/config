@@ -1,0 +1,8 @@
+set $mod Mod1  # Set the modifier key (Alt)
+set $term alacritty
+
+# Set wallpaper (optional)
+output * bg #000000 solid_color
+
+# Auto-launch application (e.g., Calamares)
+exec calamares  # Replace with your desired application

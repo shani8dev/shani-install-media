@@ -27,6 +27,17 @@ prepare_directories() {
     mkdir -p "${output_dir}" "${temp_dir}" "${repack_dir}"   # Create new ones
 }
 
+# Copy MOK keys to airootfs
+copy_mok_keys_to_airootfs() {
+    log "Copying MOK keys to airootfs..."
+    mkdir -p "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys"
+    
+    cp "$mok_key" "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys/MOK.key" || error_exit "Failed to copy MOK.key to airootfs"
+    cp "$mok_cert" "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys/MOK.crt" || error_exit "Failed to copy MOK.crt to airootfs"
+    cp "$mok_cer" "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys/MOK.cer" || error_exit "Failed to copy MOK.cer to airootfs"
+    log "MOK keys copied to airootfs successfully."
+}
+
 # Install Flatpak packages directly to root filesystem (airootfs)
 install_flatpak_packages() {
     log "Installing Flatpak packages into root filesystem..."
@@ -37,12 +48,8 @@ install_flatpak_packages() {
     # List of Flatpak packages to install
     local FLATPAK_PACKAGES=(
         "org.mozilla.firefox" "org.mozilla.Thunderbird" "org.libreoffice.LibreOffice"
-        "org.gnome.NetworkDisplays" "org.gnome.Boxes"
-        "org.gnome.Firmware" "org.gnome.Software"
-        "com.mattjakeman.ExtensionManager" "com.github.tchx84.Flatseal"
-        "io.podman_desktop.PodmanDesktop" "org.libretro.RetroArch"
-        "com.valvesoftware.Steam" "com.heroicgameslauncher.hgl"  
-		
+        "org.gnome.Software" "com.mattjakeman.ExtensionManager" "com.github.tchx84.Flatseal"
+        "io.podman_desktop.PodmanDesktop" "org.gnome.NetworkDisplays" 	
     )
 
     # Remove existing Flatpak packages not in the list
@@ -76,33 +83,29 @@ install_flatpak_packages() {
     flatpak uninstall --unused --system || log "No unused runtimes to remove."
     flatpak remove --system --unused -y || log "No unused Flatpak data to remove."
     flatpak repair --system || log "Flatpak system repair completed."
+  
+    log "Creating flatpak.sfs."
 
-    # Now copy Flatpak data to the airootfs
-    log "Copying Flatpak data to airootfs..."
-
-    # Ensure the required Flatpak directories exist in airootfs
-    mkdir -p "${temp_dir}/x86_64/airootfs/var/lib/flatpak"
-    
-    # Copy the installed Flatpak data (apps and runtime) to airootfs
-    cp -r /var/lib/flatpak/* "${temp_dir}/x86_64/airootfs/var/lib/flatpak/" || error_exit "Failed to copy Flatpak data to airootfs"
-
-    log "Flatpak data copied to airootfs successfully."
-}
-
-
-# Copy MOK keys to airootfs
-copy_mok_keys_to_airootfs() {
-    log "Copying MOK keys to airootfs..."
-    mkdir -p "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys"
-    
-    cp "$mok_key" "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys/MOK.key" || error_exit "Failed to copy MOK.key to airootfs"
-    cp "$mok_cert" "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys/MOK.crt" || error_exit "Failed to copy MOK.crt to airootfs"
-    cp "$mok_cer" "${temp_dir}/x86_64/airootfs/usr/share/secureboot/keys/MOK.cer" || error_exit "Failed to copy MOK.cer to airootfs"
-    log "MOK keys copied to airootfs successfully."
+    # Create the flatpak.sfs
+    mksquashfs "${cache_dir}/flatpak_data/" "${output_dir}/flatpak.sfs" || error_exit "Failed to create flatpak.sfs"
 }
 
 # Create the initial ISO
 create_iso() {
+
+    log "Copying .btrfs image and creating sfs files..."
+
+    # Create the necessary directories
+    mkdir -p "$IMAGE_DIR"
+	
+    # Copy the .btrfs image to the new location
+    cp "${output_dir}/$IMAGE_NAME" "$IMAGE_DIR/" || error_exit "Failed to copy $IMAGE_NAME to $IMAGE_DIR"
+    
+    # Copy the flatpak.sfs to the new location
+    cp "${output_dir}/flatpak.sfs" "$IMAGE_DIR/" || error_exit "Failed to copy flatpak.sfs to $IMAGE_DIR"
+
+    log ".btrfs image and flatpak.sfs copied to $IMAGE_DIR"
+    
     log "Building Arch ISO..."
     mkarchiso -v -w "${temp_dir}" -o "${output_dir}" "${profile_dir}" || error_exit "Failed to create ISO"
 }
@@ -121,12 +124,14 @@ main() {
 output_dir="${PWD}/cache/output"
 profile_dir="${PWD}/shanios"
 temp_dir="${PWD}/cache/temp"
+cache_dir="${PWD}/cache"
 repack_dir="${temp_dir}/repack"
 mok_dir="${PWD}/mok"
 mok_key="$mok_dir/MOK.key"
 mok_cert="$mok_dir/MOK.crt"
 mok_cer="$mok_dir/MOK.cer"
-
+IMAGE_NAME="rootfs.btrfs"
+IMAGE_DIR="${temp_dir}/iso/shani/x86_64"
 # Execute the main function
 main
 
