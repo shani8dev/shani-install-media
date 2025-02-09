@@ -22,6 +22,5 @@ docker run -it --privileged --rm \
         # Update the mirrorlist to only replace the Server lines for each section
         sed -i 's|^Server = .*|Server = $CUSTOM_MIRROR|' /etc/pacman.d/mirrorlist && \
         cd /builduser/build && \
-        ./build-iso.sh && \
-        ./repack-iso.sh
+        ./build-image.sh -p gnome
     "
