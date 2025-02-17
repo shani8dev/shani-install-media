@@ -1,0 +1,6 @@
+com.github.tchx84.Flatseal
+com.mattjakeman.ExtensionManager
+com.google.Chrome
+org.libreoffice.LibreOffice
+com.valvesoftware.Steam
+com.heroicgameslauncher.hgl
