@@ -25,6 +25,8 @@ PACMAN_CONFIG="./image_profiles/${PROFILE}/pacman.conf"
 BASE_SUBVOL="${OS_NAME}_base"
 IMAGE_NAME="${OS_NAME}-${BUILD_DATE}-${PROFILE}.zst"
 IMAGE_FILE="${OUTPUT_SUBDIR}/${IMAGE_NAME}"
+ROOTLABEL="shani_root"
+BOOTLABEL="shani_boot"
 
 log "Building base image for profile: ${PROFILE}"
 check_dependencies
@@ -70,23 +72,27 @@ if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" ]]; then
     bash "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" "${BUILD_DIR}/${BASE_SUBVOL}" || die "Customizations failed"
 fi
 
-arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
+arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<'EOF'
+set -euo pipefail
+
+# Set system hostname and build version
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
-EOF
 
-log "Finalizing base image..."
-genfstab -U "${BUILD_DIR}/${BASE_SUBVOL}" > "${BUILD_DIR}/${BASE_SUBVOL}/etc/fstab" || die "genfstab failed"
-cat <<EOF >> "${BUILD_DIR}/${BASE_SUBVOL}/etc/fstab"
-# Additional mounts for immutable OS:
-LABEL=${OS_NAME}  /home              btrfs  defaults,noatime,subvol=deployment/data/home,compress=zstd,space_cache=v2,autodefrag  0 0
-LABEL=${OS_NAME}  /var/lib/flatpak   btrfs  defaults,noatime,subvol=deployment/data/flatpak,compress=zstd,space_cache=v2,autodefrag  0 0
-LABEL=${OS_NAME}  /var/lib/containers btrfs  defaults,noatime,subvol=deployment/data/containers,compress=zstd,space_cache=v2,autodefrag  0 0
-overlay           /etc               overlay  lowerdir=/deployment/data/etc-writable,upperdir=/deployment/data/overlay/upper,workdir=/deployment/data/overlay/work  0 0
-tmpfs             /var/log           tmpfs    defaults,noatime,mode=0755  0 0
-tmpfs             /tmp               tmpfs    defaults,noatime,mode=1777  0 0
-tmpfs             /run               tmpfs    defaults,noatime,mode=0755  0 0
-/ deployment/data/swap/swapfile  none    swap   sw  0 0
+# Replace /etc/fstab completely.
+# Note: The root (/) mount is omitted since it is provided via the kernel cmdline.
+cat <<EOT > /etc/fstab
+# fstab for immutable OS (root omitted)
+LABEL=${ROOTLABEL}       /home               btrfs   defaults,noatime,subvol=deployment/data/home,compress=zstd,space_cache=v2,autodefrag  0 0
+LABEL=${ROOTLABEL}       /var/lib/flatpak    btrfs   defaults,noatime,subvol=deployment/data/flatpak,compress=zstd,space_cache=v2,autodefrag  0 0
+LABEL=${ROOTLABEL}       /var/lib/containers btrfs   defaults,noatime,subvol=deployment/data/containers,compress=zstd,space_cache=v2,autodefrag  0 0
+overlay                  /etc                overlay lowerdir=/deployment/data/etc-writable,upperdir=/deployment/data/overlay/upper,workdir=/deployment/data/overlay/work  0 0
+tmpfs                    /var/log            tmpfs   defaults,noatime,mode=0755                         0 0
+tmpfs                    /tmp                tmpfs   defaults,noatime,mode=1777                         0 0
+tmpfs                    /run                tmpfs   defaults,noatime,mode=0755                         0 0
+LABEL=${BOOTLABEL}       /boot/efi           vfat    defaults,umask=0077                                0 1
+/deployment/data/swap/swapfile  none           swap    sw                                               0 0
+EOT
 EOF
 
 btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro true || die "Failed to set subvolume read-only"

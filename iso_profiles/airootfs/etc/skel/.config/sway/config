@@ -1,8 +1,8 @@
-set $mod Mod1  # Set the modifier key (Alt)
-set $term alacritty
+set $mod Mod1      # Set the modifier key (Alt)
+set $term foot    # Set the terminal emulator
 
-# Set wallpaper (optional)
-output * bg #000000 solid_color
+# Set wallpaper
+output * bg /usr/share/backgrounds/shani/saturn-x.png fill
 
-# Auto-launch application (e.g., Calamares)
-exec calamares  # Replace with your desired application
+# Auto-launch application as root using sudo -E (if needed)
+exec sudo -E os-installer  # Ensure proper sudoers configuration for passwordless execution
