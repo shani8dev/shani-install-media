@@ -3,12 +3,6 @@
 
 set -Eeuo pipefail
 
-# Check if running inside the container, if not, re-execute inside the container
-if [[ -z "${IN_CONTAINER:-}" ]]; then
-    SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-    exec "${SCRIPT_DIR}/run_in_container.sh" "$0" "$@"
-fi
-
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/config/config.sh"
 

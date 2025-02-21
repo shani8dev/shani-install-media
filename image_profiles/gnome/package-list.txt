@@ -16,7 +16,7 @@ shani-tools
 shani-tools-extra
 shani-video
 shani-video-guest
-shani-dracut-secureboot
+shani-deployment
 dracut
 pipewire-jack
 openresolv

@@ -10,7 +10,7 @@ PROFILE="$DEFAULT_PROFILE"
 while getopts "p:" opt; do
   case "$opt" in
     p) PROFILE="$OPTARG" ;;
-    *) die "Invalid option";;
+    *) die "Invalid option" ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -24,60 +24,115 @@ log "Building Flatpak image for profile: ${PROFILE}"
 # Ensure Flathub remote is added
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
-# Remove unused packages not in the list
-log "Removing unused Flatpak packages not in the profile list"
-installed_packages=$(flatpak list --system --columns=application | grep -v "flathub")
-while IFS= read -r installed_pkg || [[ -n "$installed_pkg" ]]; do
-    if ! grep -Fxq "$installed_pkg" "$FLATPAK_PACKAGE_LIST"; then
-        log "Removing unused package: $installed_pkg"
-        flatpak uninstall --assumeyes --noninteractive --system --delete-data "$installed_pkg" || warn "Failed to remove $installed_pkg"
-    fi
-done <<< "$installed_packages"
-
-# Install Flatpak packages from profile list
 FLATPAK_PACKAGE_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/flatpak-packages.txt"
-if [[ -f "$FLATPAK_PACKAGE_LIST" ]]; then
-    while IFS= read -r pkg || [[ -n "$pkg" ]]; do
-        [[ -z "$pkg" ]] && continue
-        log "Installing Flatpak package: $pkg"
-        flatpak install --assumeyes --noninteractive --or-update --system flathub "$pkg" || warn "Failed to install $pkg"
-    done < "$FLATPAK_PACKAGE_LIST"
-else
-    log "No Flatpak package list found at ${FLATPAK_PACKAGE_LIST}"
+
+# Check for package list file and load packages into an array
+if [[ ! -f "$FLATPAK_PACKAGE_LIST" ]]; then
+    log "No Flatpak package list found at ${FLATPAK_PACKAGE_LIST}. Exiting..."
+    exit 0
 fi
 
-flatpak uninstall --unused --system --delete-data || log "No unused Flatpak runtimes to remove."
-flatpak remove --system --unused --delete-data -y || log "No unused Flatpak data to remove."
+packages=()
+while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+    [[ -z "$pkg" ]] && continue
+    packages+=("$pkg")
+done < "$FLATPAK_PACKAGE_LIST"
+
+# Install Flatpak packages from profile list
+for pkg in "${packages[@]}"; do
+    log "Installing Flatpak package: $pkg"
+    flatpak install --assumeyes --noninteractive --or-update --system flathub "$pkg" || warn "Failed to install $pkg"
+done
+
+# Detect required runtimes from the package list
+declare -A required_runtimes
+for pkg in "${packages[@]}"; do
+    runtime_full=$(flatpak info --show-runtime "$pkg" 2>/dev/null)
+    if [[ -n "$runtime_full" ]]; then
+        runtime_base=$(echo "$runtime_full" | cut -d'/' -f1)
+        required_runtimes["$runtime_base"]=1
+        log "Detected runtime '$runtime_full' (base: '$runtime_base') required for package '$pkg'"
+    fi
+done
+
+# Remove unused Flatpak applications not in the profile list
+log "Removing unused Flatpak applications not in the profile list"
+installed_apps=$(flatpak list --system --app --columns=application)
+if [[ -z "$installed_apps" ]]; then
+    warn "Warning: No Flatpak applications found to remove. Proceeding..."
+fi
+
+while IFS= read -r app || [[ -n "$app" ]]; do
+    if ! printf '%s\n' "${packages[@]}" | grep -Fxq "$app"; then
+        log "Removing unused application: $app"
+        flatpak uninstall --assumeyes --noninteractive --system --delete-data "$app" || warn "Failed to remove $app"
+    fi
+done <<< "$installed_apps"
+
+# Remove runtimes not required by any app in the package list.
+log "Removing runtimes not required by apps in the profile list"
+installed_runtimes=$(flatpak list --system --runtime --columns=application)
+if [[ -z "$installed_runtimes" ]]; then
+    warn "Warning: No Flatpak runtimes found to remove. Proceeding..."
+fi
+
+while IFS= read -r runtime || [[ -n "$runtime" ]]; do
+    keep=0
+    for req in "${!required_runtimes[@]}"; do
+        if [[ "$runtime" == "$req" || "$runtime" == "$req"* ]]; then
+            keep=1
+            break
+        fi
+    done
+    if [[ $keep -eq 0 ]]; then
+        log "Removing runtime not required: $runtime"
+        flatpak uninstall --assumeyes --noninteractive --system --delete-data "$runtime" || warn "Failed to remove runtime $runtime"
+    else
+        log "Keeping required runtime: $runtime"
+    fi
+done <<< "$installed_runtimes"
+
+# Optionally, run repair to clean up any remaining inconsistencies
 flatpak repair --system || log "Flatpak repair completed."
 
-# Prepare Btrfs image for Flatpak data (1G)
-FLATPAK_SOURCE="/var/lib/flatpak"
+# Prepare Btrfs image for Flatpak data (10G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
 setup_btrfs_image "$FLATPAK_IMG" "10G"
-# LOOP_DEVICE is automatically set by setup_btrfs_image function
+# LOOP_DEVICE is set by setup_btrfs_image
 
-# Mount image and create subvolume
+# Define mount point for Flatpak image
 FLATPAK_MOUNT="${BUILD_DIR}/flatpak_mount"
-mkdir -p "$FLATPAK_MOUNT"
-mount -o compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT" || die "Failed to mount Flatpak image"
-btrfs subvolume create "${FLATPAK_MOUNT}/${FLATPAK_SUBVOL}" || die "Failed to create subvolume for Flatpak data"
 
-log "copying Flatpak data into Btrfs subvolume"
+# Mount the loop device, create the subvolume, unmount, then remount the subvolume
+mkdir -p "$FLATPAK_MOUNT"
+mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT" || die "Failed to mount Flatpak image"
+if btrfs subvolume list "$FLATPAK_MOUNT" | grep -q "$FLATPAK_SUBVOL"; then
+    log "Deleting existing subvolume ${FLATPAK_SUBVOL}..."
+    btrfs subvolume delete "$FLATPAK_MOUNT/$FLATPAK_SUBVOL" || die "Failed to delete existing subvolume"
+fi
+log "Creating new subvolume: ${FLATPAK_SUBVOL}"
+btrfs subvolume create "$FLATPAK_MOUNT/$FLATPAK_SUBVOL" || die "Subvolume creation failed"
+sync
+umount "$FLATPAK_MOUNT" || die "Failed to unmount Flatpak image after subvolume creation"
+
+mkdir -p "$FLATPAK_MOUNT"
+mount -o subvol="$FLATPAK_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT" || die "Mounting Flatpak subvolume failed"
 
 # Copy Flatpak data into the subvolume
-tar -cf - -C "$FLATPAK_SOURCE" . | tar -xf - -C "${FLATPAK_MOUNT}/${FLATPAK_SUBVOL}" || die "Failed to copy Flatpak data"
+log "Copying Flatpak data into Btrfs subvolume"
+tar -cf - -C /var/lib/flatpak . | tar -xf - -C "$FLATPAK_MOUNT" || die "Failed to copy Flatpak data"
 sync
 
 # Set subvolume read-only before taking snapshot
-btrfs property set -f -ts "${FLATPAK_MOUNT}/${FLATPAK_SUBVOL}" ro true || die "Failed to set subvolume read-only"
+btrfs property set -f -ts "$FLATPAK_MOUNT" ro true || die "Failed to set subvolume read-only"
 
-btrfs_send_snapshot "${FLATPAK_MOUNT}/${FLATPAK_SUBVOL}" "${OUTPUT_FILE}"
+btrfs_send_snapshot "$FLATPAK_MOUNT" "${OUTPUT_FILE}"
 
-# Reset subvolume to writable **only after** snapshot
-btrfs property set -f -ts "${FLATPAK_MOUNT}/${FLATPAK_SUBVOL}" ro false || die "Failed to reset subvolume properties"
+# Reset subvolume to writable after snapshot
+btrfs property set -f -ts "$FLATPAK_MOUNT" ro false || die "Failed to reset subvolume properties"
 
 detach_btrfs_image "$FLATPAK_MOUNT" "$LOOP_DEVICE"
 

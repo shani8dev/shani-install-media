@@ -33,9 +33,9 @@ check_mok_keys
 # Setup Btrfs image for base system (10G)
 BASE_IMG="${BUILD_DIR}/base.img"
 setup_btrfs_image "$BASE_IMG" "10G"
-# LOOP_DEVICE is automatically set by setup_btrfs_image function
+# LOOP_DEVICE is set by setup_btrfs_image
 
-# Mount image and create subvolume
+# Mount image, create subvolume, and remount the subvolume
 mkdir -p "${BUILD_DIR}"
 mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "${BUILD_DIR}" || die "Mounting base image failed"
 if btrfs subvolume list "${BUILD_DIR}" | grep -q "${BASE_SUBVOL}"; then
@@ -63,11 +63,11 @@ package_list="${IMAGE_PROFILES_DIR}/${PROFILE}/package-list.txt"
 pacstrap -cC "$PACMAN_CONFIG" "${BUILD_DIR}/${BASE_SUBVOL}" $(<"$package_list") || die "pacstrap failed"
 if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" ]]; then
     log "Applying overlay files..."
-    cp -r ./image_profiles/${PROFILE}/overlay/rootfs/* "${BUILD_DIR}/${BASE_SUBVOL}/" || die "Overlay copy failed"
+    cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${BUILD_DIR}/${BASE_SUBVOL}/" || die "Overlay copy failed"
 fi
 if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" ]]; then
     log "Applying customizations..."
-    bash ./image_profiles/${PROFILE}/overlay/customizations.sh "${BUILD_DIR}/${BASE_SUBVOL}" || die "Customizations failed"
+    bash "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" "${BUILD_DIR}/${BASE_SUBVOL}" || die "Customizations failed"
 fi
 
 arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
@@ -86,17 +86,17 @@ overlay           /etc               overlay  lowerdir=/deployment/data/etc-writ
 tmpfs             /var/log           tmpfs    defaults,noatime,mode=0755  0 0
 tmpfs             /tmp               tmpfs    defaults,noatime,mode=1777  0 0
 tmpfs             /run               tmpfs    defaults,noatime,mode=0755  0 0
-/deployment/data/swap/swapfile  none    swap   sw  0 0
+/ deployment/data/swap/swapfile  none    swap   sw  0 0
 EOF
 
-btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro true || die "Failed to reset subvolume properties"
+btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro true || die "Failed to set subvolume read-only"
 
-# Create final base image snapshot using shared function
+# Create final base image snapshot
 btrfs_send_snapshot "${BUILD_DIR}/${BASE_SUBVOL}" "${IMAGE_FILE}"
 
 btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro false || die "Failed to reset subvolume properties"
 # Clean up Btrfs image resources
-detach_btrfs_image "${BUILD_DIR}" "$LOOP_DEVICE"
+detach_btrfs_image "${BUILD_DIR}/${BASE_SUBVOL}" "$LOOP_DEVICE"
 
 # Sign and checksum the final image
 if gpg --list-keys "$GPG_KEY_ID" >/dev/null 2>&1; then

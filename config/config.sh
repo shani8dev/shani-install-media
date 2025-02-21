@@ -22,7 +22,7 @@ die()   { echo "[ERROR] $*" >&2; exit 1; }
 
 # Check for required commands
 check_dependencies() {
-    local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync genfstab zsyncmake gpg sha256sum zstd fallocate mkfs.btrfs )
+    local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync genfstab zsyncmake gpg sha256sum zstd fallocate mkfs.btrfs openssl )
     for cmd in "${deps[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
     done
@@ -49,28 +49,35 @@ check_mok_keys() {
 setup_btrfs_image() {
     local img_path="$1"
     local size="$2"
-    # Ensure the parent directory exists
     local img_dir
     img_dir="$(dirname "$img_path")"
     mkdir -p "$img_dir" || die "Failed to create directory: $img_dir"
 
-    losetup -D || warn "Failed to detach $existing_loop"
+    # Detach if image is already associated with a loop device
+    if losetup -j "$img_path" | grep -q "$img_path"; then
+        local existing_loop
+        existing_loop=$(losetup -j "$img_path" | cut -d: -f1)
+        losetup -d "$existing_loop" || warn "Failed to detach $existing_loop"
+    fi
 
     log "Removing existing image file: $img_path"
     rm -f "$img_path"
 
-    dd if=/dev/zero of="$img_path" bs=1G count="${size%G}" status=progress || die "Failed to allocate image file: $img_path"
+    # Allocate image file
+    fallocate -l "$size" "$img_path" || die "Failed to allocate image file: $img_path"
 
     # Setup loop device
-    LOOP_DEVICE=$(losetup --find --show "$img_path") || die "Failed to setup loop device for $img_path"
-    log "Loop device assigned: $LOOP_DEVICE"
+    local loop_device
+    loop_device=$(losetup --find --show "$img_path") || die "Failed to setup loop device for $img_path"
+    log "Loop device assigned: $loop_device"
     
     # Format as Btrfs
-    log "Formatting $LOOP_DEVICE as Btrfs..."
-    mkfs.btrfs -f "$LOOP_DEVICE" || die "Failed to format $img_path as Btrfs"
-    echo "$LOOP_DEVICE"
+    log "Formatting $loop_device as Btrfs..."
+    mkfs.btrfs -f "$loop_device" || die "Failed to format $img_path as Btrfs"
+    # Export the loop device as a global variable for backward compatibility
+    LOOP_DEVICE="$loop_device"
+    echo "$loop_device"
 }
-
 
 # Detach a Btrfs image: unmount the mount point, detach the loop device, and remove the mount point.
 # Args:
@@ -79,7 +86,9 @@ setup_btrfs_image() {
 detach_btrfs_image() {
     local mount_point="$1"
     local loop_dev="$2"
-    umount "$mount_point" || warn "Failed to unmount $mount_point"
+    if mountpoint -q "$mount_point"; then
+        umount "$mount_point" || warn "Failed to unmount $mount_point"
+    fi
     losetup -d "$loop_dev" || warn "Failed to detach loop device $loop_dev"
     rm -rf "$mount_point"
 }
@@ -95,3 +104,4 @@ btrfs_send_snapshot() {
     btrfs send "$subvol_path" | zstd --ultra --long=31 -T0 -22 -v > "$output_file" \
       || die "btrfs send failed for ${subvol_path}"
 }
+
