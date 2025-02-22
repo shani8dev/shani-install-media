@@ -1,5 +1,6 @@
 set $mod Mod1      # Set the modifier key (Alt)
 set $term foot    # Set the terminal emulator
+bindsym $mod+Return exec $term
 
 # Set wallpaper
 output * bg /usr/share/backgrounds/shani/saturn-x.png fill
