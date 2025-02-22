@@ -75,8 +75,8 @@ fi
 arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
 set -euo pipefail
 
-# Set the timezone (adjust Region/City as needed)
-ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
+# Set the timezone to UTC
+ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 hwclock --systohc
 
 # Set system hostname and build version
