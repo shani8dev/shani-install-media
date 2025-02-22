@@ -72,7 +72,7 @@ if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" ]]; then
     bash "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" "${BUILD_DIR}/${BASE_SUBVOL}" || die "Customizations failed"
 fi
 
-arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<'EOF'
+arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
 set -euo pipefail
 
 # Set system hostname and build version
