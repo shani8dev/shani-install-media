@@ -75,6 +75,10 @@ fi
 arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
 set -euo pipefail
 
+# Set the timezone (adjust Region/City as needed)
+ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
+hwclock --systohc
+
 # Set system hostname and build version
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
