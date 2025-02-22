@@ -1,4 +1,4 @@
-set $mod Mod1      # Set the modifier key (Alt)
+set $mod Mod4      # Set the modifier key (Super)
 set $term foot    # Set the terminal emulator
 bindsym $mod+Return exec $term
 
