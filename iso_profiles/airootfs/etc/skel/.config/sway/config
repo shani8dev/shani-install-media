@@ -6,4 +6,4 @@ bindsym $mod+Return exec $term
 output * bg /usr/share/backgrounds/shani/saturn-x.png fill
 
 # Auto-launch application as root using sudo -E (if needed)
-exec sudo -E os-installer  # Ensure proper sudoers configuration for passwordless execution
+exec os-installer  # Ensure proper sudoers configuration for passwordless execution
