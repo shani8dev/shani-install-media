@@ -78,12 +78,37 @@ set -euo pipefail
 # Set the timezone to UTC
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 hwclock --systohc
+systemd-machine-id-setup --commit
 
 # Set system hostname and build version
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
 
+cat > /etc/fstab <<FSTAB
+# /etc/fstab: static file system information (label-based)
+#
+# EFI System Partition
+LABEL=shani_boot  /boot/efi   vfat    umask=0077  0 2
+
+# Btrfs Subvolumes 
+LABEL=shani_root  /home           btrfs   rw,subvol=@home,noatime,compress=zstd,space_cache=v2,autodefrag            0 0
+LABEL=shani_root  /var/lib/flatpak  btrfs  rw,subvol=@flatpak,noatime,compress=zstd,space_cache=v2,autodefrag        0 0
+LABEL=shani_root  /var/lib/containers  btrfs  rw,subvol=@containers,noatime,compress=zstd,space_cache=v2,autodefrag  0 0
+LABEL=shani_root  /data           btrfs   rw,subvol=@data,noatime,compress=zstd,space_cache=v2,autodefrag            0 0
+LABEL=shani_root  /swap           btrfs   rw,subvol=@swap,noatime,compress=zstd,space_cache=v2,autodefrag            0 0
+
+# tmpfs for volatile directories
+tmpfs               /var/log        tmpfs   defaults,noatime                     0 0
+tmpfs               /tmp            tmpfs   defaults,noatime                     0 0
+tmpfs               /run            tmpfs   defaults,noatime                     0 0
+
+# Swapfile (Ensure /swap is mounted first)
+/swap/swapfile  none  swap  defaults  0 0
+
+# OverlayFS (Mounted post-fstab via systemd)
+none            /etc    overlay  rw,lowerdir=/etc,upperdir=/data/etc/overlay/upper,workdir=/data/etc/overlay/work,x-systemd.requires-mounts-for=/data  0 0
+FSTAB
 EOF
 
 btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro true || die "Failed to set subvolume read-only"
