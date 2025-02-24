@@ -82,21 +82,8 @@ hwclock --systohc
 # Set system hostname and build version
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
+echo "${PROFILE}" > /etc/shani-profile
 
-# Replace /etc/fstab completely.
-# Note: The root (/) mount is omitted since it is provided via the kernel cmdline.
-cat <<EOT > /etc/fstab
-# fstab for immutable OS (root omitted)
-LABEL=${ROOTLABEL}       /home               btrfs   defaults,noatime,subvol=deployment/data/home,compress=zstd,space_cache=v2,autodefrag  0 0
-LABEL=${ROOTLABEL}       /var/lib/flatpak    btrfs   defaults,noatime,subvol=deployment/data/flatpak,compress=zstd,space_cache=v2,autodefrag  0 0
-LABEL=${ROOTLABEL}       /var/lib/containers btrfs   defaults,noatime,subvol=deployment/data/containers,compress=zstd,space_cache=v2,autodefrag  0 0
-overlay                  /etc                overlay lowerdir=/deployment/data/etc-writable,upperdir=/deployment/data/overlay/upper,workdir=/deployment/data/overlay/work  0 0
-tmpfs                    /var/log            tmpfs   defaults,noatime,mode=0755                         0 0
-tmpfs                    /tmp                tmpfs   defaults,noatime,mode=1777                         0 0
-tmpfs                    /run                tmpfs   defaults,noatime,mode=0755                         0 0
-LABEL=${BOOTLABEL}       /boot/efi           vfat    defaults,umask=0077                                0 1
-/deployment/data/swap/swapfile  none           swap    sw                                               0 0
-EOT
 EOF
 
 btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro true || die "Failed to set subvolume read-only"
