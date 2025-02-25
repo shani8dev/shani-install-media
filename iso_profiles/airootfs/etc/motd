@@ -1,13 +1,6 @@
 ************************
 * Welcome to Shani OS! *
 ************************
-
-System Information:
-  - Hostname: shani-os
-  - Kernel: $(uname -r)
-  - Uptime: $(uptime)
-  - Current Date/Time: $(date)
-
 Credentials:
   - Username: shani
   - Password: shani

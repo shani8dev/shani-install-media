@@ -20,3 +20,4 @@ shani-deployment
 dracut
 pipewire-jack
 openresolv
+libreoffice-fresh
