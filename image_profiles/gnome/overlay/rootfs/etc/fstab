@@ -2,25 +2,25 @@
 ########################
 # EFI System Partition #
 ########################
-LABEL=shani_boot   /boot/efi   vfat    umask=0077,x-systemd.idle-timeout=5min,fmask=0022,dmask=0022  0 2
+LABEL=shani_boot   /boot/efi   vfat    defaults  0 2
 
 ###############################
 # Btrfs Subvolumes (RW)       #
 ###############################
 # Home
-LABEL=shani_root   /home       btrfs   subvol=@home,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
+LABEL=shani_root   /home       btrfs   defaults,noatime,subvol=@home,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
 
 # Data (for /etc overlay and persistent storage)
-LABEL=shani_root   /data       btrfs   subvol=@data,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
-
-# Swap (remove compression - critical!)
-LABEL=shani_root   /swap       btrfs   subvol=@swap,noatime,space_cache=v2,nodatacow,x-initrd.mount                    0 0
+LABEL=shani_root   /data       btrfs   defaults,noatime,subvol=@data,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
 
 # Flatpak
-LABEL=shani_root   /var/lib/flatpak    btrfs   subvol=@flatpak,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
+LABEL=shani_root   /var/lib/flatpak    btrfs   defaults,noatime,subvol=@flatpak,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
 
 # Containers
-LABEL=shani_root   /var/lib/containers btrfs   subvol=@containers,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+LABEL=shani_root   /var/lib/containers btrfs   defaults,noatime,subvol=@containers,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+
+# Swap (remove compression - critical!)
+LABEL=shani_root   /swap       btrfs   defaults,noatime,subvol=@swap,nodatacow,nospace_cache,x-initrd.mount                    0 0
 
 ######################################
 # tmpfs for Volatile Directories     #

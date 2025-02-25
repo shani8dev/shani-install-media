@@ -1,42 +1,40 @@
 #!/bin/bash
-# Mount encrypted Btrfs layout with read-only root
-
+# Mount encrypted Btrfs layout with customized subvolume options
 set -euo pipefail
 
-# Load required kernel modules
-modprobe btrfs 
+modprobe btrfs
 modprobe overlay
 
-# Get root device information
 root_dev=$(findmnt -n -o SOURCE /sysroot)
 
-# Mount root as read-only first (base for overlay)
-mount -o remount,ro /sysroot
-
-
-# Define subvolumes and targets
+# Subvolume definitions with individual options
 declare -A subvols=(
-    ["@home"]="/home"
-    ["@data"]="/data"
-    ["@swap"]="/swap"
-    ["@flatpak"]="/var/lib/flatpak"
-    ["@containers"]="/var/lib/containers"
+    # Format: ["subvolume"]="mountpoint|mount_options"
+    ["@home"]="/home|rw,noatime,compress=zstd,autodefrag,space_cache=v2"
+    ["@data"]="/data|rw,noatime,compress=zstd,autodefrag,space_cache=v2"
+    ["@flatpak"]="/var/lib/flatpak|rw,noatime,compress=zstd,autodefrag,space_cache=v2"
+    ["@containers"]="/var/lib/containers|rw,noatime,compress=zstd,autodefrag,space_cache=v2"
+    ["@swap"]="/swap|rw,noatime,nodatacow,nospace_cache"
 )
 
-# Mount RW subvolumes
 for subvol in "${!subvols[@]}"; do
-    target="${subvols[$subvol]}"
-    mkdir -p "/sysroot$target"
-    mount -t btrfs -o "subvol=$subvol,compress=zstd,rw,space_cache=v2,autodefrag" \
-        "$root_dev" "/sysroot$target" || die "Failed mounting $subvol to $target"
+    # Split mountpoint and options
+    IFS='|' read -r target options <<< "${subvols[$subvol]}"
+    
+    # Create mountpoint and mount with specific options
+    mkdir -p "/sysroot${target}"
+    mount -t btrfs -o "subvol=${subvol},${options}" \
+        "$root_dev" "/sysroot${target}"
 done
 
 # Special handling for swap subvolume
-chattr +C /sysroot/swap >/dev/null 2>&1 || true  # Ensure CoW disabled
+chattr +C /sysroot/swap >/dev/null 2>&1 || true
 
-# Prepare /etc overlay
+# OverlayFS setup
 mkdir -p /sysroot/data/etc/overlay/{upper,work}
 chmod 0755 /sysroot/data/etc/overlay/{upper,work}
 mount -t overlay overlay -o \
-    "lowerdir=/sysroot/etc,upperdir=/sysroot/data/etc/overlay/upper,workdir=/sysroot/data/etc/overlay/work" \
+    "lowerdir=/sysroot/etc,\
+    upperdir=/sysroot/data/etc/overlay/upper,\
+    workdir=/sysroot/data/etc/overlay/work" \
     /sysroot/etc
