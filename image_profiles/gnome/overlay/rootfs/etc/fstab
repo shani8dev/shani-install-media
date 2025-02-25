@@ -1,49 +1,30 @@
-# /etc/fstab: static file system information (label-based)
-
+# /etc/fstab
 ########################
 # EFI System Partition #
 ########################
-LABEL=shani_boot   /boot/efi   vfat    umask=0077                      0 2
+LABEL=shani_boot   /boot/efi   vfat    umask=0077,x-systemd.idle-timeout=5min,fmask=0022,dmask=0022  0 2
 
 ###############################
-# Btrfs Subvolumes   #
+# Btrfs Subvolumes (RW)       #
 ###############################
+# Home
+LABEL=shani_root   /home       btrfs   subvol=@home,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
 
-# Home subvolume
-LABEL=shani_root   /home       btrfs   rw,subvol=@home,noatime,compress=zstd,space_cache=v2,autodefrag             0 0
+# Data (for /etc overlay and persistent storage)
+LABEL=shani_root   /data       btrfs   subvol=@data,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
 
-# Flatpak subvolume
-LABEL=shani_root   /var/lib/flatpak    btrfs   rw,subvol=@flatpak,noatime,compress=zstd,space_cache=v2,autodefrag   0 0
+# Swap (remove compression - critical!)
+LABEL=shani_root   /swap       btrfs   subvol=@swap,noatime,space_cache=v2,nodatacow,x-initrd.mount                    0 0
 
-# Containers subvolume
-LABEL=shani_root   /var/lib/containers btrfs   rw,subvol=@containers,noatime,compress=zstd,space_cache=v2,autodefrag 0 0
+# Flatpak
+LABEL=shani_root   /var/lib/flatpak    btrfs   subvol=@flatpak,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount     0 0
 
-# Data subvolume (mounted early; required for /etc overlay)
-LABEL=shani_root   /data       btrfs   rw,subvol=@data,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
-
-# Swap subvolume
-LABEL=shani_root   /swap       btrfs   rw,subvol=@swap,noatime,compress=zstd,space_cache=v2,autodefrag             0 0
+# Containers
+LABEL=shani_root   /var/lib/containers btrfs   subvol=@containers,noatime,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
 
 ######################################
 # tmpfs for Volatile Directories     #
 ######################################
-tmpfs              /var/log    tmpfs   defaults,noatime     0 0
-tmpfs              /tmp        tmpfs   defaults,noatime     0 0
-tmpfs              /run        tmpfs   defaults,noatime     0 0
-
-#########################
-# Swapfile Activation   #
-#########################
-# (Ensure /swap is mounted first)
- /swap/swapfile   none  swap  defaults   0 0
-
-##############################
-# Early /etc Overlay via dracut #
-##############################
-# Overlay /etc with:
-#   - lowerdir=/etc (the original read-only files)
-#   - upperdir and workdir in /data/etc/overlay (must exist with proper permissions)
-# The x-initrd.mount flag ensures this mount happens in the initramfs,
-# and x-systemd.requires-mounts-for=/data makes sure /data is available.
-overlay  /etc  overlay  rw,x-systemd.rw-only,lowerdir=/etc,upperdir=/data/etc/overlay/upper,workdir=/data/etc/overlay/work,x-initrd.mount,x-systemd.requires-mounts-for=/data  0 0
-
+tmpfs              /tmp        tmpfs   defaults,noatime                      0 0
+tmpfs              /run        tmpfs   defaults,noatime                      0 0
+tmpfs              /var/log    tmpfs   defaults,noatime                      0 0

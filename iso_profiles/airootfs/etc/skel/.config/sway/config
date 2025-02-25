@@ -21,14 +21,3 @@ bindsym Ctrl+Alt+t exec foot
 # Auto-launch application as root (ensure passwordless sudo is configured)
 exec os-installer
 
-###############################################################################
-# Keyboard Layout Configuration
-###############################################################################
-
-# This sets the keyboard layout for all input devices.
-input "*" {
-    xkb_layout us,de,uk,fr,ru
-    xkb_variant ,
-    # Toggle between layouts with Alt+Shift
-    xkb_options "grp:alt_shift_toggle"
-}
