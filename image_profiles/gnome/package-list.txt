@@ -21,3 +21,5 @@ dracut
 pipewire-jack
 openresolv
 libreoffice-fresh
+audacity
+ttf-joypixels
