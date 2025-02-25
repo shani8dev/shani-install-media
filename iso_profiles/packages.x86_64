@@ -1,4 +1,5 @@
 shani-keyring
+shani-video-guest
 shim-signed
 lsb-release
 amd-ucode
@@ -30,3 +31,4 @@ wlroots
 greetd
 foot
 nano
+vi
