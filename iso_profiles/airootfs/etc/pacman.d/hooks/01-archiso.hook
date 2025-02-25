@@ -4,8 +4,8 @@ Type = Package
 Target = mkinitcpio-archiso
 
 [Action]
-Description = Copy watremark.png to Plymouth spinner theme directory...
+Description = Copy watermark.png to Plymouth spinner theme directory...
 When = PostTransaction
 Depends = coreutils
 Depends = sh
-Exec = /bin/sh -c "mkdir -p /usr/share/plymouth/themes/spinner && cp /root/watremark.png /usr/share/plymouth/themes/spinner/watremark.png"
+Exec = /bin/sh -c "mkdir -p /usr/share/plymouth/themes/spinner && cp /root/watermark.png /usr/share/plymouth/themes/spinner/watermark.png"
