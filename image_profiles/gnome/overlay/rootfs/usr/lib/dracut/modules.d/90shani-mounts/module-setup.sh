@@ -12,6 +12,6 @@ depends() {
 }
 
 install() {
-    inst_hook pre-mount 99 "$moddir/mount-all.sh"
-    inst_script "$moddir/mount-all.sh" /sbin/mount-shani
+    inst_hook mount 99 "$moddir/mount-all.sh"  # Changed from pre-mount to mount
+    inst_script "$moddir/mount-all.sh" /sbin/shani-mounts
 }
