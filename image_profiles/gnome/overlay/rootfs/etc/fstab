@@ -43,13 +43,13 @@ LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,rw,compress=zst
 LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
 # /var/log: Separate subvolume for system variable log data
-LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
 # /var/lib/flatpak: Dedicated subvolume for Flatpak apps
-LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
 # /var/lib/containers: Dedicated subvolume for container data
-LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
 # /swap: Swap space (disable CoW and compression)
 LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
@@ -65,9 +65,6 @@ tmpfs   /tmp      tmpfs   defaults,noatime   0 0
 # /run: Runtime data for processes and services.
 tmpfs   /run      tmpfs   defaults,noatime   0 0
 
-# /var/tmp: Temporary files; data is cleared at reboot.
-tmpfs   /var/tmp    tmpfs   defaults,noatime,mode=1777,x-systemd.before=systemd-logind.service    0 0
-
 ##############################
 # Bind Mount for Overlay     #
 ##############################
@@ -77,5 +74,5 @@ tmpfs   /var/tmp    tmpfs   defaults,noatime,mode=1777,x-systemd.before=systemd-
 ##############################
 # Overlay for /etc           #
 ##############################
-
+Mount the overlay on /etc.
 overlay /etc overlay defaults,x-systemd.requires-mounts-for=/data,lowerdir=/data/overlay/etc/lower,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off 0 0
