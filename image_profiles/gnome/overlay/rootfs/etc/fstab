@@ -9,7 +9,6 @@
 #   - @home        => /home          (user data)
 #   - @data        => /data          (persistent storage for overlays)
 #   - @log         => /var/log         (system variable data)
-#   - @tmp         => /var/tmp        (system variable data)
 #   - @flatpak     => /var/lib/flatpak (Flatpak applications)
 #   - @containers  => /var/lib/containers (container data)
 #   - @swap        => /swap          (swap; CoW disabled for performance)
@@ -46,9 +45,6 @@ LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zst
 # /var/log: Separate subvolume for system variable log data
 LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
-# /var/tmp: Separate subvolume for system variable tmp data
-LABEL=shani_root   /var/tmp    btrfs   defaults,noatime,subvol=@temp,rw,compress=zstd,space_cache=v2,autodefrag  0 0
-
 # /var/lib/flatpak: Dedicated subvolume for Flatpak apps
 LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
@@ -56,7 +52,7 @@ LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,r
 LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
 # /swap: Swap space (disable CoW and compression)
-LABEL=shani_root   /swap   btrfs   defaults,noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
+LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
 
 ######################################
 # tmpfs for Volatile Directories     #
@@ -68,6 +64,9 @@ tmpfs   /tmp      tmpfs   defaults,noatime   0 0
 
 # /run: Runtime data for processes and services.
 tmpfs   /run      tmpfs   defaults,noatime   0 0
+
+# /var/tmp: Temporary files; data is cleared at reboot.
+tmpfs   /var/tmp    tmpfs   defaults,noatime,mode=1777,x-systemd.before=systemd-logind.service    0 0
 
 ##############################
 # Bind Mount for Overlay     #
