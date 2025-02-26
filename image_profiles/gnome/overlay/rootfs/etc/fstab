@@ -8,7 +8,8 @@
 # Btrfs Subvolumes (from "shani_root"):
 #   - @home        => /home          (user data)
 #   - @data        => /data          (persistent storage for overlays)
-#   - @var         => /var           (system variable data)
+#   - @log         => /var/log         (system variable data)
+#   - @tmp         => /var/tmp        (system variable data)
 #   - @flatpak     => /var/lib/flatpak (Flatpak applications)
 #   - @containers  => /var/lib/containers (container data)
 #   - @swap        => /swap          (swap; CoW disabled for performance)
@@ -18,7 +19,6 @@
 #   compress=zstd   - Enable on-the-fly compression with zstd.
 #   space_cache=v2  - Use the updated free space cache.
 #   autodefrag      - Enable automatic defragmentation (beneficial for HDDs).
-#   x-initrd.mount  - Ensure these subvolumes are mounted early (during initrd).
 #
 # Note: The swap subvolume uses nodatacow and nospace_cache to disable CoW,
 #       ensuring optimal swap performance.
@@ -38,22 +38,25 @@ LABEL=shani_boot   /boot/efi   vfat    defaults  0 2
 # Mount Btrfs subvolumes from the filesystem labeled "shani_root".
 
 # /home: User data
-LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
 # /data: For persistent storage (e.g. used by the overlay for /etc)
-LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
-# /var: Separate subvolume for system variable data
-LABEL=shani_root   /var    btrfs   defaults,noatime,subvol=@var,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+# /var/log: Separate subvolume for system variable log data
+LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+
+# /var/tmp: Separate subvolume for system variable tmp data
+LABEL=shani_root   /var/tmp    btrfs   defaults,noatime,subvol=@temp,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
 # /var/lib/flatpak: Dedicated subvolume for Flatpak apps
-LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
 # /var/lib/containers: Dedicated subvolume for container data
-LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,compress=zstd,space_cache=v2,autodefrag,x-initrd.mount  0 0
+LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
 # /swap: Swap space (disable CoW and compression)
-LABEL=shani_root   /swap   btrfs   defaults,noatime,subvol=@swap,nodatacow,nospace_cache,x-initrd.mount  0 0
+LABEL=shani_root   /swap   btrfs   defaults,noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
 
 ######################################
 # tmpfs for Volatile Directories     #
@@ -66,21 +69,14 @@ tmpfs   /tmp      tmpfs   defaults,noatime   0 0
 # /run: Runtime data for processes and services.
 tmpfs   /run      tmpfs   defaults,noatime   0 0
 
-# /var/log: Logs are stored in RAM to reduce write wear.
-tmpfs   /var/log  tmpfs   defaults,noatime   0 0
+##############################
+# Bind Mount for Overlay     #
+##############################
+# Bind-mount the original /etc (from root subvolume) to the overlay's lowerdir
+/etc    /data/overlay/etc/lower    none    bind,ro    0 0
 
-# /var/tmp: Volatile temporary files (non-essential, data lost on reboot).
-tmpfs   /var/tmp  tmpfs   defaults,noatime   0 0
+##############################
+# Overlay for /etc           #
+##############################
 
-######################################
-# Overlay Mount for /etc              #
-######################################
-# Mount /etc as an overlay that merges:
-#   - lowerdir:  /sysroot/etc (read-only base configuration)
-#   - upperdir:  /sysroot/data/etc/overlay/upper (writable layer)
-#   - workdir:   /sysroot/data/etc/overlay/work  (overlayfs work directory)
-#
-# Systemd options ensure dependencies: the overlay is mounted only after
-# its underlying directories are available.
-overlay   /etc   overlay   defaults,x-systemd.requires-mounts-for=/data,x-systemd.requires-mounts-for=/sysroot/data,x-systemd.rw-only,lowerdir=/sysroot/etc,upperdir=/sysroot/data/etc/overlay/upper,workdir=/sysroot/data/etc/overlay/work,x-initrd.mount  0 0
-
+overlay /etc overlay defaults,x-systemd.requires-mounts-for=/data,lowerdir=/data/overlay/etc/lower,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off 0 0
