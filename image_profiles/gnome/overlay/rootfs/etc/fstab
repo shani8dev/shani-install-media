@@ -66,13 +66,7 @@ tmpfs   /tmp      tmpfs   defaults,noatime   0 0
 tmpfs   /run      tmpfs   defaults,noatime   0 0
 
 ##############################
-# Bind Mount for Overlay     #
-##############################
-# Bind-mount the original /etc (from root subvolume) to the overlay's lowerdir
-/etc    /data/overlay/etc/lower    none    bind,ro    0 0
-
-##############################
 # Overlay for /etc           #
 ##############################
-Mount the overlay on /etc.
-overlay /etc overlay defaults,x-systemd.requires-mounts-for=/data,lowerdir=/data/overlay/etc/lower,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off 0 0
+# Directly reference root's /etc as lowerdir
+overlay /etc overlay  rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
