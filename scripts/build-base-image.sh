@@ -104,7 +104,15 @@ else
     die "GPG key not found: $GPG_KEY_ID"
 fi
 sha256sum "${IMAGE_FILE}" > "${IMAGE_FILE}.sha256" || die "Checksum generation failed"
-zsyncmake -o "${IMAGE_FILE}.zsync" "${IMAGE_FILE}" || die "zsync file generation failed"
+# Define the SourceForge URL where the image will be hosted.
+# New URL pattern:
+# https://sourceforge.net/projects/shanios/files/<profile>/<BUILD_DATE>/<imagename>.zsync
+SOURCEFORGE_BASE_URL="https://sourceforge.net/projects/shanios/files/${PROFILE}/${BUILD_DATE}"
+IMAGE_URL="${SOURCEFORGE_BASE_URL}/${IMAGE_NAME}.zsync"
+
+log "Generating .zsync file for ${IMAGE_FILE} with remote URL ${IMAGE_URL}..."
+zsyncmake -o "${IMAGE_FILE}.zsync" -u "${IMAGE_URL}" "${IMAGE_FILE}" || die "zsync file generation failed"
+
 # Write latest.txt in the same output subdirectory
 echo "$(basename "${IMAGE_FILE}")" > "${OUTPUT_SUBDIR}/latest.txt"
 log "Base image build completed successfully!"

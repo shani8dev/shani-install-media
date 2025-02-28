@@ -48,7 +48,7 @@ if [[ ! -f "${LOCAL_LATEST_FILE}" ]]; then
 fi
 
 # Create central release files in OUTPUT_DIR root
-CENTRAL_LATEST="${OUTPUT_DIR}/latest.txt"
+CENTRAL_LATEST="${OUTPUT_DIR}/${PROFILE}/latest.txt"
 cp "${LOCAL_LATEST_FILE}" "${CENTRAL_LATEST}" || die "Failed to update central latest.txt"
 log "Central latest.txt updated: $(cat "${CENTRAL_LATEST}")"
 
@@ -57,6 +57,6 @@ if [[ -z "$STABLE_ARTIFACT" ]]; then
   STABLE_ARTIFACT=$(cat "${LOCAL_LATEST_FILE}")
 fi
 
-CENTRAL_STABLE="${OUTPUT_DIR}/stable.txt"
+CENTRAL_STABLE="${OUTPUT_DIR}/${PROFILE}/stable.txt"
 echo "$STABLE_ARTIFACT" > "${CENTRAL_STABLE}" || die "Failed to create central stable.txt"
 log "Central stable.txt created: $(cat "${CENTRAL_STABLE}")"
