@@ -33,7 +33,7 @@ check_mok_keys() {
     if [[ ! -f "${MOK_DIR}/MOK.key" || ! -f "${MOK_DIR}/MOK.crt" || ! -f "${MOK_DIR}/MOK.der" ]]; then
         log "MOK keys missing. Generating new keys..."
         mkdir -p "${MOK_DIR}"
-        openssl req -newkey rsa:4096 -nodes -keyout "${MOK_DIR}/MOK.key" -new -x509 -sha256 -days 3650 \
+        openssl req -newkey rsa:2048 -nodes -keyout "${MOK_DIR}/MOK.key" -new -x509 -sha256 -days 3650 \
           -out "${MOK_DIR}/MOK.crt" -subj "/CN=Shani OS Secure Boot Key/" || die "Failed to generate MOK keys"
         openssl x509 -in "${MOK_DIR}/MOK.crt" -outform DER -out "${MOK_DIR}/MOK.der" || die "Failed to convert MOK key to DER"
     else
