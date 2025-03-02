@@ -63,11 +63,17 @@ declare -A required_extensions
 for pkg in "${packages[@]}"; do
     extension_full=$(flatpak info --show-extensions "$pkg" 2>/dev/null || true)
     if [[ -n "$extension_full" ]]; then
-        extension_base=$(echo "$extension_full" | cut -d'/' -f1)
-        required_extensions["$extension_base"]=1
-        log "Detected extension '$extension_full' (base: '$extension_base') required for package '$pkg'"
+        # Extract the extension ID from the first line that starts with "ID:"
+        extension_id=$(echo "$extension_full" | grep -m 1 -E '^\s*ID:' | sed 's/^\s*ID:\s*//')
+        if [[ -n "$extension_id" ]]; then
+            required_extensions["$extension_id"]=1
+            log "Detected extension: $extension_id"
+        else
+            log "No extension ID found in output for package $pkg"
+        fi
     fi
 done
+
 
 # Remove unused Flatpak applications not in the profile list
 log "Removing unused Flatpak applications not in the profile list"
@@ -94,19 +100,25 @@ fi
 
 while IFS= read -r pkg || [[ -n "$pkg" ]]; do
     keep=0
-    # For packages starting with "runtime/", try to extract base runtime name
-    if [[ "$pkg" == runtime/* ]]; then
-         runtime_name="${pkg#runtime/}"
-         runtime_name="${runtime_name%%/*}"  # e.g. org.gnome.Platform or similar
-         if [[ "$runtime_name" == *.* ]]; then
-             # Remove last dot-separated token (to get base app name)
-             base_app="${runtime_name%.*}"
-             if printf '%s\n' "${packages[@]}" | grep -Fxq "$base_app"; then
-                 log "Keeping runtime extension $pkg because base app $base_app is in the package list"
-                 keep=1
-             fi
-         fi
-    fi
+	# Always remove "runtime/" prefix (if present) and extract the base name.
+	pkg_base="${pkg#runtime/}"
+	pkg_base="${pkg_base%%/*}"   # e.g., "org.gnome.Loupe.HEIC" or "org.gnome.Boxes.Extension.OsinfoDb"
+
+	# Derive a secondary "base app" name:
+	if [[ "$pkg_base" == *".Extension."* ]]; then
+		# For extension packages, remove the extension part.
+		base_app="${pkg_base%%.Extension.*}"   # e.g., from "org.gnome.Boxes.Extension.OsinfoDb" derive "org.gnome.Boxes"
+	else
+		# For non-extension packages, remove the last dot-separated token.
+		base_app="${pkg_base%.*}"              # e.g., from "org.gnome.Loupe.HEIC" derive "org.gnome.Loupe"
+	fi
+
+	if printf '%s\n' "${packages[@]}" | grep -Fxq "$pkg_base" || \
+	   printf '%s\n' "${packages[@]}" | grep -Fxq "$base_app"; then
+		log "Keeping runtime $pkg because required package ($pkg_base or $base_app) is in the package list"
+		keep=1
+	fi
+
     # Check if pkg is required as a runtime
     if [[ $keep -eq 0 ]]; then
         for req in "${!required_runtimes[@]}"; do
@@ -116,7 +128,7 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
             fi
         done
     fi
-    # Also check if pkg is required as an extension
+    # Check if pkg is required as an extension
     if [[ $keep -eq 0 ]]; then
         for req in "${!required_extensions[@]}"; do
             if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
@@ -134,6 +146,7 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
         log "Keeping required package: $pkg"
     fi
 done <<< "$installed_runtimes"
+
 
 # Run repair to clean up any remaining inconsistencies;
 if ! flatpak repair --system; then
