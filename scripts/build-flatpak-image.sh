@@ -80,7 +80,7 @@ while IFS= read -r app || [[ -n "$app" ]]; do
     fi
 done <<< "$installed_apps"
 
-# Remove runtimes (and any extensions reported as runtimes) that are not required by any app in the profile list
+# Remove runtimes (and any extensions reported as runtimes) not required by any app
 log "Removing runtimes and extensions not required by apps in the profile list"
 installed_runtimes=$(flatpak list --system --runtime --columns=application)
 if [[ -z "$installed_runtimes" ]]; then
@@ -88,15 +88,24 @@ if [[ -z "$installed_runtimes" ]]; then
 fi
 
 while IFS= read -r pkg || [[ -n "$pkg" ]]; do
+    # If this package looks like an extension, check if it is used by any application.
+    if [[ "$pkg" == *".Extension."* ]]; then
+        # This check leverages flatpak info output which lists applications using the extension.
+        if flatpak info "$pkg" 2>/dev/null | grep -q "Info: applications using the extension"; then
+            log "Keeping extension $pkg because it is used by an application"
+            continue
+        fi
+    fi
+
     keep=0
-    # Check if pkg is required as a runtime
+    # Check if pkg is required as a runtime.
     for req in "${!required_runtimes[@]}"; do
         if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
             keep=1
             break
         fi
     done
-    # Also check if pkg is required as an extension
+    # Also check if pkg is required as an extension.
     for req in "${!required_extensions[@]}"; do
         if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
             keep=1
