@@ -24,8 +24,10 @@ mkinitcpio-nfs-utils
 pv
 nbd
 mesa
+gnome-disk-utility
 os-installer
 os-installer-config
+glibc-locales
 arch-install-scripts
 sway
 wlroots
@@ -34,3 +36,4 @@ foot
 nano
 vi
 plymouth
+

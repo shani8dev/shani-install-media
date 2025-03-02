@@ -41,4 +41,6 @@ org.gnome.Mahjongg
 org.gnome.Chess
 org.gnome.Aisleriot
 org.gnome.Quadrapassel
+com.valvesoftware.Steam
+com.heroicgameslauncher.hgl
 
