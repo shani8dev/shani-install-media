@@ -55,6 +55,17 @@ for pkg in "${packages[@]}"; do
     fi
 done
 
+# Detect required extensions from the package list
+declare -A required_extensions
+for pkg in "${packages[@]}"; do
+    extension_full=$(flatpak info --show-extensions "$pkg" 2>/dev/null)
+    if [[ -n "$extension_full" ]]; then
+        extension_base=$(echo "$extension_full" | cut -d'/' -f1)
+        required_extensions["$extension_base"]=1
+        log "Detected extension '$extension_full' (base: '$extension_base') required for package '$pkg'"
+    fi
+done
+
 # Remove unused Flatpak applications not in the profile list
 log "Removing unused Flatpak applications not in the profile list"
 installed_apps=$(flatpak list --system --app --columns=application)
@@ -69,26 +80,34 @@ while IFS= read -r app || [[ -n "$app" ]]; do
     fi
 done <<< "$installed_apps"
 
-# Remove runtimes not required by any app in the package list.
-log "Removing runtimes not required by apps in the profile list"
+# Remove runtimes (and any extensions reported as runtimes) that are not required by any app in the profile list
+log "Removing runtimes and extensions not required by apps in the profile list"
 installed_runtimes=$(flatpak list --system --runtime --columns=application)
 if [[ -z "$installed_runtimes" ]]; then
     warn "Warning: No Flatpak runtimes found to remove. Proceeding..."
 fi
 
-while IFS= read -r runtime || [[ -n "$runtime" ]]; do
+while IFS= read -r pkg || [[ -n "$pkg" ]]; do
     keep=0
+    # Check if pkg is required as a runtime
     for req in "${!required_runtimes[@]}"; do
-        if [[ "$runtime" == "$req" || "$runtime" == "$req"* ]]; then
+        if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
+            keep=1
+            break
+        fi
+    done
+    # Also check if pkg is required as an extension
+    for req in "${!required_extensions[@]}"; do
+        if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
             keep=1
             break
         fi
     done
     if [[ $keep -eq 0 ]]; then
-        log "Removing runtime not required: $runtime"
-        flatpak uninstall --assumeyes --noninteractive --system --delete-data "$runtime" || warn "Failed to remove runtime $runtime"
+        log "Removing package not required: $pkg"
+        flatpak uninstall --assumeyes --noninteractive --system --delete-data "$pkg" || warn "Failed to remove package $pkg"
     else
-        log "Keeping required runtime: $runtime"
+        log "Keeping required package: $pkg"
     fi
 done <<< "$installed_runtimes"
 
