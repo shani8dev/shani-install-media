@@ -1,5 +1,4 @@
 shani-keyring
-shani-video-guest
 shani-fonts
 shim-signed
 lsb-release
@@ -27,7 +26,6 @@ mesa
 gnome-disk-utility
 os-installer
 os-installer-config
-glibc-locales
 arch-install-scripts
 sway
 wlroots
