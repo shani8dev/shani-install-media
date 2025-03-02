@@ -75,12 +75,18 @@ fi
 arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
 set -euo pipefail
 
-# Set the timezone to UTC
+# Configure locale and keyboard settings
+echo "LANG=en_US.UTF-8" > /etc/locale.conf
+echo "KEYMAP=us" > /etc/vconsole.conf 
+
+# Set the timezone to UTC and update hardware clock
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 hwclock --systohc
+
+# Generate a new machine ID
 systemd-machine-id-setup --commit
 
-# Set system hostname and build version
+# Set system hostname and record build/version information
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
