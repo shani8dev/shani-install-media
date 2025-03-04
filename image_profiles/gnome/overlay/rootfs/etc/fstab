@@ -42,6 +42,9 @@ LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,rw,compress=zst
 # /data: For persistent storage (e.g. used by the overlay for /etc)
 LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag  0 0
 
+# /var/cache: Separate subvolume for system variable cache data
+LABEL=shani_root   /var/cache    btrfs   defaults,noatime,subvol=@cache,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+
 # /var/log: Separate subvolume for system variable log data
 LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
