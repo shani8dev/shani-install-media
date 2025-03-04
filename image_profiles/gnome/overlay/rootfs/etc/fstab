@@ -76,3 +76,10 @@ tmpfs   /run      tmpfs   defaults,noatime   0 0
 ##############################
 # Directly reference root's /etc as lowerdir
 overlay /etc overlay  rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
+
+##############################
+# Overlay for /var           #
+##############################
+# Directly reference root's /var as lowerdir
+# not using due to /var being made tmpfs by systemd.volatile=state cmdline parameter
+#overlay /var overlay  rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
