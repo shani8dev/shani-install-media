@@ -54,7 +54,7 @@ mount -o subvol="${BASE_SUBVOL}",compress-force=zstd:19 "$LOOP_DEVICE" "${BUILD_
 mountpoint "${BUILD_DIR}/${BASE_SUBVOL}" || die "Subvolume mount verification failed"
 
 # Copy Secure Boot keys
-secureboot_target="${BUILD_DIR}/${BASE_SUBVOL}/usr/share/secureboot/keys"
+secureboot_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/secureboot/keys"
 mkdir -p "$secureboot_target"
 cp "${MOK_DIR}/MOK.key" "${MOK_DIR}/MOK.crt" "${MOK_DIR}/MOK.der" "$secureboot_target" || die "Failed to copy secure boot keys"
 
@@ -90,6 +90,13 @@ systemd-machine-id-setup --commit
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
+
+# Create directories required for the read-only root fstab mounts that are missing
+mkdir -p /boot/efi
+mkdir -p /data
+mkdir -p /var/lib/flatpak
+mkdir -p /var/lib/containers
+mkdir -p /swap
 
 EOF
 
