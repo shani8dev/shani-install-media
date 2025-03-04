@@ -55,6 +55,12 @@ LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@contai
 LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
 
 ######################################
+# Swap Space (Swapfile on Btrfs)     #
+######################################
+# Ensure the swapfile is mounted at boot.
+/swap/swapfile none swap sw 0 0
+
+######################################
 # tmpfs for Volatile Directories     #
 ######################################
 # These tmpfs mounts store volatile data in RAM to reduce disk writes.
