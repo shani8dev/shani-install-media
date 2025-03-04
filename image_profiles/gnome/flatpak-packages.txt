@@ -9,7 +9,6 @@ io.github.mrvladus.List
 de.haeckerfelix.Fragments
 de.haeckerfelix.Shortwave
 io.gitlab.adhami3310.Impression
-re.sonny.Junction
 com.github.maoschanz.drawing
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs

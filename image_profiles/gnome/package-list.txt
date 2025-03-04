@@ -17,6 +17,7 @@ shani-tools-extra
 shani-video
 shani-video-guest
 shani-deployment
+desktop-entry-hider
 dracut
 pipewire-jack
 openresolv
