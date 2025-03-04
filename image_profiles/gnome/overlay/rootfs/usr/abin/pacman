@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Whitelist only read-only pacman operations.
+# Allowed operations:
+#   - Query: -Q, --query (and related, e.g. -Qi, -Qs, -Qk, etc.)
+#   - File queries: -F, --file
+#   - Search: -Ss, --search
+#   - List: -Sl, --list
+#   - Help and version options are also allowed.
+allowed=1
+for arg in "$@"; do
+    case "$arg" in
+        -Q*|--query*|\
+        -F*|--file*|\
+        -Ss*|--search*|\
+        -Sl*|--list*|\
+        -h|--help|\
+        --version)
+            # This argument is safe.
+            ;;
+        *)
+            allowed=0
+            break
+            ;;
+    esac
+done
+
+if [ $allowed -eq 0 ]; then
+    echo "Error: Shanios is an immutable distro."
+    echo "System modifications (install, remove, upgrade, or sync operations) are not permitted."
+    echo "Please use deploy-image to update the system."
+    exit 1
+fi
+
+# If all arguments are whitelisted, execute pacman.
+exec /usr/bin/pacman "$@"
