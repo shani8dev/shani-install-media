@@ -112,10 +112,12 @@ detach_btrfs_image "${BUILD_DIR}/${BASE_SUBVOL}" "$LOOP_DEVICE"
 # Sign and checksum the final image
 if gpg --list-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
     log "Signing base image..."
-    gpg --default-key "$GPG_KEY_ID" --detach-sign --armor "${IMAGE_FILE}" || die "Signing failed"
+    gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+      --default-key "$GPG_KEY_ID" --detach-sign --armor -o "${IMAGE_FILE}.asc" "${IMAGE_FILE}" || die "Signing failed"
 else
     die "GPG key not found: $GPG_KEY_ID"
 fi
+
 sha256sum "${IMAGE_FILE}" > "${IMAGE_FILE}.sha256" || die "Checksum generation failed"
 # Define the SourceForge URL where the image will be hosted.
 # New URL pattern:
