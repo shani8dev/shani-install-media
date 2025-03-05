@@ -42,7 +42,9 @@ USER_CMD=$(printf '%q ' "$CMD" "$@")
 # Build a command prefix that imports SSH and GPG keys if provided.
 IMPORT_KEYS_CMD=""
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-    IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && ssh-keyscan github.com >> ~/.ssh/known_hosts && '
+    IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && '
+fi
+
 fi
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     IMPORT_KEYS_CMD+='echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && gpg --batch --import /tmp/gpg_private.key && rm /tmp/gpg_private.key && '
