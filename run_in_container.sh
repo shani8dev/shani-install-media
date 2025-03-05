@@ -2,7 +2,8 @@
 # run_in_container.sh – Generic Docker wrapper to run any command inside the build container,
 # with support for importing SSH and GPG keys into the container.
 #
-# This version sources an .env file (if present) in the same directory as the script.
+# This version sources an .env file (if present) in the same directory as the script,
+# sets a secure GNUPGHOME, and configures SSH to disable strict host key checking.
 
 set -Eeuo pipefail
 
@@ -23,7 +24,12 @@ HOST_PACMAN_CACHE="${HOST_WORK_DIR}/cache/pacman_cache"
 HOST_FLATPAK_DATA="${HOST_WORK_DIR}/cache/flatpak_data"
 mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}"
 
-CONTAINER_WORK_DIR="/builduser/build"
+# Set a secure GPG home directory for the container (consistent with Dockerfile)
+export GNUPGHOME="/home/builduser/.gnupg"
+mkdir -p "$GNUPGHOME"
+chmod 700 "$GNUPGHOME"
+
+CONTAINER_WORK_DIR="/home/builduser/build"
 CONTAINER_PACMAN_CACHE="/var/cache/pacman"
 CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CUSTOM_MIRROR="https://in.mirrors.cicku.me/archlinux/\$repo/os/\$arch"
@@ -49,7 +55,9 @@ USER_CMD=$(printf '%q ' "$CMD" "$@")
 # Build a command prefix that imports SSH and GPG keys if provided.
 IMPORT_KEYS_CMD=""
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
-    IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && '
+    IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
+ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts && \
+echo "Host *" > ~/.ssh/config && echo "    StrictHostKeyChecking no" >> ~/.ssh/config && '
 fi
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     IMPORT_KEYS_CMD+='echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && gpg --batch --import /tmp/gpg_private.key && rm /tmp/gpg_private.key && '
