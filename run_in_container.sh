@@ -60,7 +60,7 @@ ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && chmod 644 ~/.ssh
 echo "Host *" > ~/.ssh/config && echo "    StrictHostKeyChecking no" >> ~/.ssh/config && '
 fi
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
-    IMPORT_KEYS_CMD+='echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && gpg --batch --import /tmp/gpg_private.key && rm /tmp/gpg_private.key && '
+    IMPORT_KEYS_CMD+='echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && gpg --batch --import /tmp/gpg_private.key && gpg --list-secret-keys && rm /tmp/gpg_private.key && '
 fi
 
 # Final command that first imports keys (if any) then executes the user command.
