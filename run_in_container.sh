@@ -27,7 +27,6 @@ mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}"
 # Set a secure GPG home directory for the container (consistent with Dockerfile)
 export GNUPGHOME="/home/builduser/.gnupg"
 mkdir -p "$GNUPGHOME"
-chmod 700 "$GNUPGHOME"
 
 CONTAINER_WORK_DIR="/home/builduser/build"
 CONTAINER_PACMAN_CACHE="/var/cache/pacman"
@@ -62,7 +61,7 @@ echo "Host *" > ~/.ssh/config && echo "    StrictHostKeyChecking no" >> ~/.ssh/c
 fi
 
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
-    IMPORT_KEYS_CMD+="mkdir -p \"$GNUPGHOME\" && chmod 700 \"$GNUPGHOME\" && \
+    IMPORT_KEYS_CMD+="mkdir -p \"$GNUPGHOME\" && \
     echo \"\$GPG_PRIVATE_KEY\" > /tmp/gpg_private.key && \
     gpg --batch --passphrase \"\$GPG_PASSPHRASE\" --homedir \"$GNUPGHOME\" --import /tmp/gpg_private.key && \
     rm -f /tmp/gpg_private.key && gpg --homedir \"$GNUPGHOME\" --list-secret-keys && "
