@@ -53,6 +53,7 @@ fi
 USER_CMD=$(printf '%q ' "$CMD" "$@")
 
 # Build a command prefix that imports SSH and GPG keys if provided.
+# Dollar signs are not escaped here because we want the container’s shell to expand them.
 IMPORT_KEYS_CMD=""
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
     IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
@@ -60,13 +61,15 @@ ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && chmod 644 ~/.ssh
 echo "Host *" > ~/.ssh/config && echo "    StrictHostKeyChecking no" >> ~/.ssh/config && '
 fi
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
-    IMPORT_KEYS_CMD+='echo "\$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && gpg --batch --passphrase "\$GPG_PASSPHRASE" --import /tmp/gpg_private.key && gpg --list-secret-keys && rm /tmp/gpg_private.key && '
+    IMPORT_KEYS_CMD+='mkdir -p ~/.gnupg && chmod 700 ~/.gnupg && \
+echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && \
+gpg --batch --passphrase "$GPG_PASSPHRASE" --homedir ~/.gnupg --import /tmp/gpg_private.key && \
+rm -f /tmp/gpg_private.key && gpg --homedir ~/.gnupg --list-secret-keys && '
 fi
 
 # Final command that first imports keys (if any) then executes the user command.
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
-# Wrap FINAL_CMD in extra single quotes to pass it literally to the container's bash.
 docker run $TTY_FLAGS --privileged --rm \
   -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
   -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
@@ -76,5 +79,5 @@ docker run $TTY_FLAGS --privileged --rm \
   -e GPG_PRIVATE_KEY="${GPG_PRIVATE_KEY:-}" \
   -e GPG_PASSPHRASE="${GPG_PASSPHRASE:-}" \
   -w "${CONTAINER_WORK_DIR}" \
-  "${DOCKER_IMAGE}" bash -c "'${FINAL_CMD}'"
+  "${DOCKER_IMAGE}" bash -c "${FINAL_CMD}"
 
