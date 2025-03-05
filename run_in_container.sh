@@ -29,6 +29,13 @@ CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CUSTOM_MIRROR="https://in.mirrors.cicku.me/archlinux/\$repo/os/\$arch"
 DOCKER_IMAGE="shrinivasvkumbhar/shani-builder"
 
+# Determine whether a TTY is available
+if [ -t 0 ]; then
+    TTY_FLAGS="-it"
+else
+    TTY_FLAGS="-i"
+fi
+
 # Convert command to an absolute path inside the container
 CMD="$1"
 shift
@@ -44,7 +51,6 @@ IMPORT_KEYS_CMD=""
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
     IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && '
 fi
-
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     IMPORT_KEYS_CMD+='echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && gpg --batch --import /tmp/gpg_private.key && rm /tmp/gpg_private.key && '
 fi
@@ -52,7 +58,7 @@ fi
 # Final command that first imports keys (if any) then executes the user command.
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
-docker run -it --privileged --rm \
+docker run $TTY_FLAGS --privileged --rm \
   -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
   -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
   -v "${HOST_FLATPAK_DATA}:${CONTAINER_FLATPAK_DATA}" \
