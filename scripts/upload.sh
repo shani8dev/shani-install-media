@@ -57,6 +57,7 @@ REMOTE_SUBPATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFIL
 # Upload base image artifacts from the build folder
 log "Uploading base image artifacts from ${OUTPUT_SUBDIR}:"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}" || die "Upload of base image failed"
+rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.asc "${REMOTE_SUBPATH}" || die "Upload of base image key failed"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.sha256 "${REMOTE_SUBPATH}" || die "Upload of base image checksum failed"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.zsync "${REMOTE_SUBPATH}" || die "Upload of base image zsync failed"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}" || die "Upload of latest.txt failed"
