@@ -109,14 +109,32 @@ btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro false || die "Failed 
 # Clean up Btrfs image resources
 detach_btrfs_image "${BUILD_DIR}/${BASE_SUBVOL}" "$LOOP_DEVICE"
 
-# Sign and checksum the final image
-if gpg --list-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
-    log "Signing base image..."
-    gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
-      --default-key "$GPG_KEY_ID" --detach-sign --armor -o "${IMAGE_FILE}.asc" "${IMAGE_FILE}" || die "Signing failed"
-else
-    die "GPG key not found: $GPG_KEY_ID"
+# Ensure all GPG operations use the correct home directory
+export GNUPGHOME="/home/builduser/.gnupg"
+
+# Trust the key in the USER keyring
+echo -e "trust\n5\ny\nsave\n" | gpg --homedir "$GNUPGHOME" --batch --command-fd 0 --edit-key "$GPG_KEY_ID"
+
+# Verify key exists in USER keyring
+if ! gpg --homedir "$GNUPGHOME" --list-secret-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
+    die "GPG key not found in $GNUPGHOME: $GPG_KEY_ID"
 fi
+
+# Sign using USER keyring
+log "Signing base image..."
+gpg --homedir "$GNUPGHOME" \
+    --batch \
+    --yes \
+    --pinentry-mode loopback \
+    --passphrase "$GPG_PASSPHRASE" \
+    --default-key "$GPG_KEY_ID" \
+    --detach-sign \
+    --armor \
+    --output "${IMAGE_FILE}.asc" \
+    "${IMAGE_FILE}" || die "Signing failed"
+    
+# Create checksum
+sha256sum "${IMAGE_FILE}" > "${IMAGE_FILE}.sha256" || die "Checksum generation failed"
 
 sha256sum "${IMAGE_FILE}" > "${IMAGE_FILE}.sha256" || die "Checksum generation failed"
 # Define the SourceForge URL where the image will be hosted.

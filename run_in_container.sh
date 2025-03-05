@@ -60,11 +60,12 @@ if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
 ssh-keyscan github.com sourceforge.net >> ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts && \
 echo "Host *" > ~/.ssh/config && echo "    StrictHostKeyChecking no" >> ~/.ssh/config && '
 fi
+
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
-    IMPORT_KEYS_CMD+='mkdir -p ~/.gnupg && chmod 700 ~/.gnupg && \
-echo "$GPG_PRIVATE_KEY" > /tmp/gpg_private.key && \
-gpg --batch --passphrase "$GPG_PASSPHRASE" --homedir ~/.gnupg --import /tmp/gpg_private.key && \
-rm -f /tmp/gpg_private.key && gpg --homedir ~/.gnupg --list-secret-keys && '
+    IMPORT_KEYS_CMD+="mkdir -p \"$GNUPGHOME\" && chmod 700 \"$GNUPGHOME\" && \
+    echo \"\$GPG_PRIVATE_KEY\" > /tmp/gpg_private.key && \
+    gpg --batch --passphrase \"\$GPG_PASSPHRASE\" --homedir \"$GNUPGHOME\" --import /tmp/gpg_private.key && \
+    rm -f /tmp/gpg_private.key && gpg --homedir \"$GNUPGHOME\" --list-secret-keys && "
 fi
 
 # Final command that first imports keys (if any) then executes the user command.
@@ -78,6 +79,7 @@ docker run $TTY_FLAGS --privileged --rm \
   -e SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}" \
   -e GPG_PRIVATE_KEY="${GPG_PRIVATE_KEY:-}" \
   -e GPG_PASSPHRASE="${GPG_PASSPHRASE:-}" \
+  -e GNUPGHOME="/home/builduser/.gnupg" \
   -w "${CONTAINER_WORK_DIR}" \
   "${DOCKER_IMAGE}" bash -c "${FINAL_CMD}"
 
