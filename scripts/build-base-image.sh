@@ -134,9 +134,9 @@ gpg --homedir "$GNUPGHOME" \
     "${IMAGE_FILE}" || die "Signing failed"
     
 # Create checksum
-sha256sum "${IMAGE_FILE}" > "${IMAGE_FILE}.sha256" || die "Checksum generation failed"
+cd "$(dirname "${IMAGE_FILE}")" || die "Failed to change directory"
+sha256sum "$(basename "${IMAGE_FILE}")" > "$(basename "${IMAGE_FILE}").sha256" || die "Checksum generation failed"
 
-sha256sum "${IMAGE_FILE}" > "${IMAGE_FILE}.sha256" || die "Checksum generation failed"
 # Define the SourceForge URL where the image will be hosted.
 # New URL pattern:
 # https://sourceforge.net/projects/shanios/files/<profile>/<BUILD_DATE>/<imagename>.zsync
