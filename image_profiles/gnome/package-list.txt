@@ -15,7 +15,7 @@ shani-storage
 shani-tools
 shani-tools-extra
 shani-video
-shani-deployment
+shani-deploy
 desktop-entry-hider
 dracut
 pipewire-jack
