@@ -56,7 +56,7 @@ REMOTE_SUBPATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFIL
 
 # Upload base image artifacts from the build folder
 log "Uploading base image artifacts from ${OUTPUT_SUBDIR}:"
-rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}" || die "Upload of base image failed"
+rsync -e ssh -avz --progress --exclude="flatpakfs.zst" "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}" || die "Upload of base image failed"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.asc "${REMOTE_SUBPATH}" || die "Upload of base image key failed"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.sha256 "${REMOTE_SUBPATH}" || die "Upload of base image checksum failed"
 rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.zsync "${REMOTE_SUBPATH}" || die "Upload of base image zsync failed"
@@ -71,11 +71,20 @@ else
   log "No central latest.txt found to upload."
 fi
 
+# Upload central release file (stable.txt) if it exists
+CENTRAL_STABLE="${OUTPUT_DIR}/${PROFILE}/stable.txt"
+if [[ -f "${CENTRAL_STABLE}" ]]; then
+  log "Uploading central release file (stable.txt) from ${OUTPUT_DIR}/${PROFILE}:"
+  rsync -e ssh -avz --progress "${CENTRAL_STABLE}" "${REMOTE_PATH}" || die "Upload of central stable.txt failed"
+else
+  log "No central stable.txt found to upload."
+fi
+
 # In "all" mode, also upload ISO artifacts
 if [[ "$MODE" == "all" ]]; then
   log "All mode enabled: Uploading ISO artifacts from ${OUTPUT_SUBDIR}:"
-  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}/signed_*.iso" "${REMOTE_SUBPATH}" || die "Upload of signed ISO failed"
-  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}/signed_*.iso.sha256" "${REMOTE_SUBPATH}" || die "Upload of ISO checksum failed"
+  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/signed_*.iso "${REMOTE_SUBPATH}" || die "Upload of signed ISO failed"
+  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 "${REMOTE_SUBPATH}" || die "Upload of ISO checksum failed"
 fi
 
 log "Upload completed successfully!"

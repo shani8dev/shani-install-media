@@ -33,7 +33,7 @@ if [ $allowed -eq 0 ]; then
     echo "Disallowed argument: '$disallowed_arg'"
     echo "Allowed operations: query (-Q/--query), file lookup (-F/--file), search (-Ss/--search), list (-Sl/--list), help (-h/--help), and version (--version)."
     echo "To install or update applications, please use Flatpak."
-    echo "System updates must be performed only via deploy-image."
+    echo "System updates must be performed only via shani-deploy command."
     exit 1
 fi
 
