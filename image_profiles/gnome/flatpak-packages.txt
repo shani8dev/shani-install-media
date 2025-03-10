@@ -6,7 +6,6 @@ org.gnome.Loupe
 org.gnome.Showtime
 org.gnome.Snapshot
 org.gnome.Connections
-org.gnome.baobab
 org.gnome.font-viewer
 org.gnome.TextEditor
 org.gnome.Maps
@@ -16,7 +15,6 @@ org.gnome.Calculator
 org.gnome.Weather
 org.gnome.SoundRecorder
 org.gnome.SimpleScan
-org.gnome.Logs
 org.gnome.Boxes
 org.gnome.NetworkDisplays
 org.gnome.Podcasts
