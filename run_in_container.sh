@@ -31,7 +31,7 @@ mkdir -p "$GNUPGHOME"
 CONTAINER_WORK_DIR="/home/builduser/build"
 CONTAINER_PACMAN_CACHE="/var/cache/pacman"
 CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
-CUSTOM_MIRROR="https://in.mirrors.cicku.me/archlinux/\$repo/os/\$arch"
+CUSTOM_MIRROR="https://mirror.albony.in/archlinux/\$repo/os/\$arch"
 DOCKER_IMAGE="shrinivasvkumbhar/shani-builder"
 
 # Determine whether a TTY is available

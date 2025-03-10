@@ -2,6 +2,7 @@
 Description=Reload systemd daemon after etc.mount
 Requires=etc.mount
 After=etc.mount
+Before=local-fs.target
 
 [Service]
 Type=oneshot
@@ -10,3 +11,4 @@ RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
+

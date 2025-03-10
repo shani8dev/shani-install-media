@@ -24,7 +24,7 @@ pv
 nbd
 mesa
 gnome-disk-utility
-os-installer
+os-installer-git
 os-installer-config
 arch-install-scripts
 sway
