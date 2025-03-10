@@ -29,11 +29,14 @@ io.github.seadve.Kooha
 io.github.mrvladus.List
 io.github.flattool.Warehouse
 com.github.tchx84.Flatseal
+io.github.giantpinkrobots.flatsweep
 com.github.maoschanz.drawing
 com.mattjakeman.ExtensionManager
 io.gitlab.adhami3310.Impression
 de.haeckerfelix.Fragments
 de.haeckerfelix.Shortwave
+com.belmoussaoui.Decoder
+com.belmoussaoui.Authenticator
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
 com.vivaldi.Vivaldi
