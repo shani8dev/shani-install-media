@@ -1,0 +1,55 @@
+#!/bin/bash
+# Wrapper for adduser on Arch Linux that adds default extra groups,
+# merging with any -G option provided by the caller.
+#
+# Default extra groups:
+DEFAULT_EXTRA_GROUPS="wheel,input,realtime,video,sys,cups,lp,kvm,scanner"
+
+# Array to collect new arguments
+new_args=()
+# Flag to indicate if a -G option was provided
+provided_G=0
+
+# Process the command-line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -G)
+            provided_G=1
+            shift
+            provided_groups="$1"
+            # Merge provided groups with default groups.
+            if [ -n "$provided_groups" ]; then
+                merged_groups="${provided_groups},${DEFAULT_EXTRA_GROUPS}"
+            else
+                merged_groups="${DEFAULT_EXTRA_GROUPS}"
+            fi
+            new_args+=("-G" "$merged_groups")
+            shift
+            ;;
+        -G*)
+            # Handle the case where -G is concatenated with its value, e.g. "-Ggroup1,group2"
+            provided_G=1
+            provided_groups="${1:2}"  # remove the '-G' prefix
+            if [ -n "$provided_groups" ]; then
+                merged_groups="${provided_groups},${DEFAULT_EXTRA_GROUPS}"
+            else
+                merged_groups="${DEFAULT_EXTRA_GROUPS}"
+            fi
+            new_args+=("-G" "$merged_groups")
+            shift
+            ;;
+        *)
+            new_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# If no -G option was provided, add our default extra groups
+if [ $provided_G -eq 0 ]; then
+    new_args+=("-G" "$DEFAULT_EXTRA_GROUPS")
+fi
+
+# Execute the real adduser command with the new arguments
+exec /usr/bin/adduser "${new_args[@]}"
+

@@ -1,0 +1,12 @@
+[Unit]
+Description=Reload systemd daemon after etc.mount
+Requires=etc.mount
+After=etc.mount
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl daemon-reload
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
