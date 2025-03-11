@@ -1,6 +1,6 @@
 [Unit]
 Description=Add default groups to newly created users
-After=accounts-daemon.service graphical.target
+After=accounts-daemon.service
 
 [Service]
 Type=oneshot
