@@ -22,9 +22,10 @@ mkinitcpio-archiso
 mkinitcpio-nfs-utils
 pv
 nbd
+gettext
 mesa
 gnome-disk-utility
-os-installer-git
+os-installer
 os-installer-config
 arch-install-scripts
 sway
