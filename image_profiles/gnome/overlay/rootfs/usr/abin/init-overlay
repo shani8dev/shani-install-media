@@ -3,7 +3,19 @@
 systemctl daemon-reload
 mount -a
 
-for service in $(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}'); do
-    systemctl is-active --quiet "$service" || { echo "Starting $service..."; systemctl start "$service" &; }
+# Get system boot time
+boot_time=$(systemctl show systemd --property=ExecMainStartTimestamp --value)
+
+systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}' | while read -r service; do
+    [[ "$service" == *"@"* ]] && continue  # Skip template services
+    systemctl is-enabled --quiet "$service" || continue  # Ensure it's enabled
+
+    # Get the service's last start timestamp
+    start_time=$(systemctl show --property=ExecMainStartTimestamp --value "$service")
+
+    # If the service has never started or started before the current boot, start it
+    if [[ -z "$start_time" || "$start_time" < "$boot_time" ]]; then
+        systemctl start "$service" &
+    fi
 done
 
