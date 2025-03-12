@@ -1,13 +1,9 @@
 #!/bin/bash
 
-# Reload systemd manager configuration
 systemctl daemon-reload
-
-# Mount all filesystems specified in /etc/fstab
 mount -a
 
 for service in $(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}'); do
-    systemctl is-active --quiet "$service" || echo "Starting $service..." && systemctl start "$service" &
+    systemctl is-active --quiet "$service" || { echo "Starting $service..."; systemctl start "$service" &; }
 done
-
 
