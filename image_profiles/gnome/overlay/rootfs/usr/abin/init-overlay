@@ -6,10 +6,8 @@ systemctl daemon-reload
 # Mount all filesystems specified in /etc/fstab
 mount -a
 
-# Start all enabled services that are not currently active
 for service in $(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}'); do
-    if ! systemctl is-active --quiet "$service"; then
-        systemctl start "$service"
-    fi
+    systemctl is-active --quiet "$service" || echo "Starting $service..." && systemctl start "$service" &
 done
+
 
