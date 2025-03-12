@@ -1,13 +1,10 @@
 [Unit]
-Description=Reload systemd daemon after etc.mount
-Requires=etc.mount
-After=etc.mount
-Before=local-fs.target
+Description=Initialize system after reaching multi-user.target
+After=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/systemctl daemon-reload
-ExecStart=/bin/mount -a
+ExecStart=/usr/abin/init-overlay
 RemainAfterExit=yes
 
 [Install]
