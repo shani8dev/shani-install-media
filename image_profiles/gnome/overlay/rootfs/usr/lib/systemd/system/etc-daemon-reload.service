@@ -7,6 +7,7 @@ Before=local-fs.target
 [Service]
 Type=oneshot
 ExecStart=/bin/systemctl daemon-reload
+ExecStart=/bin/mount -a
 RemainAfterExit=yes
 
 [Install]
