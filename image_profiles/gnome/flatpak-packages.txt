@@ -35,8 +35,7 @@ com.mattjakeman.ExtensionManager
 io.gitlab.adhami3310.Impression
 de.haeckerfelix.Fragments
 de.haeckerfelix.Shortwave
-com.belmoussaoui.Decoder
-com.belmoussaoui.Authenticator
+dev.fredol.open-tv
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
 com.vivaldi.Vivaldi
