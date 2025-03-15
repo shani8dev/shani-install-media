@@ -17,7 +17,6 @@ org.gnome.SoundRecorder
 org.gnome.SimpleScan
 org.gnome.Boxes
 org.gnome.NetworkDisplays
-org.gnome.Podcasts
 org.gnome.meld
 org.gnome.Nibbles
 org.gnome.Mahjongg
@@ -29,15 +28,14 @@ io.github.seadve.Kooha
 io.github.mrvladus.List
 io.github.flattool.Warehouse
 com.github.tchx84.Flatseal
-io.github.giantpinkrobots.flatsweep
 com.github.maoschanz.drawing
 com.mattjakeman.ExtensionManager
 io.gitlab.adhami3310.Impression
 de.haeckerfelix.Fragments
 de.haeckerfelix.Shortwave
-dev.fredol.open-tv
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
+io.github.zaedus.spider
+com.vixalien.sticky
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
-

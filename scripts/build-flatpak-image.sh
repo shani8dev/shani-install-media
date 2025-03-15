@@ -2,6 +2,16 @@
 # build-flatpak-image.sh – Build the Flatpak image (container-only)
 
 set -Eeuo pipefail
+
+# Ensure machine-id exists for DBUS
+if [ ! -f /etc/machine-id ]; then
+    dbus-uuidgen --ensure=/etc/machine-id
+fi
+
+# (Optional) Set XDG_DATA environment variables so applications find Flatpak exports
+export XDG_DATA_HOME=/usr/share
+export XDG_DATA_DIRS=/var/lib/flatpak/exports/share:/usr/share
+
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/../config/config.sh"  # Ensure that functions like die, warn, log, etc. are defined here
 
@@ -153,6 +163,14 @@ if ! flatpak repair --system; then
     warn "Flatpak repair encountered issues"
 else
     log "Flatpak repair completed successfully"
+fi
+
+# Remove any unused Flatpak packages (e.g. orphaned runtimes and extensions)
+log "Removing unused Flatpak packages"
+if ! flatpak uninstall --assumeyes --noninteractive --unused --system --delete-data; then
+    warn "Failed to remove unused Flatpak packages"
+else
+    log "Unused Flatpak packages removed successfully"
 fi
 
 # Prepare Btrfs image for Flatpak data (10G)
