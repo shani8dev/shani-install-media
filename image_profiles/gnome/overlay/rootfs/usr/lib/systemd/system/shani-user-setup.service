@@ -5,6 +5,3 @@ After=accounts-daemon.service
 [Service]
 Type=oneshot
 ExecStart=/usr/abin/shani-user-setup
-
-[Install]
-WantedBy=multi-user.target

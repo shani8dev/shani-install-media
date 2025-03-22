@@ -1,6 +1,0 @@
-[Enable Hibernate]
-Identity=unix-user:*
-Action=org.freedesktop.upower.hibernate
-ResultAny=yes
-ResultInactive=yes
-ResultActive=yes
