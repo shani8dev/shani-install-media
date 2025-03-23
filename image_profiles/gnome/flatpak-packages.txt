@@ -13,6 +13,7 @@ org.gnome.Maps
 org.gnome.clocks
 org.gnome.Characters
 org.gnome.Calculator
+org.gnome.Calendar
 org.gnome.Weather
 org.gnome.SoundRecorder
 org.gnome.SimpleScan
