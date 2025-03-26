@@ -3,7 +3,7 @@
 # merging with any -G option provided by the caller.
 #
 # Default extra groups:
-DEFAULT_EXTRA_GROUPS="wheel,input,realtime,video,sys,cups,lp,kvm,scanner"
+DEFAULT_EXTRA_GROUPS="input,realtime,video,sys,cups,lp,kvm,scanner"
 
 # Array to collect new arguments
 new_args=()
