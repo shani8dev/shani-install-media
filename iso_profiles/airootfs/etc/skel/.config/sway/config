@@ -1,23 +1,57 @@
-###############################################################################
-# Basic Settings
-###############################################################################
+# Set background image
+exec swaybg -i /usr/share/backgrounds/shani/saturn-x.png -m fill
 
-# Set the modifier key (Mod4 is typically the Super/Windows key)
-set $mod Mod4
+# Terminal emulator (e.g., foot)
+set $mod Mod4                       # Mod key (Super key)
+set $term foot                      # Set terminal emulator to foot
 
-# Set your preferred terminal emulator
-set $term foot
+# Automatically launch os-installer on startup
+exec os-installer                   # Launch os-installer automatically on startup
 
-###############################################################################
-# Applications & Wallpaper
-###############################################################################
+# Bar configuration with buttons included in one block
+bar {
+    position top                      # Position the bar at the top of the screen
+    height 40px                       # Increased height for better visibility
+    padding_left 15px                 # Padding on the left for spacing
+    padding_right 15px                # Padding on the right for spacing
+    font pango:DejaVu Sans Mono       # Font for better readability
+    colors {
+        background #1D1F21            # Darker background for contrast
+        statusline #EAEAEA            # Light grey text for statusline
+        active_workspace #66BB6A      # Lighter green for active workspace
+        inactive_workspace #888888    # Grey for inactive workspaces
+        binding_mode #FF4081          # Bright pink for binding mode
+    }
 
-# Launch terminal with Mod+Enter
-bindsym $mod+Return exec $term
+    # Status command (time and network status)
+    status_command "date '+%H:%M' | sed 's/^/Time: /'"  # Display time in the bar
+    tray_output primary               # Ensure tray icons are shown
 
-# Launch terminal with Ctrl+Alt+t (additional binding)
-bindsym Ctrl+Alt+t exec foot
+    # Bar buttons (e.g., terminal and installer)
+    buttons {
+        button "Terminal" {
+            exec $term               # Button to launch terminal
+        }
+        button "os-installer" {
+            exec $term -e "os-installer"  # Button to launch os-installer in terminal
+        }
+    }
+}
 
-# Auto-launch application as root (ensure passwordless sudo is configured)
-exec os-installer
+# Keybindings
+# Launch terminal with Mod+Return
+bindsym $mod+Return exec $term      
+
+# Launch terminal with Ctrl+Alt+t (alternative binding)
+bindsym Ctrl+Alt+t exec $term       
+
+# Minimal window navigation bindings
+bindsym $mod+h focus left           # Focus left window
+bindsym $mod+j focus down           # Focus down window
+bindsym $mod+k focus up             # Focus up window
+bindsym $mod+l focus right          # Focus right window
+
+# Layout toggles (tile/split)
+bindsym $mod+f layout toggle split  # Toggle split layout
+bindsym $mod+v layout toggle tabbed # Toggle tabbed layout
 
