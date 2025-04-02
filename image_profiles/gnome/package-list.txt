@@ -20,4 +20,3 @@ desktop-entry-hider
 dracut
 pipewire-jack
 openresolv
-ttf-joypixels
