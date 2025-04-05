@@ -1,0 +1,88 @@
+# ============================================================================
+# /etc/fstab - Full Improved Configuration with Additional Volatile Directories
+# ----------------------------------------------------------------------------
+# This file defines mount points for a UEFI system that uses a Btrfs filesystem
+# (labeled "shani_root") divided into several subvolumes, as well as tmpfs mounts
+# for directories containing transient data.
+#
+# Btrfs Subvolumes (from "shani_root"):
+#   - @home        => /home          (user data)
+#   - @data        => /data          (persistent storage for overlays)
+#   - @log         => /var/log         (system variable data)
+#   - @flatpak     => /var/lib/flatpak (Flatpak applications)
+#   - @containers  => /var/lib/containers (container data)
+#   - @swap        => /swap          (swap; CoW disabled for performance)
+#
+# Common options for Btrfs subvolumes:
+#   noatime         - Disable access time updates (reduces unnecessary writes).
+#   compress=zstd   - Enable on-the-fly compression with zstd.
+#   space_cache=v2  - Use the updated free space cache.
+#   autodefrag      - Enable automatic defragmentation (beneficial for HDDs).
+#
+# Note: The swap subvolume uses nodatacow and nospace_cache to disable CoW,
+#       ensuring optimal swap performance.
+#
+# tmpfs mounts are used for directories with volatile data to reduce disk I/O.
+# ============================================================================
+ 
+#############################
+# EFI System Partition      #
+#############################
+# Mount the EFI partition (required for UEFI boot).
+LABEL=shani_boot   /boot/efi   vfat    defaults  0 2
+
+#############################
+# Btrfs Subvolumes (RW)     #
+#############################
+# Mount Btrfs subvolumes from the filesystem labeled "shani_root".
+
+# /home: User data
+LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+
+# /data: For persistent storage (e.g. used by the overlay for /etc)
+LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+
+# /var/cache: Separate subvolume for system variable cache data
+LABEL=shani_root   /var/cache    btrfs   defaults,noatime,subvol=@cache,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+
+# /var/log: Separate subvolume for system variable log data
+LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+
+# /var/lib/flatpak: Dedicated subvolume for Flatpak apps
+LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+
+# /var/lib/containers: Dedicated subvolume for container data
+LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+
+# /swap: Swap space (disable CoW and compression)
+LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
+
+######################################
+# Swap Space (Swapfile on Btrfs)     #
+######################################
+# Ensure the swapfile is mounted at boot.
+/swap/swapfile none swap sw 0 0
+
+######################################
+# tmpfs for Volatile Directories     #
+######################################
+# These tmpfs mounts store volatile data in RAM to reduce disk writes.
+#
+# /tmp: Temporary files; data is cleared at reboot.
+tmpfs   /tmp      tmpfs   defaults,noatime   0 0
+
+# /run: Runtime data for processes and services.
+tmpfs   /run      tmpfs   defaults,noatime   0 0
+
+##############################
+# Overlay for /etc           #
+##############################
+# Directly reference root's /etc as lowerdir
+overlay /etc overlay  rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
+
+##############################
+# Overlay for /var           #
+##############################
+# Directly reference root's /var as lowerdir
+# not using due to /var being made tmpfs by systemd.volatile=state cmdline parameter
+#overlay /var overlay  rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0

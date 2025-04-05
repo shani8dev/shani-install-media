@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 
-iso_name="shanios"
+iso_name="shanios-gnome"
 iso_label="SHANI_$(date +%Y%m)"
 iso_publisher="Shani OS <https://shani.dev>"
 iso_application="Shani OS Live/Rescue CD"

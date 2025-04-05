@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Define allowed operations:
+# - Query: -Q or --query (and any extensions, e.g. -Qi, -Qs, etc.)
+# - File lookup: -F or --file (and extensions)
+# - Search: -Ss or --search (and extensions)
+# - List: -Sl or --list (and extensions)
+# - Help: -h or --help
+# - Version: --version
+allowed=1
+disallowed_arg=""
+
+for arg in "$@"; do
+    case "$arg" in
+        -Q*|--query*|\
+        -F*|--file*|\
+        -Ss*|--search*|\
+        -Sl*|--list*|\
+        -h|--help|--version)
+            # This argument is allowed.
+            ;;
+        *)
+            allowed=0
+            disallowed_arg="$arg"
+            break
+            ;;
+    esac
+done
+
+if [ $allowed -eq 0 ]; then
+    echo "Error: Shanios is an immutable distro."
+    echo "System modifications (install, remove, upgrade, sync, etc.) are not permitted via pacman."
+    echo "Disallowed argument: '$disallowed_arg'"
+    echo "Allowed operations: query (-Q/--query), file lookup (-F/--file), search (-Ss/--search), list (-Sl/--list), help (-h/--help), and version (--version)."
+    echo "To install or update applications, please use Flatpak."
+    echo "System updates must be performed only via shani-deploy command."
+    exit 1
+fi
+
+# If only allowed (read-only) operations are provided, execute pacman.
+exec /usr/bin/pacman "$@"
+

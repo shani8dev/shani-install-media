@@ -16,10 +16,10 @@ while getopts ":p:" opt; do
 done
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
-rm -rf "${TEMP_DIR}"  # Remove old directories
+rm -rf "${TEMP_DIR}/${PROFILE}"  # Remove old directories
 [[ -f "${OUTPUT_SUBDIR}/latest.txt" ]] || die "Latest base image not found. Run build-base-image.sh first."
 base_image=$(<"${OUTPUT_SUBDIR}/latest.txt")
-ISO_DIR="${TEMP_DIR}/iso/${OS_NAME}/x86_64"
+ISO_DIR="${TEMP_DIR}/${PROFILE}/iso/${OS_NAME}/x86_64"
 mkdir -p "$ISO_DIR"
 
 log "Copying base image (rootfs.zst)..."
@@ -30,6 +30,6 @@ log "Copying Flatpak image (flatpakfs.zst)..."
 cp "${OUTPUT_SUBDIR}/flatpakfs.zst" "${ISO_DIR}/" || die "Failed to copy Flatpak image"
 
 log "Running mkarchiso..."
-mkarchiso -v -w "${TEMP_DIR}" -o "${OUTPUT_SUBDIR}" "${ISO_PROFILES_DIR}" || die "mkarchiso failed"
+mkarchiso -v -w "${TEMP_DIR}/${PROFILE}" -o "${OUTPUT_SUBDIR}" "${ISO_PROFILES_DIR}/${PROFILE}" || die "mkarchiso failed"
 log "ISO build completed!"
 

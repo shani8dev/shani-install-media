@@ -22,7 +22,7 @@ mkdir -p "${OUTPUT_SUBDIR}"
 OUTPUT_ISO=$(find "${OUTPUT_SUBDIR}" -maxdepth 1 -type f -name '*.iso' ! -name '*signed*.iso' | sort | tail -n1)
 [[ -n "$OUTPUT_ISO" ]] || error_exit "No ISO found to repack."
 
-REPACK_DIR="${TEMP_DIR}/repack"
+REPACK_DIR="${TEMP_DIR}/${PROFILE}/repack"
 mkdir -p "${REPACK_DIR}"
 
 log "Extracting EFI files from ISO: ${OUTPUT_ISO}"
@@ -55,8 +55,8 @@ umount "$mount_dir" || error_exit "Unmounting eltorito image failed"
 chmod +w "${REPACK_DIR}/grubx64.efi" "${REPACK_DIR}/shellx64.efi" "${REPACK_DIR}/vmlinuz-linux"
 
 log "Preparing Shim and MOK files for Secure Boot..."
-cp "${TEMP_DIR}/x86_64/airootfs/usr/share/shim-signed/shimx64.efi" "${REPACK_DIR}/BOOTx64.EFI" || error_exit "Failed to copy shimx64.efi"
-cp "${TEMP_DIR}/x86_64/airootfs/usr/share/shim-signed/mmx64.efi" "${REPACK_DIR}/" || error_exit "Failed to copy mmx64.efi"
+cp "${TEMP_DIR}/${PROFILE}/x86_64/airootfs/usr/share/shim-signed/shimx64.efi" "${REPACK_DIR}/BOOTx64.EFI" || error_exit "Failed to copy shimx64.efi"
+cp "${TEMP_DIR}/${PROFILE}/x86_64/airootfs/usr/share/shim-signed/mmx64.efi" "${REPACK_DIR}/" || error_exit "Failed to copy mmx64.efi"
 cp "${MOK_DIR}/MOK.der" "${REPACK_DIR}/" || error_exit "Failed to copy MOK der"
 log "Shim and MOK files prepared successfully for both architectures."
 

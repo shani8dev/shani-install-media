@@ -1,0 +1,4 @@
+root:x:0:
+shani:x:1001:
+wheel:x:10:shani
+
