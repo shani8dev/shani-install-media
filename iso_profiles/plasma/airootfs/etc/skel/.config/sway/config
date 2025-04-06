@@ -1,27 +1,6 @@
-# Set background image
 exec swaybg -i /usr/share/backgrounds/shani/saturn-x.png -m fill
-
-# Terminal emulator (e.g., foot)
-set $mod Mod4                       # Mod key (Super key)
-set $term foot                      # Set terminal emulator to foot
-
-# Automatically launch os-installer on startup
-exec os-installer                   # Launch os-installer automatically on startup
-
-# Keybindings
-# Launch terminal with Mod+Return
-bindsym $mod+Return exec $term      
-
-# Launch terminal with Ctrl+Alt+t (alternative binding)
-bindsym Ctrl+Alt+t exec $term       
-
-# Minimal window navigation bindings
-bindsym $mod+h focus left           # Focus left window
-bindsym $mod+j focus down           # Focus down window
-bindsym $mod+k focus up             # Focus up window
-bindsym $mod+l focus right          # Focus right window
-
-# Layout toggles (tile/split)
-bindsym $mod+f layout toggle split  # Toggle split layout
-bindsym $mod+v layout toggle tabbed # Toggle tabbed layout
-
+set $mod Mod4
+set $term foot
+exec os-installer
+bindsym $mod+Return exec $term
+bindsym Ctrl+Alt+t exec $term
