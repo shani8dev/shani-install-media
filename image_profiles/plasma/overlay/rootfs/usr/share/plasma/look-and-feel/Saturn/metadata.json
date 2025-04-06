@@ -1,0 +1,21 @@
+
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "Shrinivas.v.kumbhar@gmail.com",
+                "Name": "Shrinivas Vishnu Kumbhar"
+            }
+        ],
+        "Category": "",
+        "Description": "Saturn Dark",
+        "EnabledByDefault": true,
+        "Id": "Saturn",
+        "License": "GPL 3+",
+        "Name": "Saturn",
+        "Version": "2.0",
+        "Website": "https://shani.dev"
+    },
+    "X-Plasma-APIVersion": "2"
+}

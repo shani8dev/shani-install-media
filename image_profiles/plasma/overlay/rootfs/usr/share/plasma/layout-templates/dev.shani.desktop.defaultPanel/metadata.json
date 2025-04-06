@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/LayoutTemplate",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "shrinivas.v.kumbhar@gmail.com",
+                "Name": "Shrinivas Vishnu Kumbhar"
+            }
+        ],
+        "Category": "",
+        "EnabledByDefault": true,
+        "Id": "dev.shani.desktop.defaultPanel",
+        "License": "GPL",
+        "Name": "Shani Default Top Panel",
+        "Version": "2.0",
+        "Website": "http://shani.dev/"
+    },
+    "X-Plasma-ContainmentCategories": [
+        "panel"
+    ],
+    "X-Plasma-Shell": "plasma-shani"
+}
