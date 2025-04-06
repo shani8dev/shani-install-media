@@ -5,14 +5,12 @@ io.github.dvlv.boxbuddyrs
 org.virt_manager.virt-manager
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
-org.videolan.VLC
 com.obsproject.Studio
 org.kde.kolourpaint
 org.kde.kompare
 org.kde.kate
 org.kde.okular
 org.kde.gwenview
-org.kde.elisa
 org.kde.kamoso
 org.kde.isoimagewriter
 org.kde.kget
