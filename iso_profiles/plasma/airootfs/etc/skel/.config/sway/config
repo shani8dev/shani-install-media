@@ -8,36 +8,6 @@ set $term foot                      # Set terminal emulator to foot
 # Automatically launch os-installer on startup
 exec os-installer                   # Launch os-installer automatically on startup
 
-# Bar configuration with buttons included in one block
-bar {
-    position top                      # Position the bar at the top of the screen
-    height 40px                       # Increased height for better visibility
-    padding_left 15px                 # Padding on the left for spacing
-    padding_right 15px                # Padding on the right for spacing
-    font pango:DejaVu Sans Mono       # Font for better readability
-    colors {
-        background #1D1F21            # Darker background for contrast
-        statusline #EAEAEA            # Light grey text for statusline
-        active_workspace #66BB6A      # Lighter green for active workspace
-        inactive_workspace #888888    # Grey for inactive workspaces
-        binding_mode #FF4081          # Bright pink for binding mode
-    }
-
-    # Status command (time and network status)
-    status_command "date '+%H:%M' | sed 's/^/Time: /'"  # Display time in the bar
-    tray_output primary               # Ensure tray icons are shown
-
-    # Bar buttons (e.g., terminal and installer)
-    buttons {
-        button "Terminal" {
-            exec $term               # Button to launch terminal
-        }
-        button "os-installer" {
-            exec $term -e "os-installer"  # Button to launch os-installer in terminal
-        }
-    }
-}
-
 # Keybindings
 # Launch terminal with Mod+Return
 bindsym $mod+Return exec $term      
