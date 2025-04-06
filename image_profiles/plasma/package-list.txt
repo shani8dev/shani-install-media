@@ -20,3 +20,4 @@ desktop-entry-hider
 dracut
 pipewire-jack
 openresolv
+noto-fonts
