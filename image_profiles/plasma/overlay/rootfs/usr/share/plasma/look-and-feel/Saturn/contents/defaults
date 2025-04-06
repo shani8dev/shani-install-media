@@ -17,7 +17,7 @@ WallpaperPlugin=org.kde.image
 [kscreenlockerrc][Greeter][Wallpaper][org.kde.image][General]
 Image=file:///usr/share/backgrounds/shani/saturn-x.png
 
-[Wallpaper]
+[Wallpaper][org.kde.image][General]
 Image=/usr/share/backgrounds/shani/saturn-x.png
 
 [kcminputrc][Mouse]

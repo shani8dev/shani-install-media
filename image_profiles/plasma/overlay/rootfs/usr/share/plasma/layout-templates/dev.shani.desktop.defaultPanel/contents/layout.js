@@ -23,7 +23,7 @@ panel.location = "top"
 // The Kickoff launcher
 var launcher = panel.addWidget("org.kde.plasma.kickoff")
 launcher.currentConfigGroup = ["General"]
-launcher.writeConfig("icon", "shanios-logo")
+launcher.writeConfig("icon", "show-grid")
 launcher.writeConfig("lengthFirstMargin", 7)
 launcher.currentConfigGroup = ["Shortcuts"]
 launcher.writeConfig("global", "Alt+F1")
@@ -52,7 +52,7 @@ title.writeConfig("lengthFirstMargin", 7)
 title.writeConfig("lengthMarginsLock", false)
 title.writeConfig("filterByScreen", true)
 title.currentConfigGroup = ["Appearance"]
-title.writeConfig("altTxt", "Dr460nized KDE 🔥")
+title.writeConfig("altTxt", "Shanios Plasma 🪐 ")
 title.writeConfig("isBold", true)
 title.writeConfig("visible", false)
 
