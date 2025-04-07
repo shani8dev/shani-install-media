@@ -37,8 +37,8 @@ buttons.writeConfig("inactiveStateEnabled", true)
 buttons.writeConfig("lengthFirstMargin", 6)
 buttons.writeConfig("lengthLastMargin", 6)
 buttons.writeConfig("lengthMarginsLock", false)
-buttons.writeConfig("selectedPlugin", "org.kde.kwin.aurorae")
-buttons.writeConfig("selectedTheme", "__aurorae__svg__Saturn-dark")
+buttons.writeConfig("selectedPlugin", "org.kde.breeze")
+buttons.writeConfig("selectedTheme", "Breeze")
 buttons.writeConfig("spacing", 6)
 buttons.writeConfig("useCurrentDecoration", false)
 buttons.writeConfig("useDecorationMetrics", false)
@@ -78,7 +78,7 @@ digitalclock.writeConfig("customDateFormat", "dddd, MMM d")
 digitalclock.writeConfig("dateDisplayFormat", "BesideTime")
 digitalclock.writeConfig("dateFormat", "custom")
 digitalclock.writeConfig("enabledCalendarPlugins", "alternatecalendar,astronomicalevents,holidaysevents")
-digitalclock.writeConfig("fontFamily", "Fira Sans ExtraBold")
+digitalclock.writeConfig("fontFamily", "Noto Sans")
 digitalclock.writeConfig("fontStyleName", "Regular")
 digitalclock.writeConfig("fontWeight", 400)
 digitalclock.writeConfig("showWeekNumbers", true)
@@ -86,6 +86,8 @@ digitalclock.writeConfig("showWeekNumbers", true)
 // Add Right Expandable Spacer
 var spacer = panel.addWidget("org.kde.plasma.panelspacer")
 
+// Kimpanel
+panel.addWidget("org.kde.plasma.kimpanel");
 // System Tray
 panel.addWidget("org.kde.plasma.systemtray")
 

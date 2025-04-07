@@ -8,7 +8,6 @@ wobblywindowsEnabled=true
 
 [Wayland]
 InputMethod[$e]=/usr/share/applications/org.freedesktop.IBus.Panel.Wayland.Gtk3.desktop
-VirtualKeyboardEnabled=true
 
 [Windows]
 BorderlessMaximizedWindows=true
@@ -17,5 +16,5 @@ BorderlessMaximizedWindows=true
 Scale=1
 
 [org.kde.kdecoration2]
-library=org.kde.kwin.aurorae
-theme=__aurorae__svg__Saturn-dark
+library=org.kde.breeze
+theme=Breeze

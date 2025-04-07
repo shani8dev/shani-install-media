@@ -6,7 +6,7 @@ LookAndFeelPackage=Saturn
 ColorScheme=SaturnDark
 
 [kdeglobals][Icons]
-Theme=Tela-circle-orange-dark
+Theme=breeze-dark
 
 [plasmarc][Theme]
 name=Saturn-dark
@@ -36,8 +36,8 @@ LayoutName=org.kde.breeze.desktop
 LayoutName=org.kde.breeze.desktop
 
 [kwinrc][org.kde.kdecoration2]
-library=org.kde.kwin.aurorae
-theme=__aurorae__svg__Saturn-dark
+library=org.kde.breeze
+theme=Breeze
 
 [kvantum.kvconfig][General]
 theme=Saturn
