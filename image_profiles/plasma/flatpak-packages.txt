@@ -2,6 +2,8 @@ io.github.flattool.Warehouse
 com.github.tchx84.Flatseal
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
+org.virt_manager.virt_manager.Extension.Qemu
+org.virt_manager.virt-manager
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
 org.kde.KStyle.Kvantum
