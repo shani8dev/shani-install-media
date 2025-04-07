@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "Plasma/Wallpaper",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "shrinivas.v.kumbhar@gmail.com",
+                "Name": "Shrinivas Vishnu Kumbhar"
+            }
+        ],
+        "Id": "Saturn",
+        "License": "CC-BY-SA-4.0",
+        "Name": "Saturn"
+    },
+    "X-KDE-PlasmaImageWallpaper-AccentColor": "#ff7f50"
+}

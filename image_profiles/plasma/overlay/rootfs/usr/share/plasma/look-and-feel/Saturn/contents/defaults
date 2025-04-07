@@ -3,13 +3,13 @@ widgetStyle=Breeze
 LookAndFeelPackage=Saturn
 
 [kdeglobals][General]
-ColorScheme=BreezeDark
+ColorScheme=SaturnDark
 
 [kdeglobals][Icons]
-Theme=breeze-dark
+Theme=Tela-circle-orange-dark
 
 [plasmarc][Theme]
-name=default
+name=Saturn-dark
 
 [kscreenlockerrc][Greeter]
 WallpaperPlugin=org.kde.image
@@ -17,15 +17,26 @@ WallpaperPlugin=org.kde.image
 [kscreenlockerrc][Greeter][Wallpaper][org.kde.image][General]
 Image=file:///usr/share/backgrounds/shani/saturn-x.png
 
-[Wallpaper][org.kde.image][General]
-Image=/usr/share/backgrounds/shani/saturn-x.png
+[Wallpaper]
+Image=Saturn
 
 [kcminputrc][Mouse]
 cursorTheme=breeze_cursors
 
-[kwinrc][org.kde.kdecoration2]
-library=org.kde.breeze
-theme=Breeze
-
 [KSplash]
 Theme=Saturn
+
+[kwinrc][Windows]
+BorderlessMaximizedWindows=false
+
+[kwinrc][DesktopSwitcher]
+LayoutName=org.kde.breeze.desktop
+
+[kwinrc][WindowSwitcher]
+LayoutName=org.kde.breeze.desktop
+
+[kwinrc][org.kde.kdecoration2]
+ButtonsOnLeft=
+ButtonsOnRight=IAX
+library=org.kde.kwin.aurorae
+theme=__aurorae__svg__Saturn-dark

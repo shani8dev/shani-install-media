@@ -4,6 +4,7 @@ com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
+org.kde.KStyle.Kvantum
 org.kde.ark
 org.kde.dolphin
 org.kde.konsole
