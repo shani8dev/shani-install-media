@@ -173,6 +173,11 @@ else
     log "Unused Flatpak packages removed successfully"
 fi
 
+if [[ "$PROFILE" == "plasma" ]]; then
+    log "Applying Kvantum override for Plasma profile"
+    flatpak override --filesystem=xdg-config/Kvantum:ro --all
+fi
+
 # Prepare Btrfs image for Flatpak data (10G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
