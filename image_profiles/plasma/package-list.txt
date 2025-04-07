@@ -6,7 +6,7 @@ shani-accessibility
 shani-fonts
 shani-multimedia
 shani-bluetooth
-shani-input
+shani-peripherals
 shani-printer
 shani-scanner
 shani-network

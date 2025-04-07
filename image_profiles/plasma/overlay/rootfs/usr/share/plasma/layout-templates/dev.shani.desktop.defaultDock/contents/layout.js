@@ -16,7 +16,7 @@ var tasks = dock.addWidget("org.kde.plasma.icontasks")
 tasks.currentConfigGroup = ["General"]
 tasks.writeConfig("fill", false)
 tasks.writeConfig("iconSpacing", 2)
-tasks.writeConfig("launchers", "applications:org.kde.discover.desktop,preferred://browser,preferred://filemanager,applications:org.kde.plasma-systemmonitor.desktop,applications:systemsettings.desktop,file:///var/lib/flatpak/exports/share/applications/org.kde.konsole.desktop,file:///var/lib/flatpak/exports/share/applications/org.kde.kate.desktop,file:///var/lib/flatpak/exports/share/applications/org.onlyoffice.desktopeditors.desktop,file:///var/lib/flatpak/exports/share/applications/org.kde.kcalc.desktop")
+tasks.writeConfig("launchers", "applications:org.kde.discover.desktop,preferred://browser,preferred://filemanager,applications:org.kde.konsole.desktop,applications:org.kde.plasma-systemmonitor.desktop,applications:systemsettings.desktop,file:///var/lib/flatpak/exports/share/applications/org.kde.kate.desktop,file:///var/lib/flatpak/exports/share/applications/org.onlyoffice.desktopeditors.desktop,file:///var/lib/flatpak/exports/share/applications/org.kde.kcalc.desktop")
 tasks.writeConfig("maxStripes", 1)
 tasks.writeConfig("showOnlyCurrentDesktop", false)
 tasks.writeConfig("showOnlyCurrentScreen", false)

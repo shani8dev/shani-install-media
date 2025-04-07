@@ -20,6 +20,7 @@ org.gnome.SimpleScan
 org.gnome.Boxes
 org.gnome.NetworkDisplays
 org.gnome.meld
+org.gnome.FileRoller
 org.gnome.Nibbles
 org.gnome.Mahjongg
 org.gnome.Chess

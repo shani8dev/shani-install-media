@@ -1,0 +1,13 @@
+[Desktop Entry]
+DefaultProfile=shani.profile
+
+[Dialogs]
+FirstRun=false
+
+[Window]
+DynamicTabTitles=true
+Height=60
+KeepAbove=false
+ShowOnAllDesktops=false
+ToggleToFocus=true
+Width=70
