@@ -157,14 +157,6 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
     fi
 done <<< "$installed_runtimes"
 
-
-# Run repair to clean up any remaining inconsistencies;
-if ! flatpak repair --system; then
-    warn "Flatpak repair encountered issues"
-else
-    log "Flatpak repair completed successfully"
-fi
-
 # Remove any unused Flatpak packages (e.g. orphaned runtimes and extensions)
 log "Removing unused Flatpak packages"
 if ! flatpak uninstall --assumeyes --noninteractive --unused --system --delete-data; then
@@ -173,9 +165,11 @@ else
     log "Unused Flatpak packages removed successfully"
 fi
 
-if [[ "$PROFILE" == "plasma" ]]; then
-    log "Applying Kvantum override for Plasma profile"
-    flatpak override --filesystem=xdg-config/Kvantum:ro --all
+# Run repair to clean up any remaining inconsistencies;
+if ! flatpak repair --system; then
+    warn "Flatpak repair encountered issues"
+else
+    log "Flatpak repair completed successfully"
 fi
 
 # Prepare Btrfs image for Flatpak data (10G)
