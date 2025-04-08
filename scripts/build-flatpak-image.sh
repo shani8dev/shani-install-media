@@ -172,6 +172,14 @@ else
     log "Flatpak repair completed successfully"
 fi
 
+if [[ "$PROFILE" == "plasma" ]]; then
+    log "Applying Kvantum override for Plasma profile"
+    while IFS= read -r app; do
+        sudo flatpak override --filesystem=xdg-config/Kvantum:ro "$app"
+    done < <(flatpak list --system --app --columns=application)
+fi
+
+
 # Prepare Btrfs image for Flatpak data (10G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
