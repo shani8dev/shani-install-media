@@ -1,4 +1,5 @@
 com.obsproject.Studio
+com.vivaldi.Vivaldi
 io.github.berarma.Oversteer
 io.github.antimicrox.antimicrox
 org.openrgb.OpenRGB

@@ -1,0 +1,9 @@
+#!/bin/bash
+# Get the last created user
+NEW_USER=$(awk -F':' '$3 >= 1000 && $3 < 60000 {print $1}' /etc/passwd | tail -n1)
+
+# Add to default groups
+usermod -aG input,realtime,video,sys,cups,lp,kvm,scanner "$NEW_USER"
+
+# Set default shell
+usermod -s /bin/zsh "$NEW_USER"

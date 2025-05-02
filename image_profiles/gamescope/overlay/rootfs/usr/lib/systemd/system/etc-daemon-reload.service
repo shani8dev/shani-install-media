@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize system after reaching multi-user.target
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/abin/init-overlay
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

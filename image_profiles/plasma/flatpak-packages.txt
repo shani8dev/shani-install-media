@@ -12,6 +12,7 @@ org.kde.kate
 org.kde.okular
 org.kde.gwenview
 org.kde.elisa
+org.kde.haruna
 org.kde.kamoso
 org.kde.krdc
 org.kde.isoimagewriter

@@ -1,0 +1,7 @@
+[Unit]
+Description=Add default groups to newly created users
+After=accounts-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/abin/shani-user-setup
