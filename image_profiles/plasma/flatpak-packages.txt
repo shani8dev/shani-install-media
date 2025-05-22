@@ -5,7 +5,6 @@ io.github.dvlv.boxbuddyrs
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
 org.kde.KStyle.Kvantum
-org.kde.ark
 org.kde.kolourpaint
 org.kde.kompare
 org.kde.kate

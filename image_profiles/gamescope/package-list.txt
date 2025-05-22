@@ -1,7 +1,7 @@
 shani-keyring
 shani-settings
 shani-core
-shani-desktop-gnome
+shani-desktop-gamescope
 shani-accessibility
 shani-fonts
 shani-multimedia
