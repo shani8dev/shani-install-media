@@ -15,6 +15,7 @@ shani-storage
 shani-tools
 shani-tools-extra
 shani-video
+shani-video-guest
 shani-deploy
 desktop-entry-hider
 dracut
