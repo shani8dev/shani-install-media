@@ -30,6 +30,7 @@ org.gnome.Nibbles
 org.gnome.Mahjongg
 org.gnome.Chess
 org.gnome.Aisleriot
+org.gnome.Quadrapassel
 com.github.maoschanz.drawing
 com.mattjakeman.ExtensionManager
 io.gitlab.adhami3310.Impression
