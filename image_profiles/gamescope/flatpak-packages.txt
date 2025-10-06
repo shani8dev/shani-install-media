@@ -13,3 +13,4 @@ com.valvesoftware.Steam.Utility.steamtinkerlaunch
 org.freedesktop.Platform.VulkanLayer.MangoHud
 org.freedesktop.Platform.VulkanLayer.gamescope
 org.freedesktop.Platform.VulkanLayer.vkBasalt
+io.github.kolunmi.Bazaar

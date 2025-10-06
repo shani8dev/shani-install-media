@@ -179,6 +179,23 @@ if [[ "$PROFILE" == "plasma" ]]; then
     done < <(flatpak list --system --app --columns=application)
 fi
 
+if [[ "$PROFILE" == "gamescope" ]]; then
+  log "Applying SteamOS-like Flatpak overrides for Steam..."
+
+  sudo flatpak override com.valvesoftware.Steam \
+    --share=network \
+    --socket=wayland \
+    --socket=x11 \
+    --socket=pipewire \
+    --socket=system-bus \
+    --socket=session-bus \
+    --device=all \
+    --filesystem=home \
+    --filesystem=/mnt \
+    --filesystem=/media \
+    --filesystem=/run/media 
+  log "Overrides applied."
+fi
 
 # Prepare Btrfs image for Flatpak data (10G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
