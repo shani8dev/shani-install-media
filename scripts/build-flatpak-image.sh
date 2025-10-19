@@ -186,14 +186,14 @@ if [[ "$PROFILE" == "gamescope" ]]; then
     --share=network \
     --socket=wayland \
     --socket=x11 \
-    --socket=pipewire \
+    --socket=pulseaudio \
     --socket=system-bus \
     --socket=session-bus \
     --device=all \
     --filesystem=home \
     --filesystem=/mnt \
     --filesystem=/media \
-    --filesystem=/run/media 
+    --filesystem=/run/media
   log "Overrides applied."
 fi
 

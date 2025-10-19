@@ -17,5 +17,5 @@ else
 fi
 # dont skip user and loacale in installer for plasma
 sed -i 's/^skip_user: *yes/skip_user: no/' /etc/os-installer/config.yaml
-sed -i 's/^skip_locale: *yes/skip_locale: no/' /etc/os-installer/config.yaml
+sed -i 's/^skip_region: *yes/skip_region: no/' /etc/os-installer/config.yaml
 
