@@ -67,9 +67,9 @@ if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" ]]; then
     log "Applying overlay files..."
     cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${BUILD_DIR}/${BASE_SUBVOL}/" || die "Overlay copy failed"
 fi
-if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" ]]; then
+if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/${PROFILE}-customization.sh" ]]; then
     log "Applying customizations..."
-    bash "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/customizations.sh" "${BUILD_DIR}/${BASE_SUBVOL}" || die "Customizations failed"
+    bash "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/${PROFILE}-customization.sh" "${BUILD_DIR}/${BASE_SUBVOL}" || die "Customizations failed"
 fi
 
 arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF

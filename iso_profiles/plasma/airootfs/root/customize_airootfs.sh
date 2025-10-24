@@ -15,7 +15,7 @@ if [ -f /root/watermark.png ]; then
 else
     echo "[airootfs.sh] Warning: /root/watermark.png not found, skipping custom image copy."
 fi
-# dont skip user and loacale in installer for plasma
-sed -i 's/^skip_user: *yes/skip_user: no/' /etc/os-installer/config.yaml
-sed -i 's/^skip_region: *yes/skip_region: no/' /etc/os-installer/config.yaml
+# dont skip user and region in installer for plasma
+#sed -i 's/^skip_user: *yes/skip_user: no/' /etc/os-installer/config.yaml
+#sed -i 's/^skip_region: *yes/skip_region: no/' /etc/os-installer/config.yaml
 
