@@ -90,6 +90,7 @@ systemd-machine-id-setup --commit
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
+echo "stable" > /etc/shani-channel  
 
 # Create directories required for the read-only root fstab mounts that are missing
 mkdir -p /boot/efi
