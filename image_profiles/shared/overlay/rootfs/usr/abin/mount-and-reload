@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+# Mount all overlay filesystems
+mount -a
+
+# Reload systemd to discover services in overlay
+systemctl daemon-reload
+
+exit 0

@@ -1,8 +1,0 @@
-[Unit]
-Description=Watch for new users
-
-[Path]
-PathChanged=/etc/passwd
-
-[Install]
-WantedBy=multi-user.target

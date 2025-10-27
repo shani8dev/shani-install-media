@@ -1,6 +1,0 @@
-exec swaybg -i /usr/share/backgrounds/shani/saturn-x.png -m fill
-set $mod Mod4
-set $term foot
-exec os-installer
-bindsym $mod+Return exec $term
-bindsym Ctrl+Alt+t exec $term

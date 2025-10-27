@@ -1,0 +1,47 @@
+#!/bin/bash
+#
+# Start enabled services from /etc overlay that haven't started this boot
+# Run by etc-start-services.service after daemon-reload
+#
+set -euo pipefail
+
+# Process services from /etc overlay
+for service_file in /etc/systemd/system/*.service; do
+    [[ -f "$service_file" ]] || continue
+    
+    service=${service_file##*/}
+    
+    # Skip templates
+    [[ "$service" == *'@.service' ]] && continue
+    
+    # Check if enabled first (fast early exit)
+    systemctl is-enabled -q "$service" 2>/dev/null || continue
+    
+    # Get properties in one call
+    props=$(systemctl show "$service" \
+        -p ActiveState \
+        -p SubState \
+        -p InvocationID \
+        --value 2>/dev/null)
+    
+    IFS=$'\n' read -r -d '' -a prop_array <<< "$props" || true
+    active_state="${prop_array[0]:-inactive}"
+    sub_state="${prop_array[1]:-dead}"
+    invocation_id="${prop_array[2]:-}"
+    
+    # Skip if active or activating
+    [[ "$active_state" =~ ^(active|activating|reloading)$ ]] && continue
+    
+    # Skip if failed (don't retry failed services)
+    [[ "$sub_state" == "failed" ]] && continue
+    
+    # Skip if already started this boot
+    [[ -n "$invocation_id" && "$invocation_id" != "n/a" ]] && continue
+    
+    # Start service in background (let systemd check conditions/asserts)
+    echo "Starting $service..."
+    systemctl start "$service" &
+done
+
+wait
+exit 0
