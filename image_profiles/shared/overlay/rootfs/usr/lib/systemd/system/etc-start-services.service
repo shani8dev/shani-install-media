@@ -1,12 +1,10 @@
 [Unit]
 Description=Start services from overlay filesystem
 After=etc-daemon-reload.service
-DefaultDependencies=no
 
 [Service]
 Type=oneshot
 ExecStart=/usr/abin/start-overlay-services
-RemainAfterExit=no
 
 [Install]
 WantedBy=multi-user.target

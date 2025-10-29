@@ -3,7 +3,11 @@
 # Start enabled services from /etc overlay that haven't started this boot
 # Run by etc-start-services.service after daemon-reload
 #
-set -euo pipefail
+set -e
+
+# Array to track services to start
+declare -a services_to_start=()
+declare -a critical_services=()
 
 # Process services from /etc overlay
 for service_file in /etc/systemd/system/*.service; do
@@ -17,31 +21,49 @@ for service_file in /etc/systemd/system/*.service; do
     # Check if enabled first (fast early exit)
     systemctl is-enabled -q "$service" 2>/dev/null || continue
     
-    # Get properties in one call
+    # Check if already active or activating
+    if systemctl is-active -q "$service" 2>/dev/null; then
+        continue
+    fi
+    
+    # Get unit properties in one call
     props=$(systemctl show "$service" \
         -p ActiveState \
         -p SubState \
-        -p InvocationID \
+        -p UnitFileState \
+        -p Before \
         --value 2>/dev/null)
     
     IFS=$'\n' read -r -d '' -a prop_array <<< "$props" || true
     active_state="${prop_array[0]:-inactive}"
     sub_state="${prop_array[1]:-dead}"
-    invocation_id="${prop_array[2]:-}"
+    unit_file_state="${prop_array[2]:-disabled}"
+    before_units="${prop_array[3]:-}"
     
-    # Skip if active or activating
+    # Skip if already active/activating
     [[ "$active_state" =~ ^(active|activating|reloading)$ ]] && continue
     
-    # Skip if failed (don't retry failed services)
+    # Skip failed services (don't auto-retry failures)
     [[ "$sub_state" == "failed" ]] && continue
     
-    # Skip if already started this boot
-    [[ -n "$invocation_id" && "$invocation_id" != "n/a" ]] && continue
-    
-    # Start service in background (let systemd check conditions/asserts)
-    echo "Starting $service..."
+    # Check if this is a critical service that must run before display-manager or graphical.target
+    if [[ "$before_units" =~ (display-manager\.service|graphical\.target) ]]; then
+        critical_services+=("$service")
+    else
+        services_to_start+=("$service")
+    fi
+done
+
+# Start critical services first (synchronously, in order)
+for service in "${critical_services[@]}"; do
+    echo "Starting critical service: $service"
+    systemctl start "$service" || true
+done
+
+# Start remaining services in parallel
+for service in "${services_to_start[@]}"; do
+    echo "Starting service: $service"
     systemctl start "$service" &
 done
 
-wait
 exit 0

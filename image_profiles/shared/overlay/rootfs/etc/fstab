@@ -1,18 +1,39 @@
 # ============================================================================
-# /etc/fstab - Full Improved Configuration with Additional Volatile Directories
+# /etc/fstab - Enhanced Immutable OS Configuration
 # ----------------------------------------------------------------------------
 # This file defines mount points for a UEFI system that uses a Btrfs filesystem
 # (labeled "shani_root") divided into several subvolumes, as well as tmpfs mounts
 # for directories containing transient data.
+# Comprehensive subvolume design with optimized persistence strategy
+#
+# IMMUTABLE OS DESIGN:
+# - Root filesystem (/) is read-only (systemd.volatile=state)
+# - /etc is writable via overlay
+# - /var is tmpfs (systemd.volatile=state handles this)
+# - Critical app data persists via dedicated subvolumes
+# - System services persist via bind mounts from /data/varlib
+#
+# Btrfs Subvolumes (from "shani_root"):
 #
 # Btrfs Subvolumes (from "shani_root"):
 #   - @home        => /home          (user data)
-#   - @data        => /data          (persistent storage for overlays)
-#   - @log         => /var/log         (system variable data)
-#   - @flatpak     => /var/lib/flatpak (Flatpak applications)
-#   - @containers  => /var/lib/containers (container data)
-#   - @swap        => /swap          (swap; CoW disabled for performance)
+#   - @data        => /data                    (overlay storage + bind sources)
+#   - @cache       => /var/cache               (package cache)
+#   - @log         => /var/log                 (system logs)
+#   - @flatpak     => /var/lib/flatpak         (Flatpak apps)
+#   - @containers  => /var/lib/containers      (Podman/Docker containers)
+#   - @libvirt     => /var/lib/libvirt         (QEMU/KVM VMs - nodatacow)
+#   - @machines    => /var/lib/machines        (systemd-nspawn containers)
+#   - @swap        => /swap                    (swap - nodatacow)
 #
+# Persistent system service data (stored in @data subvolume):
+#   /data/varlib/bluetooth       => /var/lib/bluetooth
+#   /data/varlib/fprint          => /var/lib/fprint
+#   /data/varlib/AccountsService => /var/lib/AccountsService
+#   /data/varlib/systemd         => /var/lib/systemd
+#   /data/varlib/NetworkManager  => /var/lib/NetworkManager
+#   /data/varlib/boltd           => /var/lib/boltd
+
 # Common options for Btrfs subvolumes:
 #   noatime         - Disable access time updates (reduces unnecessary writes).
 #   compress=zstd   - Enable on-the-fly compression with zstd.
@@ -32,7 +53,7 @@
 LABEL=shani_boot   /boot/efi   vfat    defaults  0 2
 
 #############################
-# Btrfs Subvolumes (RW)     #
+# Core Btrfs Subvolumes (RW)     #
 #############################
 # Mount Btrfs subvolumes from the filesystem labeled "shani_root".
 
@@ -48,18 +69,27 @@ LABEL=shani_root   /var/cache    btrfs   defaults,noatime,subvol=@cache,rw,compr
 # /var/log: Separate subvolume for system variable log data
 LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
-# /var/lib/flatpak: Dedicated subvolume for Flatpak apps
+#############################
+# Application Subvolumes    #
+#############################
+# Flatpak applications
 LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
-# /var/lib/containers: Dedicated subvolume for container data
+# Container storage (Podman/Docker)
 LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
-# /swap: Swap space (disable CoW and compression)
-LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
+# VM images (disable CoW for performance)
+LABEL=shani_root   /var/lib/libvirt   btrfs   defaults,noatime,subvol=@libvirt,rw,nodatacow,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+
+# systemd-nspawn containers
+LABEL=shani_root   /var/lib/machines   btrfs   defaults,noatime,subvol=@machines,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
 
 ######################################
 # Swap Space (Swapfile on Btrfs)     #
 ######################################
+# /swap: Swap space (disable CoW and compression)
+LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
+
 # Ensure the swapfile is mounted at boot.
 /swap/swapfile none swap sw 0 0
 
@@ -86,3 +116,26 @@ overlay /etc overlay  rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=
 # Directly reference root's /var as lowerdir
 # not using due to /var being made tmpfs by systemd.volatile=state cmdline parameter
 #overlay /var overlay  rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
+
+##############################
+# Bind Mounts from /data     #
+##############################
+# System service persistence via bind mounts
+# Prerequisites: mkdir -p /data/varlib/{bluetooth,fprint,AccountsService,systemd,NetworkManager,boltd}
+
+/data/varlib/bluetooth         /var/lib/bluetooth         none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+/data/varlib/fprint            /var/lib/fprint            none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+/data/varlib/AccountsService   /var/lib/AccountsService   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+/data/varlib/systemd           /var/lib/systemd           none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+/data/varlib/NetworkManager    /var/lib/NetworkManager    none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+/data/varlib/boltd             /var/lib/boltd             none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+
+######################################
+# Notes                              #
+######################################
+# 1. Requires kernel cmdline: systemd.volatile=state
+# 2. /var becomes tmpfs automatically (systemd.volatile=state)
+# 3. Create overlay directories before first boot:
+#    mkdir -p /data/overlay/etc/{upper,work}
+# 4. Create bind mount sources before first boot:
+#    mkdir -p /data/varlib/{bluetooth,fprint,AccountsService,systemd,NetworkManager,boltd}
