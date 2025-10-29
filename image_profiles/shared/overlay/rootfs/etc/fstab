@@ -1,141 +1,271 @@
 # ============================================================================
-# /etc/fstab - Enhanced Immutable OS Configuration
-# ----------------------------------------------------------------------------
-# This file defines mount points for a UEFI system that uses a Btrfs filesystem
-# (labeled "shani_root") divided into several subvolumes, as well as tmpfs mounts
-# for directories containing transient data.
-# Comprehensive subvolume design with optimized persistence strategy
+# /etc/fstab - ShaniOS Immutable OS Configuration
+# ============================================================================
+# System: ShaniOS - UEFI with Btrfs Blue/Green Root Snapshots
+# Bootloader: systemd-boot
+# Design: Immutable blue/green root with selective persistence
+# Kernel Parameter: systemd.volatile=state
+# Root Subvolumes: @blue OR @green (selected at boot)
+# ============================================================================
 #
-# IMMUTABLE OS DESIGN:
-# - Root filesystem (/) is read-only (systemd.volatile=state)
-# - /etc is writable via overlay
-# - /var is tmpfs (systemd.volatile=state handles this)
-# - Critical app data persists via dedicated subvolumes
-# - System services persist via bind mounts from /data/varlib
+# BLUE/GREEN ARCHITECTURE:
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ systemd-boot → Kernel with root= → dracut mounts @blue or @green        │
+# │                                                                          │
+# │    @blue (inactive)  ←→  @green (active)                                │
+# │    Read-only root        Read-only root                                 │
+# │                              ↓                                           │
+# │                          Mounted as /                                    │
+# │                                                                          │
+# │ Writable Layers (shared between blue & green):                          │
+# │  /etc   → OverlayFS (changes in /data/overlay/etc)                      │
+# │  /var   → tmpfs (volatile, cleared on reboot)                           │
+# │  /home  → Persistent Btrfs @home subvolume                              │
+# │  /data  → Persistent Btrfs @data subvolume                              │
+# │                                                                          │
+# │ Update: Write to inactive root → Switch boot entry → Reboot             │
+# │ Rollback: Change systemd-boot entry back → Reboot                       │
+# └─────────────────────────────────────────────────────────────────────────┘
 #
 # Btrfs Subvolumes (from "shani_root"):
-#
-# Btrfs Subvolumes (from "shani_root"):
-#   - @home        => /home          (user data)
-#   - @data        => /data                    (overlay storage + bind sources)
-#   - @cache       => /var/cache               (package cache)
-#   - @log         => /var/log                 (system logs)
-#   - @flatpak     => /var/lib/flatpak         (Flatpak apps)
-#   - @containers  => /var/lib/containers      (Podman/Docker containers)
-#   - @libvirt     => /var/lib/libvirt         (QEMU/KVM VMs - nodatacow)
-#   - @machines    => /var/lib/machines        (systemd-nspawn containers)
-#   - @swap        => /swap                    (swap - nodatacow)
+#   - @blue        => / (blue root - immutable)
+#   - @green       => / (green root - immutable)
+#   - @home        => /home (user data)
+#   - @data        => /data (overlay storage + bind sources)
+#   - @cache       => /var/cache (package cache)
+#   - @log         => /var/log (system logs)
+#   - @flatpak     => /var/lib/flatpak (Flatpak apps)
+#   - @containers  => /var/lib/containers (Podman/Docker containers)
+#   - @machines    => /var/lib/machines (systemd-nspawn containers)
+#   - @libvirt     => /var/lib/libvirt (QEMU/KVM VMs - nodatacow)
+#   - @swap        => /swap (swap - nodatacow)
 #
 # Persistent system service data (stored in @data subvolume):
-#   /data/varlib/bluetooth       => /var/lib/bluetooth
-#   /data/varlib/fprint          => /var/lib/fprint
-#   /data/varlib/AccountsService => /var/lib/AccountsService
+#   /data/varlib/dbus            => /var/lib/dbus
 #   /data/varlib/systemd         => /var/lib/systemd
 #   /data/varlib/NetworkManager  => /var/lib/NetworkManager
+#   /data/varlib/AccountsService => /var/lib/AccountsService
+#   /data/varlib/bluetooth       => /var/lib/bluetooth
+#   /data/varlib/fprint          => /var/lib/fprint
 #   /data/varlib/boltd           => /var/lib/boltd
-
-# Common options for Btrfs subvolumes:
-#   noatime         - Disable access time updates (reduces unnecessary writes).
-#   compress=zstd   - Enable on-the-fly compression with zstd.
-#   space_cache=v2  - Use the updated free space cache.
-#   autodefrag      - Enable automatic defragmentation (beneficial for HDDs).
+#   /data/varlib/gdm             => /var/lib/gdm
+#   /data/varlib/sddm            => /var/lib/sddm
+#   /data/varlib/colord          => /var/lib/colord
+#   /data/varlib/upower          => /var/lib/upower
+#   /data/varlib/cups            => /var/lib/cups
+#   /data/varlib/sane            => /var/lib/sane
+#   /data/varlib/firewalld       => /var/lib/firewalld
+#   /data/varlib/geoclue         => /var/lib/geoclue
+#   /data/varlib/samba           => /var/lib/samba
 #
-# Note: The swap subvolume uses nodatacow and nospace_cache to disable CoW,
-#       ensuring optimal swap performance.
+# Common Btrfs mount options:
+#   noatime         - Disable access time updates (reduces writes)
+#   compress=zstd   - Enable transparent compression
+#   space_cache=v2  - Use modern free space cache
+#   autodefrag      - Enable automatic defragmentation
+#   nodatacow       - Disable Copy-on-Write (for VMs/swap performance)
+#   nospace_cache   - Disable space cache (required with nodatacow)
 #
-# tmpfs mounts are used for directories with volatile data to reduce disk I/O.
+# Filesystem labels:
+#   shani_boot - EFI System Partition (FAT32)
+#   shani_root - Main Btrfs volume (all subvolumes including @blue/@green)
+#
 # ============================================================================
- 
+
 #############################
 # EFI System Partition      #
 #############################
-# Mount the EFI partition (required for UEFI boot).
-LABEL=shani_boot   /boot/efi   vfat    defaults  0 2
+# Contains systemd-boot, kernels, initramfs
+LABEL=shani_boot   /boot/efi   vfat   defaults   0 2
 
 #############################
-# Core Btrfs Subvolumes (RW)     #
+# Core Btrfs Subvolumes     #
 #############################
-# Mount Btrfs subvolumes from the filesystem labeled "shani_root".
+# These subvolumes are shared between blue and green roots
 
-# /home: User data
-LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+# /home: User files, configs, personal data
+# Persists across blue/green switches so users keep their data
+# Create: btrfs subvolume create /@home
+LABEL=shani_root   /home   btrfs   defaults,noatime,subvol=@home,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
-# /data: For persistent storage (e.g. used by the overlay for /etc)
-LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag  0 0
+# /data: Overlay backing storage + service state directories
+# Stores /etc changes (in /data/overlay/etc) and service data (in /data/varlib)
+# Shared between blue/green so config and service state persist
+# Create: btrfs subvolume create /@data
+# Then: mkdir -p /data/overlay/etc/{upper,work}
+LABEL=shani_root   /data   btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
-# /var/cache: Separate subvolume for system variable cache data
-LABEL=shani_root   /var/cache    btrfs   defaults,noatime,subvol=@cache,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+# /var/cache: Package manager cache (apt, dnf, pacman)
+# Speeds up package installation in both blue and green
+# Shared to avoid re-downloading packages when switching roots
+# Create: btrfs subvolume create /@cache
+LABEL=shani_root   /var/cache   btrfs   defaults,noatime,subvol=@cache,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# /var/log: Separate subvolume for system variable log data
-LABEL=shani_root   /var/log    btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+# /var/log: System and application logs
+# Persistent logs for troubleshooting across reboots and blue/green switches
+# Shared so you can review logs from both roots
+# Create: btrfs subvolume create /@log
+LABEL=shani_root   /var/log   btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 #############################
 # Application Subvolumes    #
 #############################
-# Flatpak applications
-LABEL=shani_root   /var/lib/flatpak   btrfs   defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+# Optional subvolumes - use nofail so boot continues if missing
 
-# Container storage (Podman/Docker)
-LABEL=shani_root   /var/lib/containers   btrfs   defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+# Flatpak: Runtimes and applications
+# Keeps Flatpak apps available in both blue and green roots
+# Create: btrfs subvolume create /@flatpak
+LABEL=shani_root   /var/lib/flatpak   btrfs   nofail,defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# VM images (disable CoW for performance)
-LABEL=shani_root   /var/lib/libvirt   btrfs   defaults,noatime,subvol=@libvirt,rw,nodatacow,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+# Containers: Container images and volumes (Podman/Docker)
+# Keeps containers available in both blue and green roots
+# Create: btrfs subvolume create /@containers
+LABEL=shani_root   /var/lib/containers   btrfs   nofail,defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# systemd-nspawn containers
-LABEL=shani_root   /var/lib/machines   btrfs   defaults,noatime,subvol=@machines,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount  0 0
+# Machines: systemd-nspawn containers
+# Keeps system containers available in both blue and green roots
+# Create: btrfs subvolume create /@machines
+LABEL=shani_root   /var/lib/machines   btrfs   nofail,defaults,noatime,subvol=@machines,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+
+# Libvirt: Virtual machine disk images (QEMU/KVM)
+# Keeps VMs available in both blue and green roots
+# nodatacow for better VM disk performance
+# nospace_cache required when using nodatacow
+# Create: btrfs subvolume create /@libvirt
+LABEL=shani_root   /var/lib/libvirt   btrfs   nofail,defaults,noatime,subvol=@libvirt,rw,nodatacow,nospace_cache,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 ######################################
-# Swap Space (Swapfile on Btrfs)     #
+# Swap Space (Swapfile on Btrfs)    #
 ######################################
-# /swap: Swap space (disable CoW and compression)
-LABEL=shani_root   /swap   btrfs   noatime,subvol=@swap,rw,nodatacow,nospace_cache  0 0
+# /swap: Swap subvolume container
+# nodatacow for swap performance (CoW causes fragmentation)
+# nospace_cache required when using nodatacow
+# Create: btrfs subvolume create /@swap
+LABEL=shani_root   /swap   btrfs   nofail,noatime,subvol=@swap,rw,nodatacow,nospace_cache   0 0
 
-# Ensure the swapfile is mounted at boot.
-/swap/swapfile none swap sw 0 0
+# Swapfile: Actual swap space
+# Create: btrfs filesystem mkswapfile --size 8G /swap/swapfile && chmod 600 /swap/swapfile
+/swap/swapfile   none   swap   nofail,sw   0 0
 
 ######################################
 # tmpfs for Volatile Directories     #
 ######################################
-# These tmpfs mounts store volatile data in RAM to reduce disk writes.
-#
-# /tmp: Temporary files; data is cleared at reboot.
-tmpfs   /tmp      tmpfs   defaults,noatime   0 0
+# Store volatile data in RAM to reduce disk writes
+# Cleared on reboot
 
-# /run: Runtime data for processes and services.
-tmpfs   /run      tmpfs   defaults,noatime   0 0
+# /tmp: Temporary files
+tmpfs   /tmp   tmpfs   defaults,noatime   0 0
+
+# /run: Runtime data for processes and services
+tmpfs   /run   tmpfs   defaults,noatime   0 0
 
 ##############################
 # Overlay for /etc           #
 ##############################
-# Directly reference root's /etc as lowerdir
-overlay /etc overlay  rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
+# Makes read-only root's /etc writable by layering changes on top
+# lowerdir: Read-only /etc from active root (@blue or @green)
+# upperdir: Writable layer in /data (stores all changes)
+# workdir: Required by OverlayFS for atomic operations
+# Changes persist across blue/green switches
+# Requires: mkdir -p /data/overlay/etc/{upper,work}
+overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################
 # Overlay for /var           #
 ##############################
-# Directly reference root's /var as lowerdir
-# not using due to /var being made tmpfs by systemd.volatile=state cmdline parameter
-#overlay /var overlay  rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data  0 0
+# DISABLED - not using due to /var being made tmpfs by systemd.volatile=state
+# Uncomment if NOT using systemd.volatile=state kernel parameter
+# Requires: mkdir -p /data/overlay/var/{upper,work}
+#overlay   /var   overlay   rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################
 # Bind Mounts from /data     #
 ##############################
-# System service persistence via bind mounts
-# Prerequisites: mkdir -p /data/varlib/{bluetooth,fprint,AccountsService,systemd,NetworkManager,boltd}
+# System services need persistent state across reboots and blue/green switches
+# Bind mount persistent storage from /data/varlib/* to /var/lib/*
+# State persists when switching between blue and green roots
 
-/data/varlib/bluetooth         /var/lib/bluetooth         none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
-/data/varlib/fprint            /var/lib/fprint            none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
-/data/varlib/AccountsService   /var/lib/AccountsService   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
-/data/varlib/systemd           /var/lib/systemd           none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
-/data/varlib/NetworkManager    /var/lib/NetworkManager    none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
-/data/varlib/boltd             /var/lib/boltd             none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data  0 0
+# Core System Services (Required)
+# D-Bus: Machine ID and system bus state
+# Ensures consistent machine-id across blue/green switches
+# Requires: mkdir -p /data/varlib/dbus
+/data/varlib/dbus   /var/lib/dbus   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-######################################
-# Notes                              #
-######################################
-# 1. Requires kernel cmdline: systemd.volatile=state
-# 2. /var becomes tmpfs automatically (systemd.volatile=state)
-# 3. Create overlay directories before first boot:
-#    mkdir -p /data/overlay/etc/{upper,work}
-# 4. Create bind mount sources before first boot:
-#    mkdir -p /data/varlib/{bluetooth,fprint,AccountsService,systemd,NetworkManager,boltd}
+# systemd: System manager state, timers, random seed
+# Preserves systemd unit states and timer schedules
+# Requires: mkdir -p /data/varlib/systemd
+/data/varlib/systemd   /var/lib/systemd   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# Network & Connectivity
+# NetworkManager: Connection profiles, WiFi passwords, VPN configs
+# Keeps network settings across blue/green switches
+# Requires: mkdir -p /data/varlib/NetworkManager
+/data/varlib/NetworkManager   /var/lib/NetworkManager   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# Bluetooth: Paired device database
+# Keeps Bluetooth pairings across blue/green switches
+# Requires: mkdir -p /data/varlib/bluetooth
+/data/varlib/bluetooth   /var/lib/bluetooth   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# Authentication & User Management
+# fprint: Fingerprint enrollment data
+# Keeps enrolled fingerprints across blue/green switches
+# Requires: mkdir -p /data/varlib/fprint
+/data/varlib/fprint   /var/lib/fprint   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# AccountsService: User account metadata, avatars, session preferences
+# Preserves user profile info across blue/green switches
+# Requires: mkdir -p /data/varlib/AccountsService
+/data/varlib/AccountsService   /var/lib/AccountsService   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# boltd: Thunderbolt device authorization database
+# Keeps Thunderbolt device trust across blue/green switches
+# Requires: mkdir -p /data/varlib/boltd
+/data/varlib/boltd   /var/lib/boltd   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# Display Managers (use nofail - only one will exist)
+# GDM: GNOME Display Manager session state
+# Preserves GDM settings across blue/green switches (if using GDM)
+# Requires: mkdir -p /data/varlib/gdm
+/data/varlib/gdm   /var/lib/gdm   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# SDDM: Simple Desktop Display Manager state
+# Preserves SDDM settings across blue/green switches (if using SDDM)
+# Requires: mkdir -p /data/varlib/sddm
+/data/varlib/sddm   /var/lib/sddm   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# Hardware & Peripherals (use nofail - may not exist on all systems)
+# colord: Color management profiles
+# Keeps display/printer color profiles across blue/green switches
+# Requires: mkdir -p /data/varlib/colord
+/data/varlib/colord   /var/lib/colord   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# upower: Power management statistics
+# Preserves battery/power history across blue/green switches
+# Requires: mkdir -p /data/varlib/upower
+/data/varlib/upower   /var/lib/upower   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# cups: Printer configurations and queues
+# Keeps printer settings across blue/green switches
+# Requires: mkdir -p /data/varlib/cups
+/data/varlib/cups   /var/lib/cups   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# sane: Scanner configurations
+# Keeps scanner settings across blue/green switches
+# Requires: mkdir -p /data/varlib/sane
+/data/varlib/sane   /var/lib/sane   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# firewalld: Firewall rules and configuration
+# Keeps firewall settings across blue/green switches
+# Requires: mkdir -p /data/varlib/firewalld
+/data/varlib/firewalld   /var/lib/firewalld   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# geoclue: Geolocation service state
+# Preserves location settings and permissions across blue/green switches
+# Requires: mkdir -p /data/varlib/geoclue
+/data/varlib/geoclue   /var/lib/geoclue   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# samba: Samba server configuration and state
+# Keeps Samba shares and settings across blue/green switches
+# Requires: mkdir -p /data/varlib/samba
+/data/varlib/samba   /var/lib/samba   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
