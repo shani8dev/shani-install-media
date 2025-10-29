@@ -57,6 +57,7 @@
 #   /data/varlib/firewalld       => /var/lib/firewalld
 #   /data/varlib/geoclue         => /var/lib/geoclue
 #   /data/varlib/samba           => /var/lib/samba
+#   /data/varlib/nfs             => /var/lib/nfs
 #
 # Common Btrfs mount options:
 #   noatime         - Disable access time updates (reduces writes)
@@ -269,3 +270,8 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # Keeps Samba shares and settings across blue/green switches
 # Requires: mkdir -p /data/varlib/samba
 /data/varlib/samba   /var/lib/samba   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# nfs: NFS server exports, client tracking, and lock state
+# Keeps NFS shares and client connections across blue/green switches
+# Requires: mkdir -p /data/varlib/nfs
+/data/varlib/nfs   /var/lib/nfs   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
