@@ -1,16 +1,32 @@
 #!/bin/bash
-# Get system boot time
-boot_time=$(systemctl show systemd --property=ExecMainStartTimestamp --value)
 
-systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}' | while read -r service; do
+services_started=0
+services_list=""
+
+# Use process substitution to avoid subshell
+while read -r service; do
     [[ "$service" == *"@"* ]] && continue  # Skip template services
-    systemctl is-enabled --quiet "$service" || continue  # Ensure it's enabled
 
-    # Get the service's last start timestamp
-    start_time=$(systemctl show --property=ExecMainStartTimestamp --value "$service")
-
-    # If the service has never started or started before the current boot, start it
-    if [[ -z "$start_time" || "$start_time" < "$boot_time" ]]; then
-        systemctl start "$service" &
+    # Check if service is currently active
+    if ! systemctl is-active --quiet "$service"; then
+        # Check if service should be running (is it wanted by current target)
+        if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+            # Get the service's start timestamp
+            start_time=$(systemctl show --property=ExecMainStartTimestamp --value "$service")
+            
+            # Only start if it has never been started (from overlay, missed during boot)
+            if [[ -z "$start_time" ]]; then
+                systemctl start "$service" &
+                ((services_started++))
+                services_list="$services_list $service"
+            fi
+        fi
     fi
-done
+done < <(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}')
+
+# Log summary
+if [ $services_started -gt 0 ]; then
+    echo "Started $services_started new overlay services:$services_list"
+else
+    echo "No new overlay services to start"
+fi

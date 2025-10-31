@@ -1,10 +1,12 @@
 [Unit]
 Description=Start services from overlay filesystem
 After=etc-daemon-reload.service
+Before=display-manager.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/abin/start-overlay-services
+RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target

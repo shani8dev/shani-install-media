@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Reload systemd to discover services in overlay
-systemctl daemon-reload
-
-# Mount all overlay filesystems
+# Mount all overlay filesystems FIRST
 mount -a
+
+# THEN reload systemd to discover services in overlay
+systemctl daemon-reload

@@ -1,7 +1,8 @@
 [Unit]
 Description=Mount overlays and reload systemd daemon
-After=multi-user.target
-Before=graphical.target
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
 
 [Service]
 Type=oneshot
@@ -9,4 +10,4 @@ ExecStart=/usr/abin/mount-and-reload
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target
