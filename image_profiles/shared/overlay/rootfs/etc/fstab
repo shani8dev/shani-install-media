@@ -118,6 +118,11 @@ LABEL=shani_root   /var/log   btrfs   defaults,noatime,subvol=@log,rw,compress=z
 # Create: btrfs subvolume create /@flatpak
 LABEL=shani_root   /var/lib/flatpak   btrfs   nofail,defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
+# Snapd: Snaps and mounted snap images
+# Keeps snaps available in both blue and green roots
+# Create: btrfs subvolume create /@snapd
+LABEL=shani_root   /var/lib/snapd   btrfs   nofail,defaults,noatime,subvol=@snapd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+
 # Containers: Container images and volumes (Podman/Docker)
 # Keeps containers available in both blue and green roots
 # Create: btrfs subvolume create /@containers
@@ -127,6 +132,11 @@ LABEL=shani_root   /var/lib/containers   btrfs   nofail,defaults,noatime,subvol=
 # Keeps system containers available in both blue and green roots
 # Create: btrfs subvolume create /@machines
 LABEL=shani_root   /var/lib/machines   btrfs   nofail,defaults,noatime,subvol=@machines,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+
+# LXC: system and application containers
+# Keeps LXC containers available in both blue and green roots
+# Create: btrfs subvolume create /@lxc
+LABEL=shani_root   /var/lib/lxc   btrfs   nofail,defaults,noatime,subvol=@lxc,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 # Libvirt: Virtual machine disk images (QEMU/KVM)
 # Keeps VMs available in both blue and green roots
