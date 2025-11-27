@@ -330,7 +330,7 @@ fi
 SNAP_MOUNT="${BUILD_DIR}/snap_mount"
 mkdir -p "$SNAP_MOUNT"
 
-# Mount and create subvolume
+# Mount the Btrfs image
 if ! mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
     die "Failed to mount Snap image"
 fi
@@ -341,46 +341,28 @@ if btrfs subvolume list "$SNAP_MOUNT" | grep -q "$SNAP_SUBVOL"; then
     btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL" || die "Failed to delete existing subvolume"
 fi
 
+# Create new subvolume
 log "Creating new subvolume: ${SNAP_SUBVOL}"
 btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL" || die "Subvolume creation failed"
 sync
 umount "$SNAP_MOUNT" || die "Failed to unmount after subvolume creation"
 
-# Remount the subvolume
+# Remount subvolume
 if ! mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
     die "Mounting Snap subvolume failed"
 fi
 
 # ===== COPY SNAP DATA =====
-log "Copying Snap data into Btrfs subvolume"
+log "Copying all Snap data into Btrfs subvolume using tar"
 
-mkdir -p "$SNAP_MOUNT/snap"
-mkdir -p "$SNAP_MOUNT/var/lib/snapd"
-
-# Determine snap source directory
-SNAP_SOURCE_DIR="/var/lib/snapd/snap"
-if [ -d "/snap" ] && [ ! -L "/snap" ]; then
-    SNAP_SOURCE_DIR="/snap"
-fi
-
-# Copy snap installations
-if [ -d "${SNAP_SOURCE_DIR}" ] && [ "$(ls -A ${SNAP_SOURCE_DIR} 2>/dev/null)" ]; then
-    log "Copying snap installations from ${SNAP_SOURCE_DIR}..."
-    if ! tar -cf - -C "${SNAP_SOURCE_DIR}" . | tar -xf - -C "$SNAP_MOUNT/snap" 2>&1; then
-        warn "Failed to copy some snap installations"
-    fi
-else
-    log "No snap installations found at ${SNAP_SOURCE_DIR}"
-fi
-
-# Copy snapd state
 if [ -d "/var/lib/snapd" ] && [ "$(ls -A /var/lib/snapd 2>/dev/null)" ]; then
-    log "Copying snapd state..."
-    if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT/var/lib/snapd" 2>&1; then
-        warn "Failed to copy some snapd state"
+    if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT" 2>&1; then
+        warn "Failed to copy some snap data from /var/lib/snapd"
+    else
+        log "Snap data copied successfully"
     fi
 else
-    log "No snapd state found at /var/lib/snapd"
+    log "No data found in /var/lib/snapd"
 fi
 
 sync
@@ -411,3 +393,4 @@ if [ -f /usr/bin/systemctl.real ]; then
 fi
 
 log "Snap image created successfully at ${OUTPUT_FILE}"
+
