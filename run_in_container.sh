@@ -74,6 +74,9 @@ fi
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
 docker run $TTY_FLAGS --privileged --rm \
+  --tmpfs /tmp \
+  --tmpfs /run \
+  -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
   -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
   -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
   -v "${HOST_FLATPAK_DATA}:${CONTAINER_FLATPAK_DATA}" \
