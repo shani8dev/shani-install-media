@@ -318,13 +318,8 @@ SNAP_IMG="${BUILD_DIR}/snap.img"
 SNAP_SUBVOL="snap_subvol"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/snapfs.zst"
 
-log "Setting up Btrfs image for snap data..."
-setup_btrfs_image "$SNAP_IMG" "10G"
-
-# Verify loop device
-if [ ! -b "$LOOP_DEVICE" ]; then
-    die "Loop device $LOOP_DEVICE is not available"
-fi
+log "Setting up Btrfs image for Snap data..."
+setup_btrfs_image "$SNAP_IMG" "10G"  # must set LOOP_DEVICE
 
 # Define mount point
 SNAP_MOUNT="${BUILD_DIR}/snap_mount"
@@ -338,45 +333,56 @@ fi
 # Delete existing subvolume if present
 if btrfs subvolume list "$SNAP_MOUNT" | grep -q "$SNAP_SUBVOL"; then
     log "Deleting existing subvolume ${SNAP_SUBVOL}..."
-    btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL" || die "Failed to delete existing subvolume"
+    if ! btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL"; then
+        die "Failed to delete existing subvolume"
+    fi
 fi
 
 # Create new subvolume
 log "Creating new subvolume: ${SNAP_SUBVOL}"
-btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL" || die "Subvolume creation failed"
+if ! btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL"; then
+    die "Subvolume creation failed"
+fi
 sync
-umount "$SNAP_MOUNT" || die "Failed to unmount after subvolume creation"
 
-# Remount subvolume
+# Unmount after subvolume creation
+if ! umount "$SNAP_MOUNT"; then
+    die "Failed to unmount Snap image after subvolume creation"
+fi
+
+# Remount the newly created subvolume
+mkdir -p "$SNAP_MOUNT"
 if ! mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
     die "Mounting Snap subvolume failed"
 fi
 
-# ===== COPY SNAP DATA =====
-log "Copying all Snap data into Btrfs subvolume using tar"
-
+# Copy Snap data into the subvolume
+log "Copying Snap data into Btrfs subvolume using tar"
 if [ -d "/var/lib/snapd" ] && [ "$(ls -A /var/lib/snapd 2>/dev/null)" ]; then
-    if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT" 2>&1; then
-        warn "Failed to copy some snap data from /var/lib/snapd"
+    if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT"; then
+        warn "Failed to copy some Snap data"
     else
         log "Snap data copied successfully"
     fi
 else
     log "No data found in /var/lib/snapd"
 fi
-
 sync
 
 # Set subvolume read-only
-btrfs property set -f -ts "$SNAP_MOUNT" ro true || die "Failed to set subvolume read-only"
+if ! btrfs property set -f -ts "$SNAP_MOUNT" ro true; then
+    die "Failed to set subvolume read-only"
+fi
 
 # Take snapshot
 btrfs_send_snapshot "$SNAP_MOUNT" "${OUTPUT_FILE}"
 
-# Reset to writable
-btrfs property set -f -ts "$SNAP_MOUNT" ro false || warn "Failed to reset subvolume properties"
+# Reset subvolume to writable
+if ! btrfs property set -f -ts "$SNAP_MOUNT" ro false; then
+    warn "Failed to reset subvolume properties"
+fi
 
-# Detach image
+# Detach the Btrfs image
 detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE"
 
 # ===== CLEANUP =====
@@ -393,4 +399,3 @@ if [ -f /usr/bin/systemctl.real ]; then
 fi
 
 log "Snap image created successfully at ${OUTPUT_FILE}"
-
