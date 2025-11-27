@@ -75,9 +75,9 @@ ssh librewish@frs.sourceforge.net "mkdir -p /home/frs/project/shanios/${PROFILE}
 # Upload base image artifacts from the build folder
 log "Uploading base image artifacts from ${OUTPUT_SUBDIR}:"
 
-# Check and upload .zst files (excluding flatpakfs.zst)
+# Check and upload .zst files (excluding flatpakfs.zst and snapfs.zst)
 if ls "${OUTPUT_SUBDIR}"/*.zst 1> /dev/null 2>&1; then
-  rsync -e ssh -avz --progress --exclude="flatpakfs.zst" "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}" || die "Upload of base image failed"
+  rsync -e ssh -avz --progress --exclude="flatpakfs.zst" --exclude="snapfs.zst" "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}" || die "Upload of base image failed"
 else
   log "Warning: No .zst files found in ${OUTPUT_SUBDIR}"
 fi
