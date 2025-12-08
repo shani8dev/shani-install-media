@@ -1,336 +1,154 @@
 #!/usr/bin/env bash
-# build-snap-image.sh — Build the Snap image (container-only)
-
+# build-snap-image.sh – Build the Snap seed image (container-only)
 set -Eeuo pipefail
-
-# Ensure machine-id exists for DBUS
-if [ ! -f /etc/machine-id ]; then
-    dbus-uuidgen --ensure=/etc/machine-id
-fi
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/../config/config.sh"
 
+# -----------------------------
 # Parse profile option
-PROFILE="$DEFAULT_PROFILE"
+# -----------------------------
+PROFILE="${DEFAULT_PROFILE:-desktop}"
 while getopts "p:" opt; do
-  case "$opt" in
-    p) PROFILE="$OPTARG" ;;
-    *) die "Invalid option" ;;
-  esac
+    case "$opt" in
+        p) PROFILE="$OPTARG" ;;
+        *) die "Invalid option" ;;
+    esac
 done
 shift $((OPTIND - 1))
 
-# Define output subdirectory
+# Define output subdirectory (using the base image's structure)
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
-log "Building Snap image for profile: ${PROFILE}"
+log "Building Snap seed for profile: $PROFILE"
 
-# ===== MOCK SYSTEMCTL FOR CONTAINER BUILDS =====
-log "Setting up mock systemctl for container environment..."
-
-# Backup real systemctl if it exists
-if [ -f /usr/bin/systemctl ] && [ ! -f /usr/bin/systemctl.real ]; then
-    cp /usr/bin/systemctl /usr/bin/systemctl.real 2>/dev/null || true
+SNAP_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/snap-packages.txt"
+if [[ ! -f "$SNAP_LIST" ]]; then
+    log "No snap-packages.txt found for profile ${PROFILE}; exiting..."
+    exit 0
 fi
 
-# Create mock systemctl
-cat > /usr/local/bin/systemctl << 'EOF'
-#!/bin/bash
-# Mock systemctl for snap installation in containers
-COMMAND="${1:-}"
-case "$COMMAND" in
-    daemon-reload|start|stop|restart|enable|disable|reload|reset-failed)
-        exit 0 ;;
-    is-active|is-enabled|is-failed)
-        echo "active"
-        exit 0 ;;
-    show)
-        echo "ActiveState=active"
-        echo "LoadState=loaded"
-        echo "SubState=running"
-        exit 0 ;;
-    list-units|list-unit-files)
-        exit 0 ;;
-    status)
-        echo "● $*"
-        echo "   Loaded: loaded"
-        echo "   Active: active (running)"
-        exit 0 ;;
-    *)
-        exit 0 ;;
-esac
-EOF
+# -----------------------------
+# Read snap list
+# -----------------------------
+snaps=()
+while IFS= read -r snap || [[ -n "$snap" ]]; do
+    [[ -z "${snap// }" ]] && continue   # skip empty lines
+    snaps+=("$snap")
+done < "$SNAP_LIST"
 
-chmod +x /usr/local/bin/systemctl
-export PATH="/usr/local/bin:$PATH"
+if [[ ${#snaps[@]} -eq 0 ]]; then
+    log "Snap list is empty; nothing to do."
+    exit 0
+fi
 
-log "Mock systemctl installed"
-
-# ===== SNAPD SETUP FOR CONTAINER =====
-log "Setting up snapd in container environment..."
-
-# Fix snap mount directory for Arch Linux
-export SNAP_MOUNT_DIR="/var/lib/snapd/snap"
-
-# Ensure required directories exist
-mkdir -p /run/snapd /var/lib/snapd/snap /var/lib/snapd /var/snap /snap
-
-# Create symlink from /snap to /var/lib/snapd/snap for compatibility
-if [ ! -L /snap ] || [ "$(readlink /snap)" != "/var/lib/snapd/snap" ]; then
-    rm -rf /snap
+##############################################
+# START SNAPD IF NEEDED
+##############################################
+if [ ! -S /run/snapd.socket ]; then
+    log "Starting snapd in standalone mode..."
+    
+    mkdir -p /run/snapd /var/lib/snapd/snap /var/lib/snapd/seed/snaps /var/lib/snapd/seed/assertions /var/snap /snap
     ln -sf /var/lib/snapd/snap /snap
-fi
 
-# Ensure loop control devices are available
-if [ ! -e /dev/loop-control ]; then
-    warn "/dev/loop-control not available. Loop device operations may fail."
-fi
-
-# Check if snapd is already running
-if [ -S /run/snapd.socket ]; then
-    log "Snapd socket already exists"
-else
-    log "Starting snapd daemon..."
-    
-    # Kill any existing snapd processes
-    pkill -9 snapd 2>/dev/null || true
-    sleep 1
-    
-    # Start snapd in background
-    /usr/lib/snapd/snapd &
+    /usr/lib/snapd/snapd --standalone &
     SNAPD_PID=$!
-    
-    # Wait for socket with timeout
-    log "Waiting for snapd socket..."
-    for i in {1..90}; do
+
+    for i in {1..60}; do
         if [ -S /run/snapd.socket ]; then
-            log "Snapd socket is ready (attempt $i)"
+            log "snapd socket ready"
             break
         fi
-        if [ $i -eq 90 ]; then
-            die "Snapd socket not available after 90 seconds"
-        fi
         sleep 1
+        if [ $i -eq 60 ]; then
+            die "snapd socket not available after 60s"
+        fi
     done
-fi
 
-# Test snapd connectivity
-log "Testing snapd connection..."
-if ! timeout 15 snap version &>/dev/null; then
-    die "Cannot communicate with snapd"
-fi
-
-log "Snapd is operational: $(snap version | head -1)"
-
-# Wait for system seed (may not exist in container)
-snap wait system seed.loaded 2>/dev/null || log "System seed not available (expected in container)"
-
-SNAP_PACKAGE_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/snap-packages.txt"
-
-# Check for package list file
-if [[ ! -f "$SNAP_PACKAGE_LIST" ]]; then
-    log "No Snap package list found at ${SNAP_PACKAGE_LIST}"
-    exit 0
-fi
-
-# Load packages into array
-packages=()
-while IFS= read -r pkg || [[ -n "$pkg" ]]; do
-    [[ -z "${pkg// }" ]] && continue
-    [[ "$pkg" =~ ^[[:space:]]*# ]] && continue
-    packages+=("$pkg")
-done < "$SNAP_PACKAGE_LIST"
-
-if [ ${#packages[@]} -eq 0 ]; then
-    log "No packages to install from ${SNAP_PACKAGE_LIST}"
-    exit 0
-fi
-
-# ===== INSTALL SNAP PACKAGES =====
-log "Installing ${#packages[@]} snap package(s)..."
-
-for pkg in "${packages[@]}"; do
-    pkg_name=$(echo "$pkg" | awk '{print $1}')
-    pkg_args=$(echo "$pkg" | cut -d' ' -f2-)
-    [[ "$pkg_args" == "$pkg_name" ]] && pkg_args=""
-    
-    log "Processing: $pkg_name${pkg_args:+ with args: $pkg_args}"
-    
-    # Try normal installation first
-    install_success=false
-    install_log=$(mktemp)
-    
-    if [ -z "$pkg_args" ]; then
-        if snap install "$pkg_name" &>"$install_log"; then
-            install_success=true
-        fi
-    else
-        if snap install $pkg_name $pkg_args &>"$install_log"; then
-            install_success=true
-        fi
+    if ! timeout 15 snap version &>/dev/null; then
+        die "Cannot communicate with snapd"
     fi
+
+    trap 'kill ${SNAPD_PID:-0} 2>/dev/null || true' EXIT
+fi
+
+##############################################
+# MODEL ASSERTION
+##############################################
+MODEL_ASSERTION="/tmp/generic.model"
+
+log "Fetching model assertion..."
+# Try to get the model assertion - if it fails, we'll use a generic one
+if snap known model > "$MODEL_ASSERTION" 2>/dev/null && [[ -s "$MODEL_ASSERTION" ]]; then
+    log "Model assertion fetched successfully"
+else
+    warn "Could not fetch model assertion from snapd, using generic model"
     
-    # Check if failed due to mount issues
-    if ! $install_success; then
-        if grep -q "expected snap.*to be mounted but is not" "$install_log"; then
-            warn "Mount failed for $pkg_name, using manual extraction..."
-            
-            # Create temp directory for download
-            temp_dir=$(mktemp -d)
-            cd "$temp_dir"
-            
-            # Download the snap
-            if snap download "$pkg_name" &>/dev/null; then
-                snap_file=$(ls ${pkg_name}_*.snap 2>/dev/null | head -1)
-                
-                if [ -n "$snap_file" ] && [ -f "$snap_file" ]; then
-                    # Create target directory
-                    snap_target="/var/lib/snapd/snap/$pkg_name"
-                    mkdir -p "$snap_target"
-                    
-                    # Extract using unsquashfs
-                    if command -v unsquashfs &>/dev/null; then
-                        if unsquashfs -f -d "$snap_target/current" "$snap_file" &>/dev/null; then
-                            log "Successfully extracted $pkg_name"
-                            install_success=true
-                            
-                            # Create version symlink if we can determine revision
-                            revision=$(echo "$snap_file" | grep -oP '(?<=_)[0-9]+(?=\.snap)')
-                            if [ -n "$revision" ]; then
-                                ln -sf current "$snap_target/$revision" 2>/dev/null || true
-                            fi
-                        else
-                            warn "Failed to extract $snap_file"
-                        fi
-                    else
-                        warn "unsquashfs not available, cannot extract $pkg_name"
-                    fi
-                else
-                    warn "Downloaded snap file not found for $pkg_name"
-                fi
-            else
-                warn "Failed to download $pkg_name"
-            fi
-            
-            # Cleanup temp directory
-            cd - &>/dev/null
-            rm -rf "$temp_dir"
-        else
-            warn "Failed to install $pkg_name: $(tail -1 "$install_log")"
-        fi
-    else
-        log "Successfully installed $pkg_name"
-    fi
-    
-    rm -f "$install_log"
+    # Create a minimal generic model assertion
+    cat > "$MODEL_ASSERTION" <<'EOF'
+type: model
+authority-id: generic
+series: 16
+brand-id: generic
+model: generic-classic
+classic: true
+timestamp: 2017-07-27T00:00:00.0Z
+sign-key-sha3-384: d-JcZF9nD9eBw7bwMnH61x-bklnQOhQud1Is6o_cn2wTj8EYDi9musrIT9z2MdAa
+
+AcLBXAQAAQoABgUCWYuXiAAKCRAdLQyY+/mCiST0D/0XGQauzV2bbTEy6DkrR1jlNbI6x8vfIdS8
+KvEWYvzOWNhNlVSfwNOkFjs3uMHgCO6/fCg03wGXTyV9D7ZgrMeUzWrYp6EmXk8/LQSaBnff86XO
+4/vYyfyvEYavhF0kQ6QGg8Cqr0EaMyw0x9/zWEO/Ll9fH/8nv9qcQq8N4AbebNvNxtGsCmJuXpSe
+2rxl3Dw8XarYBmqgcBQhXxRNpa6/AgaTNBpPOTqgNA8ZtmbZwYLuaFjpZP410aJSs+evSKepy/ce
++zTA7RB3384YQVeZDdTudX2fGtuCnBZBAJ+NYlk0t8VFXxyOhyMSXeylSpNSx4pCqmUZRyaf5SDS
+g1XxJet4IP0stZH1SfPOwc9oE81/bJlKsb9QIQKQRewvtUCLfe9a6Vy/CYd2elvcWOmeANVrJK0m
+nRaz6VBm09RJTuwUT6vNugXSOCeF7W3WN1RHJuex0zw+nP3eCehxFSr33YrVniaA7zGfjXvS8tKx
+AINNQB4g2fpfet4na6lPPMYM41WHIHPCMTz/fJQ6dZBSEg6UUZ/GiQhGEfWPBteK7yd9pQ8qB3fj
+ER4UvKnR7hcVI26e3NGNkXP5kp0SFCkV5NQs8rzXzokpB7p/V5Pnqp3Km6wu45cU6UiTZFhR2IMT
+l+6AMtrS4gDGHktOhwfmOMWqmhvR/INF+TjaWbsB6g==
+EOF
+fi
+
+# -----------------------------
+# Prepare snaps using seed directory
+# -----------------------------
+log "Preparing snap seeds..."
+mkdir -p /var/lib/snapd/seed/snaps /var/lib/snapd/seed/assertions
+
+# Build snap arguments for prepare-image
+snap_args=()
+for s in "${snaps[@]}"; do
+    snap_args+=(--snap "$s")
 done
 
-# Refresh all installed snaps
-log "Refreshing all installed Snaps..."
-snap refresh 2>&1 | grep -v "All snaps up to date" || log "Snaps refreshed"
-
-# Remove unused Snap applications not in profile list
-log "Checking for unused Snap applications..."
-
-# Get list of snaps that are actually installed via snapd
-installed_snaps=$(snap list --color=never 2>/dev/null | tail -n +2 | awk '{print $1}' || echo "")
-
-# Also check for manually extracted snaps in /var/lib/snapd/snap
-if [ -d "/var/lib/snapd/snap" ]; then
-    extracted_snaps=$(ls -1 /var/lib/snapd/snap 2>/dev/null || echo "")
-else
-    extracted_snaps=""
+# Run snap prepare-image once with all snaps
+log "Running snap prepare-image with snaps: ${snaps[*]}"
+if ! snap prepare-image "${snap_args[@]}" --classic --arch=amd64 "${MODEL_ASSERTION}" /var/lib/snapd/seed; then
+    warn "snap prepare-image failed, but continuing with whatever was downloaded"
 fi
 
-# Combine both lists and get unique entries
-all_snaps=$(echo -e "${installed_snaps}\n${extracted_snaps}" | sort -u | grep -v "^$")
+log "Snap seed preparation complete"
 
-if [[ -n "$all_snaps" ]]; then
-    while IFS= read -r snap_pkg; do
-        [[ -z "$snap_pkg" ]] && continue
-        
-        # Skip core snaps (snapd, core, core18, core20, core22, etc.)
-        if [[ "$snap_pkg" =~ ^(snapd|core[0-9]*)$ ]]; then
-            log "Keeping core snap: $snap_pkg"
-            continue
-        fi
-        
-        # Skip common snapd directories that aren't actual snaps
-        if [[ "$snap_pkg" =~ ^(bin)$ ]]; then
-            continue
-        fi
-        
-        # Check if in profile list
-        pkg_in_list=false
-        for profile_pkg in "${packages[@]}"; do
-            profile_pkg_name=$(echo "$profile_pkg" | awk '{print $1}')
-            if [[ "$snap_pkg" == "$profile_pkg_name" ]]; then
-                pkg_in_list=true
-                break
-            fi
-        done
-        
-        if ! $pkg_in_list; then
-            log "Removing unused snap: $snap_pkg"
-            
-            # Try to remove via snap command first (for properly installed snaps)
-            if echo "$installed_snaps" | grep -q "^${snap_pkg}$"; then
-                if snap remove --purge "$snap_pkg" 2>&1 | grep -q "removed"; then
-                    log "Removed via snap command: $snap_pkg"
-                else
-                    warn "Failed to remove via snap command: $snap_pkg"
-                fi
-            fi
-            
-            # Remove manually extracted snap directory
-            if [ -d "/var/lib/snapd/snap/$snap_pkg" ]; then
-                log "Removing manually extracted directory: /var/lib/snapd/snap/$snap_pkg"
-                rm -rf "/var/lib/snapd/snap/$snap_pkg"
-            fi
-            
-            # Also check and remove from /snap if it's not a symlink
-            if [ -d "/snap/$snap_pkg" ] && [ ! -L "/snap/$snap_pkg" ]; then
-                log "Removing directory: /snap/$snap_pkg"
-                rm -rf "/snap/$snap_pkg"
-            fi
-        else
-            log "Keeping snap in profile: $snap_pkg"
-        fi
-    done <<< "$all_snaps"
-else
-    log "No snap applications found to check"
-fi
-
-# Profile-specific configurations
-case "$PROFILE" in
-    plasma)
-        log "Applying Plasma-specific Snap configurations..."
-        ;;
-    gamescope)
-        log "Applying gamescope-specific Snap configurations..."
-        ;;
-esac
-
-# ===== PREPARE BTRFS IMAGE =====
+# -----------------------------
+# Create Btrfs image directly from /var/lib/snapd
+# -----------------------------
 SNAP_IMG="${BUILD_DIR}/snap.img"
-SNAP_SUBVOL="snap_subvol"
+SNAP_SUBVOL="snapd_subvol"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/snapfs.zst"
 
-log "Setting up Btrfs image for Snap data..."
-setup_btrfs_image "$SNAP_IMG" "10G"  # must set LOOP_DEVICE
+# This function is assumed to set up a loop device and create a Btrfs image.
+setup_btrfs_image "$SNAP_IMG" "10G"  # Make sure this function is defined
+# LOOP_DEVICE is set by setup_btrfs_image
 
-# Define mount point
+# Define mount point for Snap image
 SNAP_MOUNT="${BUILD_DIR}/snap_mount"
-mkdir -p "$SNAP_MOUNT"
 
-# Mount the Btrfs image
+# Mount the loop device and create (or delete) the subvolume
+mkdir -p "$SNAP_MOUNT"
 if ! mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
-    die "Failed to mount Snap image"
+    die "Failed to mount snap image"
 fi
 
-# Delete existing subvolume if present
 if btrfs subvolume list "$SNAP_MOUNT" | grep -q "$SNAP_SUBVOL"; then
     log "Deleting existing subvolume ${SNAP_SUBVOL}..."
     if ! btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL"; then
@@ -338,64 +156,48 @@ if btrfs subvolume list "$SNAP_MOUNT" | grep -q "$SNAP_SUBVOL"; then
     fi
 fi
 
-# Create new subvolume
 log "Creating new subvolume: ${SNAP_SUBVOL}"
 if ! btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL"; then
     die "Subvolume creation failed"
 fi
 sync
-
-# Unmount after subvolume creation
 if ! umount "$SNAP_MOUNT"; then
-    die "Failed to unmount Snap image after subvolume creation"
+    die "Failed to unmount snap image after subvolume creation"
 fi
 
 # Remount the newly created subvolume
 mkdir -p "$SNAP_MOUNT"
 if ! mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
-    die "Mounting Snap subvolume failed"
+    die "Mounting snap subvolume failed"
 fi
 
-# Copy Snap data into the subvolume
-log "Copying Snap data into Btrfs subvolume using tar"
-if [ -d "/var/lib/snapd" ] && [ "$(ls -A /var/lib/snapd 2>/dev/null)" ]; then
-    if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT"; then
-        warn "Failed to copy some Snap data"
-    else
-        log "Snap data copied successfully"
-    fi
-else
-    log "No data found in /var/lib/snapd"
+# -----------------------------
+# Copy all of /var/lib/snapd
+# -----------------------------
+log "Copying Snap data into Btrfs subvolume"
+mkdir -p "$SNAP_MOUNT/var/lib"
+if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT"; then
+    die "Failed to copy /var/lib/snapd"
 fi
 sync
 
-# Set subvolume read-only
+# -----------------------------
+# Make read-only snapshot
+# -----------------------------
+# Set subvolume read-only before taking snapshot
 if ! btrfs property set -f -ts "$SNAP_MOUNT" ro true; then
     die "Failed to set subvolume read-only"
 fi
 
-# Take snapshot
-btrfs_send_snapshot "$SNAP_MOUNT" "${OUTPUT_FILE}"
+# Take a snapshot of the subvolume (this function must be defined)
+btrfs_send_snapshot "$SNAP_MOUNT" "$OUTPUT_FILE"
 
-# Reset subvolume to writable
+# Reset subvolume to writable after snapshot
 if ! btrfs property set -f -ts "$SNAP_MOUNT" ro false; then
     warn "Failed to reset subvolume properties"
 fi
 
-# Detach the Btrfs image
+# Detach the Btrfs image (this function must be defined)
 detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE"
 
-# ===== CLEANUP =====
-if [ -n "${SNAPD_PID:-}" ]; then
-    log "Stopping snapd daemon..."
-    kill $SNAPD_PID 2>/dev/null || true
-    wait $SNAPD_PID 2>/dev/null || true
-fi
-
-log "Cleaning up mocks..."
-rm -f /usr/local/bin/systemctl
-if [ -f /usr/bin/systemctl.real ]; then
-    mv /usr/bin/systemctl.real /usr/bin/systemctl 2>/dev/null || true
-fi
-
-log "Snap image created successfully at ${OUTPUT_FILE}"
+log "Snap seed image created successfully at: $OUTPUT_FILE"
