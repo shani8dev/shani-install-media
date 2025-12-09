@@ -22,13 +22,15 @@ fi
 HOST_PACMAN_CACHE="${HOST_WORK_DIR}/cache/pacman_cache"
 HOST_FLATPAK_DATA="${HOST_WORK_DIR}/cache/flatpak_data"
 HOST_SNAPD_DATA="${HOST_WORK_DIR}/cache/snapd_data"
-mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}" "${HOST_SNAPD_DATA}"
+HOST_SNAPD_SEED="${HOST_WORK_DIR}/cache/snapd_seed"
+mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}" "${HOST_SNAPD_DATA}" "${HOST_SNAPD_SEED}"
 
 CONTAINER_WORK_DIR="/home/builduser/build"
 CONTAINER_GNUPGHOME="/home/builduser/.gnupg"
 CONTAINER_PACMAN_CACHE="/var/cache/pacman"
 CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CONTAINER_SNAPD_DATA="/var/lib/snapd"
+CONTAINER_SNAPD_SEED="/tmp/snap-seed"
 
 DOCKER_IMAGE="${DOCKER_IMAGE:-shrinivasvkumbhar/shani-builder}"  # systemd-enabled image
 CUSTOM_MIRROR="${CUSTOM_MIRROR:-https://mirror.albony.in/archlinux/\$repo/os/\$arch}"
@@ -62,15 +64,20 @@ FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
 # Run Docker container
 docker run --rm ${TTY_FLAGS} --privileged \
-    --device=/dev/fuse \
     --tmpfs /tmp \
+    --tmpfs /run/lock \
     --tmpfs /run \
+    --cap-add SYS_ADMIN \
+    --device=/dev/fuse \
+    --security-opt apparmor:unconfined \
+    --security-opt seccomp:unconfined \
     -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
     -v /lib/modules:/lib/modules:ro \
   -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
   -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
   -v "${HOST_FLATPAK_DATA}:${CONTAINER_FLATPAK_DATA}" \
   -v "${HOST_SNAPD_DATA}:${CONTAINER_SNAPD_DATA}" \
+  -v "${HOST_SNAPD_SEED}:${CONTAINER_SNAPD_SEED}" \
   -e CUSTOM_MIRROR="${CUSTOM_MIRROR}" \
   -e SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}" \
   -e GPG_PRIVATE_KEY="${GPG_PRIVATE_KEY:-}" \
@@ -80,4 +87,3 @@ docker run --rm ${TTY_FLAGS} --privileged \
   -e PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin" \
   -w "${CONTAINER_WORK_DIR}" \
   "${DOCKER_IMAGE}" bash -c "${FINAL_CMD}"
-

@@ -103,7 +103,6 @@ fi
 # Prepare-image: build seed into temp dir
 # ---------------------------------------------------------
 TMP_SEED="/tmp/snap-seed"
-rm -rf "$TMP_SEED"
 mkdir -p "$TMP_SEED"
 
 snap_args=()
@@ -179,7 +178,6 @@ btrfs_send_snapshot "$SNAP_MOUNT" "$OUTPUT_FILE"
 btrfs property set -ts "$SNAP_MOUNT" ro false || true
 
 detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE"
-rm -rf "$TMP_SEED"
 
 log "Snap image created successfully at ${OUTPUT_FILE}"
 exit 0
