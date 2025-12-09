@@ -1,91 +1,83 @@
 #!/usr/bin/env bash
 # build-snap-image.sh – Build the Snap seed image (container-only)
+# Mirrors the structure of build-flatpak-image.sh (same variable style, same flow)
+
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-source "${SCRIPT_DIR}/../config/config.sh"
+source "${SCRIPT_DIR}/../config/config.sh"  # log, die, warn, setup_btrfs_image, btrfs_send_snapshot, detach_btrfs_image
 
-# -----------------------------
+# ---------------------------------------------------------
 # Parse profile option
-# -----------------------------
-PROFILE="${DEFAULT_PROFILE:-desktop}"
+# ---------------------------------------------------------
+PROFILE="$DEFAULT_PROFILE"
 while getopts "p:" opt; do
-    case "$opt" in
-        p) PROFILE="$OPTARG" ;;
-        *) die "Invalid option" ;;
-    esac
+  case "$opt" in
+    p) PROFILE="$OPTARG" ;;
+    *) die "Invalid option" ;;
+  esac
 done
 shift $((OPTIND - 1))
 
-# Define output subdirectory (using the base image's structure)
+BUILD_DATE="${BUILD_DATE:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
-mkdir -p "${OUTPUT_SUBDIR}"
+BUILD_DIR="${BUILD_DIR}"
+mkdir -p "${OUTPUT_SUBDIR}" "${BUILD_DIR}"
 
-log "Building Snap seed for profile: $PROFILE"
+log "Building Snap image for profile: ${PROFILE}"
 
+# ---------------------------------------------------------
+# Load snap list
+# ---------------------------------------------------------
 SNAP_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/snap-packages.txt"
+
 if [[ ! -f "$SNAP_LIST" ]]; then
-    log "No snap-packages.txt found for profile ${PROFILE}; exiting..."
+    log "No Snap package list found at ${SNAP_LIST}. Exiting..."
     exit 0
 fi
 
-# -----------------------------
-# Read snap list
-# -----------------------------
 snaps=()
 while IFS= read -r snap || [[ -n "$snap" ]]; do
-    [[ -z "${snap// }" ]] && continue   # skip empty lines
+    [[ -z "${snap// }" ]] && continue
     snaps+=("$snap")
 done < "$SNAP_LIST"
 
 if [[ ${#snaps[@]} -eq 0 ]]; then
-    log "Snap list is empty; nothing to do."
+    log "Snap list empty; exiting."
     exit 0
 fi
 
-##############################################
-# START SNAPD IF NEEDED
-##############################################
+# ---------------------------------------------------------
+# Ensure snapd is running (standalone mode)
+# ---------------------------------------------------------
 if [ ! -S /run/snapd.socket ]; then
-    log "Starting snapd in standalone mode..."
-    
+    log "Starting snapd standalone..."
+
     mkdir -p /run/snapd /var/lib/snapd/snap /var/lib/snapd/seed/snaps /var/lib/snapd/seed/assertions /var/snap /snap
     ln -sf /var/lib/snapd/snap /snap
 
     /usr/lib/snapd/snapd --standalone &
     SNAPD_PID=$!
 
-    for i in {1..60}; do
-        if [ -S /run/snapd.socket ]; then
-            log "snapd socket ready"
-            break
-        fi
-        sleep 1
-        if [ $i -eq 60 ]; then
-            die "snapd socket not available after 60s"
-        fi
-    done
-
-    if ! timeout 15 snap version &>/dev/null; then
-        die "Cannot communicate with snapd"
-    fi
-
     trap 'kill ${SNAPD_PID:-0} 2>/dev/null || true' EXIT
+
+    for i in {1..60}; do
+        [ -S /run/snapd.socket ] && break
+        sleep 1
+        [ $i -eq 60 ] && die "snapd socket never came ready"
+    done
 fi
 
-##############################################
-# MODEL ASSERTION
-##############################################
+# ---------------------------------------------------------
+# Model assertion
+# ---------------------------------------------------------
 MODEL_ASSERTION="/tmp/generic.model"
 
 log "Fetching model assertion..."
-# Try to get the model assertion - if it fails, we'll use a generic one
 if snap known model > "$MODEL_ASSERTION" 2>/dev/null && [[ -s "$MODEL_ASSERTION" ]]; then
-    log "Model assertion fetched successfully"
+    log "Model assertion retrieved from snapd"
 else
-    warn "Could not fetch model assertion from snapd, using generic model"
-    
-    # Create a minimal generic model assertion
+    warn "Using fallback generic model"
     cat > "$MODEL_ASSERTION" <<'EOF'
 type: model
 authority-id: generic
@@ -109,95 +101,88 @@ l+6AMtrS4gDGHktOhwfmOMWqmhvR/INF+TjaWbsB6g==
 EOF
 fi
 
-# -----------------------------
-# Prepare snaps using seed directory
-# -----------------------------
-log "Preparing snap seeds..."
-mkdir -p /var/lib/snapd/seed/snaps /var/lib/snapd/seed/assertions
+# ---------------------------------------------------------
+# Prepare-image: build seed into temp dir
+# ---------------------------------------------------------
+TMP_SEED="/tmp/snap-seed"
+rm -rf "$TMP_SEED"
+mkdir -p "$TMP_SEED"
 
-# Build snap arguments for prepare-image
 snap_args=()
 for s in "${snaps[@]}"; do
     snap_args+=(--snap "$s")
 done
 
-# Run snap prepare-image once with all snaps
-log "Running snap prepare-image with snaps: ${snaps[*]}"
-if ! snap prepare-image "${snap_args[@]}" --classic --arch=amd64 "${MODEL_ASSERTION}" /var/lib/snapd/seed; then
-    warn "snap prepare-image failed, but continuing with whatever was downloaded"
+log "Running snap prepare-image..."
+if ! snap prepare-image "${snap_args[@]}" --classic --arch=amd64 "$MODEL_ASSERTION" "$TMP_SEED"; then
+    warn "prepare-image failed; using partial results"
 fi
 
-log "Snap seed preparation complete"
+# ---------------------------------------------------------
+# Install produced seed into host /var/lib/snapd
+# ---------------------------------------------------------
+log "Installing snap seed into /var/lib/snapd"
 
-# -----------------------------
-# Create Btrfs image directly from /var/lib/snapd
-# -----------------------------
+mkdir -p /var/lib/snapd
+rm -rf /var/lib/snapd/seed
+mkdir -p /var/lib/snapd/seed
+
+if [ -d "$TMP_SEED/var/lib/snapd/seed" ]; then
+    log "Copying prepared seed into /var/lib/snapd/seed"
+    tar -cf - -C "$TMP_SEED/var/lib/snapd/seed" . | tar -xf - -C /var/lib/snapd/seed
+else
+    warn "prepare-image produced no seed"
+fi
+
+# ---------------------------------------------------------
+# Create Btrfs image and snapd subvolume
+# ---------------------------------------------------------
 SNAP_IMG="${BUILD_DIR}/snap.img"
 SNAP_SUBVOL="snapd_subvol"
+SNAP_MOUNT="${BUILD_DIR}/snap_mount"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/snapfs.zst"
 
-# This function is assumed to set up a loop device and create a Btrfs image.
-setup_btrfs_image "$SNAP_IMG" "10G"  # Make sure this function is defined
-# LOOP_DEVICE is set by setup_btrfs_image
+log "Creating btrfs image ${SNAP_IMG}"
 
-# Define mount point for Snap image
-SNAP_MOUNT="${BUILD_DIR}/snap_mount"
+setup_btrfs_image "$SNAP_IMG" "10G"
 
-# Mount the loop device and create (or delete) the subvolume
 mkdir -p "$SNAP_MOUNT"
-if ! mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
-    die "Failed to mount snap image"
-fi
+mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"
 
 if btrfs subvolume list "$SNAP_MOUNT" | grep -q "$SNAP_SUBVOL"; then
-    log "Deleting existing subvolume ${SNAP_SUBVOL}..."
-    if ! btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL"; then
-        die "Failed to delete existing subvolume"
-    fi
+    log "Removing existing subvolume..."
+    btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL"
 fi
 
-log "Creating new subvolume: ${SNAP_SUBVOL}"
-if ! btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL"; then
-    die "Subvolume creation failed"
-fi
+log "Creating new subvolume"
+btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL"
 sync
-if ! umount "$SNAP_MOUNT"; then
-    die "Failed to unmount snap image after subvolume creation"
-fi
 
-# Remount the newly created subvolume
+umount "$SNAP_MOUNT"
+
 mkdir -p "$SNAP_MOUNT"
-if ! mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"; then
-    die "Mounting snap subvolume failed"
-fi
+mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"
 
-# -----------------------------
-# Copy all of /var/lib/snapd
-# -----------------------------
-log "Copying Snap data into Btrfs subvolume"
-mkdir -p "$SNAP_MOUNT/var/lib"
-if ! tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT"; then
-    die "Failed to copy /var/lib/snapd"
-fi
+# ---------------------------------------------------------
+# Single-pass copy of /var/lib/snapd into subvolume
+# ---------------------------------------------------------
+log "Copying /var/lib/snapd → snapd_subvol (single tar pass)"
+tar -cf - -C /var/lib/snapd . | tar -xf - -C "$SNAP_MOUNT"
 sync
 
-# -----------------------------
-# Make read-only snapshot
-# -----------------------------
-# Set subvolume read-only before taking snapshot
-if ! btrfs property set -f -ts "$SNAP_MOUNT" ro true; then
-    die "Failed to set subvolume read-only"
-fi
+# ---------------------------------------------------------
+# Read-only snapshot + export
+# ---------------------------------------------------------
+btrfs property set -ts "$SNAP_MOUNT" ro true || warn "Cannot set read-only"
 
-# Take a snapshot of the subvolume (this function must be defined)
+log "Sending snapshot to ${OUTPUT_FILE}"
 btrfs_send_snapshot "$SNAP_MOUNT" "$OUTPUT_FILE"
 
-# Reset subvolume to writable after snapshot
-if ! btrfs property set -f -ts "$SNAP_MOUNT" ro false; then
-    warn "Failed to reset subvolume properties"
-fi
+btrfs property set -ts "$SNAP_MOUNT" ro false || true
 
-# Detach the Btrfs image (this function must be defined)
 detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE"
+rm -rf "$TMP_SEED"
 
-log "Snap seed image created successfully at: $OUTPUT_FILE"
+log "Snap image created successfully at ${OUTPUT_FILE}"
+exit 0
+
