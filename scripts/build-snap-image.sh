@@ -19,10 +19,8 @@ while getopts "p:" opt; do
 done
 shift $((OPTIND - 1))
 
-BUILD_DATE="${BUILD_DATE:-$(date -u +%Y%m%dT%H%M%SZ)}"
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
-BUILD_DIR="${BUILD_DIR}"
-mkdir -p "${OUTPUT_SUBDIR}" "${BUILD_DIR}"
+mkdir -p "${OUTPUT_SUBDIR}"
 
 log "Building Snap image for profile: ${PROFILE}"
 
