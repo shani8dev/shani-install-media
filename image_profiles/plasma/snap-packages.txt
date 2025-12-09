@@ -1,1 +1,6 @@
+bare
+core22
+gnome-42-2204
+gtk-common-themes
+snapd
 snap-store
