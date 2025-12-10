@@ -36,6 +36,7 @@
 #   - @log         => /var/log (system logs)
 #   - @flatpak     => /var/lib/flatpak (Flatpak apps)
 #   - @snapd       => /var/lib/snapd (snap apps)
+#   - @waydroid    => /var/lib/waydroid (Android system images & userdata)
 #   - @containers  => /var/lib/containers (Podman/Docker containers)
 #   - @machines    => /var/lib/machines (systemd-nspawn containers)
 #   - @lxc         => /var/lib/lxc (lxc containers)
@@ -60,8 +61,10 @@
 #   /data/varlib/geoclue         => /var/lib/geoclue
 #   /data/varlib/samba           => /var/lib/samba
 #   /data/varlib/nfs             => /var/lib/nfs
+#   /data/varspool/anacron       => /var/spool/anacron
 #   /data/varspool/cron          => /var/spool/cron
 #   /data/varspool/cups          => /var/spool/cups
+#   /data/varspool/samba         => /var/spool/samba
 #
 # Common Btrfs mount options:
 #   noatime         - Disable access time updates (reduces writes)
@@ -126,6 +129,11 @@ LABEL=shani_root   /var/lib/flatpak   btrfs   nofail,defaults,noatime,subvol=@fl
 # Keeps snaps available in both blue and green roots
 # Create: btrfs subvolume create /@snapd
 LABEL=shani_root   /var/lib/snapd   btrfs   nofail,defaults,noatime,subvol=@snapd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+
+# Waydroid: Android system images & userdata
+# Persistent Btrfs subvolume for Waydroid apps & images
+# Keeps Waydroid installed & persistent across blue/green root switches
+LABEL=shani_root   /var/lib/waydroid   btrfs   nofail,defaults,noatime,subvol=@waydroid,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 # Containers: Container images and volumes (Podman/Docker)
 # Keeps containers available in both blue and green roots
@@ -204,39 +212,39 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # D-Bus: Machine ID and system bus state
 # Ensures consistent machine-id across blue/green switches
 # Requires: mkdir -p /data/varlib/dbus
-/data/varlib/dbus   /var/lib/dbus   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/dbus   /var/lib/dbus   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # systemd: System manager state, timers, random seed
 # Preserves systemd unit states and timer schedules
 # Requires: mkdir -p /data/varlib/systemd
-/data/varlib/systemd   /var/lib/systemd   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/systemd   /var/lib/systemd   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # Network & Connectivity
 # NetworkManager: Connection profiles, WiFi passwords, VPN configs
 # Keeps network settings across blue/green switches
 # Requires: mkdir -p /data/varlib/NetworkManager
-/data/varlib/NetworkManager   /var/lib/NetworkManager   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/NetworkManager   /var/lib/NetworkManager   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # Bluetooth: Paired device database
 # Keeps Bluetooth pairings across blue/green switches
 # Requires: mkdir -p /data/varlib/bluetooth
-/data/varlib/bluetooth   /var/lib/bluetooth   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/bluetooth   /var/lib/bluetooth   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # Authentication & User Management
 # fprint: Fingerprint enrollment data
 # Keeps enrolled fingerprints across blue/green switches
 # Requires: mkdir -p /data/varlib/fprint
-/data/varlib/fprint   /var/lib/fprint   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/fprint   /var/lib/fprint   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # AccountsService: User account metadata, avatars, session preferences
 # Preserves user profile info across blue/green switches
 # Requires: mkdir -p /data/varlib/AccountsService
-/data/varlib/AccountsService   /var/lib/AccountsService   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/AccountsService   /var/lib/AccountsService   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # boltd: Thunderbolt device authorization database
 # Keeps Thunderbolt device trust across blue/green switches
 # Requires: mkdir -p /data/varlib/boltd
-/data/varlib/boltd   /var/lib/boltd   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varlib/boltd   /var/lib/boltd   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # Display Managers (use nofail - only one will exist)
 # GDM: GNOME Display Manager session state
@@ -290,12 +298,24 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # Requires: mkdir -p /data/varlib/nfs
 /data/varlib/nfs   /var/lib/nfs   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
+# anacron: persistent timestamps for daily/weekly/monthly scheduled jobs
+# Keeps track of last run times across reboots and blue/green root switches
+# Requires: mkdir -p /data/varspool/anacron
+/data/varspool/anacron   /var/spool/anacron   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
 # cronie: System cron scheduler state and user crontabs
 # Keeps system and user cron jobs across blue/green switches
 # Requires: mkdir -p /data/varspool/cron
-/data/varspool/cron   /var/spool/cron   none   bind,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+/data/varspool/cron   /var/spool/cron   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # cups (spool): Printer job queue and pending jobs
 # Keeps print queue state across blue/green switches
 # Requires: mkdir -p /data/varspool/cups
 /data/varspool/cups   /var/spool/cups   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# samba (spool): SMB file lock state + Samba print spool
+# Preserves Samba client lock files, tdb state, and spool data across reboots
+# Required for stable SMB shares on immutable root
+# Requires: mkdir -p /data/varspool/samba
+/data/varspool/samba   /var/spool/samba   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+

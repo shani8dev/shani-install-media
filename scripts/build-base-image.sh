@@ -96,8 +96,11 @@ echo "stable" > /etc/shani-channel
 mkdir -p /boot/efi
 mkdir -p /data
 mkdir -p /var/lib/flatpak
+mkdir -p /var/lib/snapd
+mkdir -p /var/lib/waydroid
 mkdir -p /var/lib/containers
 mkdir -p /var/lib/machines
+mkdir -p /var/lib/lxc
 mkdir -p /var/lib/libvirt
 mkdir -p /swap
 

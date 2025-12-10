@@ -14,3 +14,4 @@ org.freedesktop.Platform.VulkanLayer.MangoHud
 org.freedesktop.Platform.VulkanLayer.gamescope
 org.freedesktop.Platform.VulkanLayer.vkBasalt
 io.github.kolunmi.Bazaar
+it.mijorus.gearlever
