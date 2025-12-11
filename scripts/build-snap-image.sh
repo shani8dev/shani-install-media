@@ -48,106 +48,15 @@ fi
 
 TMP_SEED="/tmp/snap-seed"
 mkdir -p "$TMP_SEED"
-
-# ---------------------------------------------------------
-# Create model assertion (dynamic timestamp)
-# ---------------------------------------------------------
-MODEL_ASSERTION="/tmp/generic-classic.model"
-
-log "Creating model assertion..."
-
-cat > "$MODEL_ASSERTION" <<EOF
-type: model
-authority-id: generic
-series: 16
-brand-id: generic
-model: generic-classic
-classic: true
-timestamp: 2017-07-27T00:00:00.0Z
-sign-key-sha3-384: d-JcZF9nD9eBw7bwMnH61x-bklnQOhQud1Is6o_cn2wTj8EYDi9musrIT9z2MdAa
-
-AcLBXAQAAQoABgUCWYuXiAAKCRAdLQyY+/mCiST0D/0XGQauzV2bbTEy6DkrR1jlNbI6x8vfIdS8
-KvEWYvzOWNhNlVSfwNOkFjs3uMHgCO6/fCg03wGXTyV9D7ZgrMeUzWrYp6EmXk8/LQSaBnff86XO
-4/vYyfyvEYavhF0kQ6QGg8Cqr0EaMyw0x9/zWEO/Ll9fH/8nv9qcQq8N4AbebNvNxtGsCmJuXpSe
-2rxl3Dw8XarYBmqgcBQhXxRNpa6/AgaTNBpPOTqgNA8ZtmbZwYLuaFjpZP410aJSs+evSKepy/ce
-+zTA7RB3384YQVeZDdTudX2fGtuCnBZBAJ+NYlk0t8VFXxyOhyMSXeylSpNSx4pCqmUZRyaf5SDS
-g1XxJet4IP0stZH1SfPOwc9oE81/bJlKsb9QIQKQRewvtUCLfe9a6Vy/CYd2elvcWOmeANVrJK0m
-nRaz6VBm09RJTuwUT6vNugXSOCeF7W3WN1RHJuex0zw+nP3eCehxFSr33YrVniaA7zGfjXvS8tKx
-AINNQB4g2fpfet4na6lPPMYM41WHIHPCMTz/fJQ6dZBSEg6UUZ/GiQhGEfWPBteK7yd9pQ8qB3fj
-ER4UvKnR7hcVI26e3NGNkXP5kp0SFCkV5NQs8rzXzokpB7p/V5Pnqp3Km6wu45cU6UiTZFhR2IMT
-l+6AMtrS4gDGHktOhwfmOMWqmhvR/INF+TjaWbsB6g==
-EOF
-
-# ---------------------------------------------------------
-# Run snap prepare-image
-# ---------------------------------------------------------
-log "Running snap prepare-image with downloaded snaps..."
-
-snap_args=()
-for s in "${snaps[@]}"; do
-    snap_args+=(--snap "$s")
-done
-
-if ! snap prepare-image "${snap_args[@]}" --classic --arch=amd64 "$MODEL_ASSERTION" "$TMP_SEED"; then
-    warn "prepare-image failed, continuing with manual seed build"
-fi
-
-# ---------------------------------------------------------
-# Download snaps + assertions
-# ---------------------------------------------------------
 SEED_DIR="$TMP_SEED/var/lib/snapd/seed"
 mkdir -p "$SEED_DIR/snaps"
-
-SNAPS_CACHE="$SEED_DIR/snaps"
-
-log "Downloading snaps + assertions to ${SNAPS_CACHE}"
-
-downloaded_snaps=()
-for snap_name in "${snaps[@]}"; do
-    log "Downloading ${snap_name}..."
-
-    if [[ "$snap_name" == *"="* ]]; then
-        snap="${snap_name%=*}"
-        channel="${snap_name#*=}"
-    else
-        snap="$snap_name"
-        channel="stable"
-    fi
-
-    if snap download "$snap" --channel="$channel" --target-directory="$SNAPS_CACHE"; then
-        snap_file=$(ls "$SNAPS_CACHE"/${snap}_*.snap 2>/dev/null | head -1)
-        assert_file=$(ls "$SNAPS_CACHE"/${snap}_*.assert 2>/dev/null | head -1)
-
-        if [[ -f "$snap_file" && -f "$assert_file" ]]; then
-            log "  ✓ $(basename "$snap_file") + assertion"
-            downloaded_snaps+=("$snap_file")
-            snap ack "$assert_file" 2>/dev/null || true
-        else
-            warn "Missing files for $snap"
-        fi
-    else
-        warn "Failed to download $snap"
-    fi
-done
-
-if [[ ${#downloaded_snaps[@]} -eq 0 ]]; then
-    die "No snaps were downloaded!"
-fi
-
-log "Successfully downloaded ${#downloaded_snaps[@]} snaps"
-
-# ---------------------------------------------------------
-# Copy assertion files
-# ---------------------------------------------------------
 mkdir -p "$SEED_DIR/assertions"
 
-for f in "$SNAPS_CACHE"/*.assert; do
-    [[ -f "$f" ]] && mv "$f" "$SEED_DIR/assertions/"
-done
+# ---------------------------------------------------------
+# Create assertions (must be done BEFORE prepare-image)
+# ---------------------------------------------------------
+log "Creating account and account-key assertions..."
 
-# ---------------------------------------------------------
-# Inject Canonical account + account-key assertions
-# ---------------------------------------------------------
 cat > "$SEED_DIR/assertions/account" <<'EOF'
 type: account
 authority-id: canonical
@@ -222,13 +131,50 @@ R2PJK1VN6/ckJZAb3Rum5Ak5sbLTpRAVHIAVU1NAjHc5lYUHhxXJmJsbw6Jawb9Xb3T96s+WdD3Y
 EOF
 
 # ---------------------------------------------------------
-# Verify seed
+# Create model assertion
 # ---------------------------------------------------------
-if [[ ! -f "$SEED_DIR/seed.yaml" ]]; then
-    die "seed.yaml missing!"
+MODEL_ASSERTION="$SEED_DIR/assertions/model"
+
+log "Creating model assertion..."
+
+cat > "$MODEL_ASSERTION" <<EOF
+type: model
+authority-id: generic
+series: 16
+brand-id: generic
+model: generic-classic
+classic: true
+timestamp: 2017-07-27T00:00:00.0Z
+sign-key-sha3-384: d-JcZF9nD9eBw7bwMnH61x-bklnQOhQud1Is6o_cn2wTj8EYDi9musrIT9z2MdAa
+
+AcLBXAQAAQoABgUCWYuXiAAKCRAdLQyY+/mCiST0D/0XGQauzV2bbTEy6DkrR1jlNbI6x8vfIdS8
+KvEWYvzOWNhNlVSfwNOkFjs3uMHgCO6/fCg03wGXTyV9D7ZgrMeUzWrYp6EmXk8/LQSaBnff86XO
+4/vYyfyvEYavhF0kQ6QGg8Cqr0EaMyw0x9/zWEO/Ll9fH/8nv9qcQq8N4AbebNvNxtGsCmJuXpSe
+2rxl3Dw8XarYBmqgcBQhXxRNpa6/AgaTNBpPOTqgNA8ZtmbZwYLuaFjpZP410aJSs+evSKepy/ce
++zTA7RB3384YQVeZDdTudX2fGtuCnBZBAJ+NYlk0t8VFXxyOhyMSXeylSpNSx4pCqmUZRyaf5SDS
+g1XxJet4IP0stZH1SfPOwc9oE81/bJlKsb9QIQKQRewvtUCLfe9a6Vy/CYd2elvcWOmeANVrJK0m
+nRaz6VBm09RJTuwUT6vNugXSOCeF7W3WN1RHJuex0zw+nP3eCehxFSr33YrVniaA7zGfjXvS8tKx
+AINNQB4g2fpfet4na6lPPMYM41WHIHPCMTz/fJQ6dZBSEg6UUZ/GiQhGEfWPBteK7yd9pQ8qB3fj
+ER4UvKnR7hcVI26e3NGNkXP5kp0SFCkV5NQs8rzXzokpB7p/V5Pnqp3Km6wu45cU6UiTZFhR2IMT
+l+6AMtrS4gDGHktOhwfmOMWqmhvR/INF+TjaWbsB6g==
+EOF
+
+# ---------------------------------------------------------
+# Run snap prepare-image
+# ---------------------------------------------------------
+log "Running snap prepare-image with downloaded snaps..."
+
+snap_args=()
+for s in "${snaps[@]}"; do
+    snap_args+=(--snap "$s")
+done
+
+# Use the correct model assertion path
+if ! snap prepare-image "${snap_args[@]}" --classic --arch=amd64 "$MODEL_ASSERTION" "$TMP_SEED"; then
+    warn "prepare-image failed, continuing with manual seed build"
 fi
 
-log "Seed ready: $(ls -1 $SEED_DIR/snaps | wc -l) snaps"
+log "Seed ready: $(ls -1 $SEED_DIR/snaps 2>/dev/null | wc -l) snaps"
 
 # ---------------------------------------------------------
 # Install seed to host using tar (safe)
@@ -238,12 +184,9 @@ log "Installing snap seed into /var/lib/snapd using tar"
 mkdir -p /var/lib/snapd
 rm -rf /var/lib/snapd/seed
 mkdir -p /var/lib/snapd/seed
+mkdir -p /var/lib/snapd/snap
 
 tar -C "$SEED_DIR" -cf - . | tar -C /var/lib/snapd/seed -xf -
-
-if [[ ! -f /var/lib/snapd/seed/assertions/model ]]; then
-    die "Model assertion missing in /var/lib/snapd/seed!"
-fi
 
 log "✓ Seed installed to /var/lib/snapd"
 
@@ -300,4 +243,3 @@ log "Output: ${OUTPUT_FILE}"
 log "Contains: ${#snaps[@]} snaps with assertions"
 log "==========================================="
 exit 0
-

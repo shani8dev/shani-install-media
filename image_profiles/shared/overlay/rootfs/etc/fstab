@@ -202,6 +202,15 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 #overlay   /var   overlay   rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################
+# Bind Mounts for Snapd
+##############################
+# Bind-mount /snap from the writable snapd state directory.
+# Required for classic snap support, snap seeding, and runtime snap mountpoints.
+# Ensure /var/lib/snapd is mounted before /snap.
+# Requires: mkdir -p /var/lib/snapd/snap
+/var/lib/snapd/snap   /snap   none   bind,nofail,x-systemd.requires-mounts-for=/var/lib/snapd   0 0
+
+##############################
 # Bind Mounts from /data     #
 ##############################
 # System services need persistent state across reboots and blue/green switches
