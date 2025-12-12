@@ -12,7 +12,6 @@ Usage: $(basename "$0") <command> [options]
 Commands:
   image      Build base image (requires -p <profile>)
   flatpak    Build Flatpak image (requires -p <profile>)
-  snap       Build Snap image (requires -p <profile>)
   iso        Build ISO (requires -p <profile>)
   repack     Repackage ISO for Secure Boot (requires -p <profile>)
   upload     Upload build artifacts to SourceForge (requires -p <profile> [mode])
@@ -28,7 +27,6 @@ Options:
 Examples:
   $(basename "$0") image -p gnome
   $(basename "$0") flatpak -p gnome
-  $(basename "$0") snap -p gnome
   $(basename "$0") all -p plasma                    # Builds everything + creates latest release
   $(basename "$0") release -p gnome latest
   $(basename "$0") release -p gnome stable
@@ -52,9 +50,6 @@ case "$COMMAND" in
   flatpak)
     exec ./scripts/build-flatpak-image.sh "$@"
     ;;
-  snap)
-    exec ./scripts/build-snap-image.sh "$@"
-    ;;
   iso)
     exec ./scripts/build-iso.sh "$@"
     ;;
@@ -70,7 +65,6 @@ case "$COMMAND" in
   all)
     ./scripts/build-base-image.sh "$@"
     ./scripts/build-flatpak-image.sh "$@"
-    ./scripts/build-snap-image.sh "$@"
     ./scripts/build-iso.sh "$@"
     ./scripts/repack-iso.sh "$@"
     ./scripts/release.sh "$@" latest

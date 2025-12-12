@@ -35,7 +35,6 @@
 #   - @cache       => /var/cache (package cache)
 #   - @log         => /var/log (system logs)
 #   - @flatpak     => /var/lib/flatpak (Flatpak apps)
-#   - @snapd       => /var/lib/snapd (snap apps)
 #   - @waydroid    => /var/lib/waydroid (Android system images & userdata)
 #   - @containers  => /var/lib/containers (Podman/Docker containers)
 #   - @machines    => /var/lib/machines (systemd-nspawn containers)
@@ -125,11 +124,6 @@ LABEL=shani_root   /var/log   btrfs   defaults,noatime,subvol=@log,rw,compress=z
 # Create: btrfs subvolume create /@flatpak
 LABEL=shani_root   /var/lib/flatpak   btrfs   nofail,defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# Snapd: Snaps and mounted snap images
-# Keeps snaps available in both blue and green roots
-# Create: btrfs subvolume create /@snapd
-LABEL=shani_root   /var/lib/snapd   btrfs   nofail,defaults,noatime,subvol=@snapd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
-
 # Waydroid: Android system images & userdata
 # Persistent Btrfs subvolume for Waydroid apps & images
 # Keeps Waydroid installed & persistent across blue/green root switches
@@ -200,22 +194,6 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # Uncomment if NOT using systemd.volatile=state kernel parameter
 # Requires: mkdir -p /data/overlay/var/{upper,work}
 #overlay   /var   overlay   rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
-
-##############################
-# Bind Mounts for Snapd
-##############################
-# Bind-mount /snap from the writable snapd state directory.
-# Required for classic snap support, snap seeding, and runtime snap mountpoints.
-# Ensure /var/lib/snapd is mounted before /snap.
-# Requires: mkdir -p /var/lib/snapd/snap
-/var/lib/snapd/snap   /snap   none   bind,nofail,x-systemd.requires-mounts-for=/var/lib/snapd   0 0
-
-# Snap writable data (configs, databases, app state)
-# CRITICAL: Without this, snaps lose all data on reboot
-/data/snap/data   /var/snap   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
-
-# Root user's snap data directory
-/data/snap/root   /root/snap   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################
 # Bind Mounts from /data     #

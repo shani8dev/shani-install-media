@@ -35,12 +35,12 @@ else
 fi
 
 # Copy Snap image if it exists
-if [[ -f "${OUTPUT_SUBDIR}/snapfs.zst" ]]; then
-    log "Copying Snap image (snapfs.zst)..."
-    cp "${OUTPUT_SUBDIR}/snapfs.zst" "${ISO_DIR}/" || die "Failed to copy Snap image"
-else
-    warn "Snap image not found. Skipping snapfs.zst..."
-fi
+#if [[ -f "${OUTPUT_SUBDIR}/snapfs.zst" ]]; then
+#    log "Copying Snap image (snapfs.zst)..."
+#    cp "${OUTPUT_SUBDIR}/snapfs.zst" "${ISO_DIR}/" || die "Failed to copy Snap image"
+#else
+#    warn "Snap image not found. Skipping snapfs.zst..."
+#fi
 
 log "Running mkarchiso..."
 mkarchiso -v -w "${TEMP_DIR}/${PROFILE}" -o "${OUTPUT_SUBDIR}" "${ISO_PROFILES_DIR}/${PROFILE}" || die "mkarchiso failed"
