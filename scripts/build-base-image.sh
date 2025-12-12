@@ -94,8 +94,11 @@ echo "stable" > /etc/shani-channel
 
 # Create directories required for the read-only root fstab mounts that are missing
 mkdir -p /boot/efi
+mkdir -p /swap
 mkdir -p /data
 mkdir -p /snap
+mkdir -p /var/snap
+mkdir -p /root/snap
 mkdir -p /var/lib/flatpak
 mkdir -p /var/lib/snapd
 mkdir -p /var/lib/waydroid
@@ -103,7 +106,6 @@ mkdir -p /var/lib/containers
 mkdir -p /var/lib/machines
 mkdir -p /var/lib/lxc
 mkdir -p /var/lib/libvirt
-mkdir -p /swap
 
 EOF
 

@@ -210,6 +210,13 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # Requires: mkdir -p /var/lib/snapd/snap
 /var/lib/snapd/snap   /snap   none   bind,nofail,x-systemd.requires-mounts-for=/var/lib/snapd   0 0
 
+# Snap writable data (configs, databases, app state)
+# CRITICAL: Without this, snaps lose all data on reboot
+/data/snap/data   /var/snap   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# Root user's snap data directory
+/data/snap/root   /root/snap   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
 ##############################
 # Bind Mounts from /data     #
 ##############################
