@@ -22,3 +22,4 @@ dracut
 pipewire-jack
 openresolv
 noto-fonts
+waydroid-helper
