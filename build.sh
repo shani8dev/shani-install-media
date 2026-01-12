@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # build.sh – Dispatcher for build steps (runs inside container or spawns container if needed)
 set -Eeuo pipefail
-
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/config/config.sh"
 
@@ -10,14 +9,15 @@ usage() {
 Usage: $(basename "$0") <command> [options]
 
 Commands:
-  image      Build base image (requires -p <profile>)
-  flatpak    Build Flatpak image (requires -p <profile>)
-  iso        Build ISO (requires -p <profile>)
-  repack     Repackage ISO for Secure Boot (requires -p <profile>)
-  upload     Upload build artifacts to SourceForge (requires -p <profile> [mode])
-  release    Create central release files (requires -p <profile> <type>)
-  all        Run all steps + release latest (requires -p <profile>)
-  publish    Run release and upload (requires -p <profile> <type>)
+  image          Build base image (requires -p <profile>)
+  flatpak        Build Flatpak image (requires -p <profile>)
+  iso            Build ISO (requires -p <profile>)
+  repack         Repackage ISO for Secure Boot (requires -p <profile>)
+  upload         Upload build artifacts to SourceForge (requires -p <profile> [mode])
+  promote-stable Promote current latest release to stable (requires -p <profile>)
+  release        Create central release files (requires -p <profile> <type>)
+  all            Run all steps + release latest (requires -p <profile>)
+  publish        Run release and upload (requires -p <profile> <type>)
 
 Options:
   -p <profile>    Profile name (e.g. gnome, plasma)
@@ -32,6 +32,7 @@ Examples:
   $(basename "$0") release -p gnome stable
   $(basename "$0") publish -p gnome stable
   $(basename "$0") upload -p gnome all
+  $(basename "$0") promote-stable -p gnome          # Promote latest to stable
 EOF
   exit 1
 }
@@ -61,6 +62,9 @@ case "$COMMAND" in
     ;;
   upload)
     exec ./scripts/upload.sh "$@"
+    ;;
+  promote-stable)
+    exec ./scripts/promote-stable.sh "$@"
     ;;
   all)
     ./scripts/build-base-image.sh "$@"

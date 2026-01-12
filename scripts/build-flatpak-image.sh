@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-flatpak-image.sh – Build the Flatpak image (container-only)
+# build-flatpak-image.sh — Build the Flatpak image (container-only)
 
 set -Eeuo pipefail
 
@@ -57,32 +57,131 @@ for pkg in "${packages[@]}"; do
     fi
 done
 
-# Detect required runtimes from the package list
+# Build a comprehensive list of all dependencies for installed apps
 declare -A required_runtimes
-for pkg in "${packages[@]}"; do
-    runtime_full=$(flatpak info --show-runtime "$pkg" 2>/dev/null || true)
+declare -A required_extensions
+
+log "Building dependency map for all installed applications..."
+
+# Get all installed applications
+all_installed_apps=$(flatpak list --system --app --columns=application || true)
+
+while IFS= read -r app || [[ -n "$app" ]]; do
+    [[ -z "$app" ]] && continue
+    
+    # Get runtime for this app
+    runtime_full=$(flatpak info --show-runtime "$app" 2>/dev/null || true)
     if [[ -n "$runtime_full" ]]; then
         runtime_base=$(echo "$runtime_full" | cut -d'/' -f1)
         required_runtimes["$runtime_base"]=1
-        log "Detected runtime '$runtime_full' (base: '$runtime_base') required for package '$pkg'"
+        log "App '$app' requires runtime: $runtime_base"
     fi
-done
+    
+    # Get metadata to find extension points
+    metadata=$(flatpak info --show-metadata "$app" 2>/dev/null || true)
+    
+    # Parse metadata for extension dependencies
+    while IFS= read -r line; do
+        # Look for Extension point declarations or runtime extensions
+        if [[ "$line" =~ Extension.*=.* ]]; then
+            # Extract extension name if present
+            if [[ "$line" =~ Extension\ (.+)= ]]; then
+                ext_name="${BASH_REMATCH[1]}"
+                required_extensions["$ext_name"]=1
+                log "App '$app' has extension point: $ext_name"
+            fi
+        fi
+    done <<< "$metadata"
+    
+done <<< "$all_installed_apps"
 
-# Detect required extensions from the package list
-declare -A required_extensions
-for pkg in "${packages[@]}"; do
-    extension_full=$(flatpak info --show-extensions "$pkg" 2>/dev/null || true)
-    if [[ -n "$extension_full" ]]; then
-        # Extract the extension ID from the first line that starts with "ID:"
-        extension_id=$(echo "$extension_full" | grep -m 1 -E '^\s*ID:' | sed 's/^\s*ID:\s*//')
-        if [[ -n "$extension_id" ]]; then
-            required_extensions["$extension_id"]=1
-            log "Detected extension: $extension_id"
-        else
-            log "No extension ID found in output for package $pkg"
+# Additionally, scan all currently installed runtimes to build full dependency tree
+log "Scanning installed runtimes for dependencies..."
+all_runtimes=$(flatpak list --system --runtime --columns=application || true)
+
+# Create a map of what each runtime depends on
+declare -A runtime_deps
+
+while IFS= read -r runtime || [[ -n "$runtime" ]]; do
+    [[ -z "$runtime" ]] && continue
+    
+    runtime_base="${runtime#runtime/}"
+    runtime_base="${runtime_base%%/*}"
+    
+    # Get metadata for this runtime to see what it depends on
+    metadata=$(flatpak info --show-metadata "$runtime" 2>/dev/null || true)
+    
+    # Parse for runtime dependencies
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^runtime= ]]; then
+            dep_runtime=$(echo "$line" | cut -d'=' -f2)
+            dep_base=$(echo "$dep_runtime" | cut -d'/' -f1)
+            runtime_deps["$runtime_base"]+=" $dep_base"
+            log "Runtime '$runtime_base' depends on: $dep_base"
+        fi
+    done <<< "$metadata"
+    
+done <<< "$all_runtimes"
+
+# Mark all transitive dependencies as required
+for app in "${packages[@]}"; do
+    # Get runtime for this app
+    app_runtime=$(flatpak info --show-runtime "$app" 2>/dev/null || true)
+    if [[ -n "$app_runtime" ]]; then
+        app_runtime_base=$(echo "$app_runtime" | cut -d'/' -f1)
+        
+        # Add this runtime and all its dependencies
+        if [[ -n "${runtime_deps[$app_runtime_base]:-}" ]]; then
+            for dep in ${runtime_deps[$app_runtime_base]}; do
+                required_runtimes["$dep"]=1
+                log "Marking transitive dependency as required: $dep (via $app_runtime_base for $app)"
+            done
         fi
     fi
 done
+
+# Additional: Query flatpak for related refs
+log "Querying flatpak for related refs of installed apps..."
+for app in "${packages[@]}"; do
+    related=$(flatpak info --show-related "$app" 2>/dev/null || true)
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        # Lines look like: runtime/org.winehq.Wine.gecko/x86_64/stable-25.08
+        if [[ "$line" =~ ^runtime/([^/]+)/ ]]; then
+            ext="${BASH_REMATCH[1]}"
+            required_extensions["$ext"]=1
+            log "App '$app' has related ref: $ext"
+        fi
+    done <<< "$related"
+done
+
+# Critical fix: Scan for extension dependencies in /var/lib/flatpak
+# Extensions are often not reported via standard queries but exist in the filesystem
+log "Scanning filesystem for extension dependencies..."
+if [[ -d /var/lib/flatpak/runtime ]]; then
+    for runtime_dir in /var/lib/flatpak/runtime/*/x86_64/*; do
+        [[ -d "$runtime_dir" ]] || continue
+        
+        runtime_name=$(basename "$(dirname "$(dirname "$runtime_dir")")")
+        metadata_file="$runtime_dir/active/metadata"
+        
+        if [[ -f "$metadata_file" ]]; then
+            # Check if this is an extension and if any app uses it
+            if grep -q "ExtensionOf=" "$metadata_file"; then
+                extension_of=$(grep "ExtensionOf=" "$metadata_file" | cut -d'=' -f2)
+                
+                # Check if any of our apps matches this ExtensionOf
+                for app in "${packages[@]}"; do
+                    app_runtime=$(flatpak info --show-runtime "$app" 2>/dev/null | cut -d'/' -f1 || true)
+                    if [[ "$extension_of" == "$app_runtime" ]] || [[ "$extension_of" == "$app" ]]; then
+                        required_extensions["$runtime_name"]=1
+                        log "Found extension '$runtime_name' for app '$app' (ExtensionOf: $extension_of)"
+                    fi
+                done
+            fi
+        fi
+    done
+fi
 
 
 # Remove unused Flatpak applications not in the profile list
@@ -128,25 +227,49 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
 		log "Keeping runtime $pkg because required package ($pkg_base or $base_app) is in the package list"
 		keep=1
 	fi
+	
+	# Special case: Keep Wine extensions if Bottles is installed
+	if printf '%s\n' "${packages[@]}" | grep -q "bottles"; then
+		if [[ "$pkg_base" == org.winehq.Wine.* ]]; then
+			log "Keeping Wine extension $pkg (Bottles is installed)"
+			keep=1
+		fi
+	fi
 
     # Check if pkg is required as a runtime
     if [[ $keep -eq 0 ]]; then
         for req in "${!required_runtimes[@]}"; do
-            if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
+            if [[ "$pkg_base" == "$req" || "$pkg" == "$req"* ]]; then
                 keep=1
+                log "Keeping required runtime: $pkg (matched: $req)"
                 break
             fi
         done
     fi
+    
     # Check if pkg is required as an extension
     if [[ $keep -eq 0 ]]; then
         for req in "${!required_extensions[@]}"; do
-            if [[ "$pkg" == "$req" || "$pkg" == "$req"* ]]; then
+            if [[ "$pkg_base" == "$req" || "$pkg" == *"$req"* ]]; then
                 keep=1
+                log "Keeping required extension: $pkg (matched: $req)"
                 break
             fi
         done
     fi
+    
+    if [[ $keep -eq 0 ]]; then
+        # Before removing, do a final safety check with dry-run
+        # Redirect stderr to stdout to capture all messages
+        check_output=$(flatpak uninstall --system --noninteractive --dry-run "$pkg" 2>&1 || true)
+        
+        # Check if output contains "applications using the extension"
+        if echo "$check_output" | grep -qi "applications using the extension"; then
+            log "Keeping package $pkg (detected as in-use extension via dry-run)"
+            keep=1
+        fi
+    fi
+    
     if [[ $keep -eq 0 ]]; then
         log "Removing package not required: $pkg"
         if ! flatpak uninstall --assumeyes --noninteractive --system --delete-data "$pkg"; then
@@ -203,7 +326,7 @@ FLATPAK_SUBVOL="flatpak_subvol"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
 # This function is assumed to set up a loop device and create a Btrfs image.
-setup_btrfs_image "$FLATPAK_IMG" "10G"  # Make sure this function is defined
+setup_btrfs_image "$FLATPAK_IMG" "12G"  # Make sure this function is defined
 # LOOP_DEVICE is set by setup_btrfs_image
 
 # Define mount point for Flatpak image
@@ -261,4 +384,3 @@ fi
 detach_btrfs_image "$FLATPAK_MOUNT" "$LOOP_DEVICE"
 
 log "Flatpak image created successfully at ${OUTPUT_FILE}"
-
