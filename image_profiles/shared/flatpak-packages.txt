@@ -1,7 +1,3 @@
-com.vivaldi.Vivaldi
-io.github.kolunmi.Bazaar
-it.mijorus.gearlever
-com.usebottles.bottles
 io.github.berarma.Oversteer
 io.github.antimicrox.antimicrox
 org.openrgb.OpenRGB
