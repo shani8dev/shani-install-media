@@ -27,3 +27,6 @@ org.kde.kblocks
 org.kde.ksnakeduel
 org.kde.kmahjongg
 org.kde.kapman
+org.kde.ksudoku
+com.heroicgameslauncher.hgl
+com.valvesoftware.Steam

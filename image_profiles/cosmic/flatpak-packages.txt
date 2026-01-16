@@ -36,7 +36,10 @@ org.gnome.Mahjongg
 org.gnome.Chess
 org.gnome.Aisleriot
 org.gnome.Quadrapassel
+org.gnome.Sudoku
 com.github.maoschanz.drawing
 io.gitlab.adhami3310.Impression
 de.haeckerfelix.Fragments
 de.haeckerfelix.Shortwave
+com.heroicgameslauncher.hgl
+com.valvesoftware.Steam
