@@ -323,8 +323,8 @@ fi
 # Configure gaming app permissions (applies to all profiles)
 log "Configuring gaming application permissions..."
 declare -A gaming_apps=(
-    ["com.valvesoftware.Steam"]="home,/mnt,/media,/run/media"
-    ["com.heroicgameslauncher.hgl"]="home,/mnt,/media,/run/media"
+    ["com.valvesoftware.Steam"]="~/Games:create,/mnt,/media,/run/media"
+    ["com.heroicgameslauncher.hgl"]="~/Games:create,/mnt,/media,/run/media"
     ["org.libretro.RetroArch"]="home,/mnt,/media,/run/media"
     ["com.usebottles.bottles"]="home,/mnt,/media,/run/media"
 )
