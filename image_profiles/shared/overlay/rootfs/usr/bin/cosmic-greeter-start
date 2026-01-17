@@ -1,0 +1,11 @@
+#!/bin/sh
+
+rm -rf /run/cosmic-greeter/cosmic/com.system76.CosmicSettingsDaemon/v1/* 2>/dev/null
+
+# If no real users exist, run initial setup first
+if ! getent passwd | awk -F: '$3 >= 1000 {exit 1} END {exit 0}'; then
+    cosmic-comp cosmic-initial-setup
+fi
+
+# Always start greeter
+exec cosmic-comp cosmic-greeter

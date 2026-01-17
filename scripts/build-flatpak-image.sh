@@ -320,6 +320,27 @@ if [[ "$PROFILE" == "gamescope" ]]; then
   log "Overrides applied."
 fi
 
+# Configure gaming app permissions (applies to all profiles)
+log "Configuring gaming application permissions..."
+declare -A gaming_apps=(
+    ["com.valvesoftware.Steam"]="home,/mnt,/media,/run/media"
+    ["com.heroicgameslauncher.hgl"]="home,/mnt,/media,/run/media"
+    ["org.libretro.RetroArch"]="home,/mnt,/media,/run/media"
+    ["com.usebottles.bottles"]="home,/mnt,/media,/run/media"
+)
+
+for app in "${!gaming_apps[@]}"; do
+    if flatpak list --system --app --columns=application | grep -Fxq "$app"; then
+        IFS=',' read -ra perms <<< "${gaming_apps[$app]}"
+        log "Setting permissions for $app: ${gaming_apps[$app]}"
+        
+        for perm in "${perms[@]}"; do
+            sudo flatpak override --system "$app" --filesystem="$perm"
+        done
+    fi
+done
+log "Gaming app permissions configured"
+
 # Prepare Btrfs image for Flatpak data (10G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"

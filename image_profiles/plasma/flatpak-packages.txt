@@ -3,6 +3,9 @@ com.github.tchx84.Flatseal
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
 com.usebottles.bottles
+com.heroicgameslauncher.hgl
+com.valvesoftware.Steam
+org.libretro.RetroArch
 it.mijorus.gearlever
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
@@ -28,5 +31,4 @@ org.kde.ksnakeduel
 org.kde.kmahjongg
 org.kde.kapman
 org.kde.ksudoku
-com.heroicgameslauncher.hgl
-com.valvesoftware.Steam
+

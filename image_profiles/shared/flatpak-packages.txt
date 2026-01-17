@@ -3,6 +3,8 @@ io.github.antimicrox.antimicrox
 org.openrgb.OpenRGB
 org.freedesktop.Piper
 io.github.benjamimgois.goverlay
+com.usebottles.bottles
+org.libretro.RetroArch
 com.heroicgameslauncher.hgl
 com.valvesoftware.Steam
 com.valvesoftware.Steam.CompatibilityTool.Boxtron
