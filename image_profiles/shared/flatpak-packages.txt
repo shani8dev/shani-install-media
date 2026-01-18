@@ -5,6 +5,7 @@ org.freedesktop.Piper
 io.github.benjamimgois.goverlay
 com.usebottles.bottles
 org.libretro.RetroArch
+net.lutris.Lutris
 com.heroicgameslauncher.hgl
 com.valvesoftware.Steam
 com.valvesoftware.Steam.CompatibilityTool.Boxtron
