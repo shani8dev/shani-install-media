@@ -324,7 +324,7 @@ fi
 log "Configuring gaming application permissions..."
 declare -A gaming_apps=(
     ["com.valvesoftware.Steam"]="~/Games:create,/mnt,/media,/run/media"
-    ["com.heroicgameslauncher.hgl"]="~/Games:create,/mnt,/media,/run/media"
+    ["com.heroicgameslauncher.hgl"]="home,/mnt,/media,/run/media"
     ["org.libretro.RetroArch"]="home,/mnt,/media,/run/media"
     ["com.usebottles.bottles"]="home,/mnt,/media,/run/media"
 )
@@ -341,13 +341,13 @@ for app in "${!gaming_apps[@]}"; do
 done
 log "Gaming app permissions configured"
 
-# Prepare Btrfs image for Flatpak data (10G)
+# Prepare Btrfs image for Flatpak data (14G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
 # This function is assumed to set up a loop device and create a Btrfs image.
-setup_btrfs_image "$FLATPAK_IMG" "12G"  # Make sure this function is defined
+setup_btrfs_image "$FLATPAK_IMG" "14G"  # Make sure this function is defined
 # LOOP_DEVICE is set by setup_btrfs_image
 
 # Define mount point for Flatpak image

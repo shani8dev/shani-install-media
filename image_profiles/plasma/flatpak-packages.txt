@@ -6,6 +6,14 @@ com.usebottles.bottles
 com.heroicgameslauncher.hgl
 com.valvesoftware.Steam
 org.libretro.RetroArch
+io.github.berarma.Oversteer
+io.github.antimicrox.antimicrox
+org.openrgb.OpenRGB
+org.freedesktop.Piper
+io.github.benjamimgois.goverlay
+org.freedesktop.Platform.VulkanLayer.MangoHud
+org.freedesktop.Platform.VulkanLayer.gamescope
+org.freedesktop.Platform.VulkanLayer.vkBasalt
 it.mijorus.gearlever
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
