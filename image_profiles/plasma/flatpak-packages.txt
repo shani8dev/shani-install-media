@@ -6,7 +6,6 @@ com.usebottles.bottles
 com.heroicgameslauncher.hgl
 com.valvesoftware.Steam
 org.libretro.RetroArch
-net.lutris.Lutris
 io.github.berarma.Oversteer
 io.github.antimicrox.antimicrox
 org.openrgb.OpenRGB
