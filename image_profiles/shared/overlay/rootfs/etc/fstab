@@ -60,6 +60,10 @@
 #   /data/varlib/geoclue         => /var/lib/geoclue
 #   /data/varlib/samba           => /var/lib/samba
 #   /data/varlib/nfs             => /var/lib/nfs
+#   /data/varlib/caddy           => /var/lib/caddy
+#   /data/varlib/tailscale       => /var/lib/tailscale
+#   /data/varlib/fail2ban        => /var/lib/fail2ban
+#   /data/varlib/cloudflared     => /var/lib/cloudflared
 #   /data/varspool/anacron       => /var/spool/anacron
 #   /data/varspool/cron          => /var/spool/cron
 #   /data/varspool/cups          => /var/spool/cups
@@ -83,7 +87,7 @@
 # EFI System Partition      #
 #############################
 # Contains systemd-boot, kernels, initramfs
-LABEL=shani_boot   /boot/efi   vfat   defaults   0 2
+LABEL=shani_boot   /boot/efi   vfat   defaults,noauto   0 2
 
 #############################
 # Core Btrfs Subvolumes     #
@@ -291,6 +295,26 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # Keeps NFS shares and client connections across blue/green switches
 # Requires: mkdir -p /data/varlib/nfs
 /data/varlib/nfs   /var/lib/nfs   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# caddy: Web server state and configs
+# Preserves caddy configs across blue/green switches
+# Requires: mkdir -p /data/varlib/caddy
+/data/varlib/caddy   /var/lib/caddy   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# tailscale: VPN state and keys
+# Preserves tailscale keys across blue/green switches
+# Requires: mkdir -p /data/varlib/tailscale
+/data/varlib/tailscale   /var/lib/tailscale   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# fail2ban: Persistent jail and log database
+# Preserves fail2ban state across blue/green switches
+# Requires: mkdir -p /data/varlib/fail2ban
+/data/varlib/fail2ban   /var/lib/fail2ban   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# cloudflared: Persistent configuration and credentials
+# Preserves cloudflared config across blue/green switches
+# Requires: mkdir -p /data/varlib/cloudflared
+/data/varlib/cloudflared   /var/lib/cloudflared   none   bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 # anacron: persistent timestamps for daily/weekly/monthly scheduled jobs
 # Keeps track of last run times across reboots and blue/green root switches

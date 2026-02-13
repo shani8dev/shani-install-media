@@ -1,0 +1,10 @@
+[Unit]
+Description=Recreate /data subdirectories for overlays and varlib
+DefaultDependencies=no
+After=data.mount
+Before=etc-overlay.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/shanios-data-structure.conf
+RemainAfterExit=yes
