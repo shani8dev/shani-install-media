@@ -78,15 +78,11 @@ r2_cleanup() {
     return 0
   fi
 
-  # Build the keep set: 2 most recent dated folders + stable folder
+  # Build the keep set: 1 most recent dated folder (latest) + stable folder
   local keep=()
-  local count=0
-  for d in "${all_dates[@]}"; do
-    if (( count < 2 )); then
-      keep+=("$d")
-      (( count++ )) || true
-    fi
-  done
+  if [[ ${#all_dates[@]} -gt 0 ]]; then
+    keep+=("${all_dates[0]}")
+  fi
   if [[ -n "$stable_date" ]] && [[ ! " ${keep[*]} " =~ " ${stable_date} " ]]; then
     keep+=("$stable_date")
   fi
