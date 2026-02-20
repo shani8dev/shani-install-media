@@ -2,7 +2,8 @@
 # promote-stable.sh – Promote current latest release to stable
 #
 # This script downloads the current latest.txt from SourceForge,
-# uses it to create stable.txt locally, and uploads it back.
+# uses it to create stable.txt locally, and uploads it back to
+# SourceForge and mirrors it to Cloudflare R2.
 #
 # Usage:
 #   ./promote-stable.sh -p <profile>
@@ -12,6 +13,25 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/../config/config.sh"
 
+# ---------------------------------------------------------------------------
+# R2 mirror helper
+# Mirrors a single file to Cloudflare R2 under the given remote subpath.
+# Silently skipped if R2_BUCKET is not set.
+# Failures are non-fatal — SourceForge remains the authoritative upload.
+# ---------------------------------------------------------------------------
+r2_upload() {
+  local src="$1"
+  local dest_subpath="$2"
+
+  if [[ -z "${R2_BUCKET:-}" ]]; then
+    return 0
+  fi
+
+  log "R2: mirroring $(basename "${src}") → r2:${R2_BUCKET}/${dest_subpath}"
+  rclone copy --progress "${src}" "r2:${R2_BUCKET}/${dest_subpath}" \
+    || log "Warning: R2 mirror failed for ${src} (SourceForge upload unaffected)"
+}
+
 usage() {
   echo "Usage: $(basename "$0") -p <profile>"
   echo "  -p <profile>         Profile name (e.g. gnome, plasma)"
@@ -20,6 +40,7 @@ usage() {
   echo "  1. Download the current latest.txt from SourceForge"
   echo "  2. Create stable.txt with the same content locally"
   echo "  3. Upload stable.txt to SourceForge"
+  echo "  4. Mirror stable.txt to Cloudflare R2 (if R2_BUCKET is set)"
   exit 1
 }
 
@@ -82,6 +103,10 @@ log "Created stable.txt with content: $(cat "${STABLE_TXT}")"
 log "Step 3: Uploading stable.txt to SourceForge..."
 log "Uploading to: ${REMOTE_PATH}"
 rsync -e ssh -avz --progress "${STABLE_TXT}" "${REMOTE_PATH}" || die "Upload of stable.txt failed"
+
+# Step 4: Mirror stable.txt to R2
+log "Step 4: Mirroring stable.txt to Cloudflare R2..."
+r2_upload "${STABLE_TXT}" "${PROFILE}"
 
 log ""
 log "========================================="
