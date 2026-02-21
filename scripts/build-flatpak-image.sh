@@ -297,9 +297,9 @@ fi
 
 if [[ "$PROFILE" == "plasma" ]]; then
     log "Applying Kvantum override for Plasma profile"
-    while IFS= read -r app; do
-        sudo flatpak override --filesystem=xdg-config/Kvantum:ro "$app"
-    done < <(flatpak list --system --app --columns=application)
+    flatpak override --system --filesystem=xdg-config/Kvantum:ro
+    flatpak override --system --env=QT_STYLE_OVERRIDE=kvantum-dark
+    log "Kvantum overrides applied successfully"
 fi
 
 if [[ "$PROFILE" == "gamescope" ]]; then
