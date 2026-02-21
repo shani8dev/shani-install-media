@@ -298,7 +298,7 @@ fi
 if [[ "$PROFILE" == "plasma" ]]; then
     log "Applying Kvantum override for Plasma profile"
     flatpak override --system --filesystem=xdg-config/Kvantum:ro
-    flatpak override --system --env=QT_STYLE_OVERRIDE=kvantum-dark
+    flatpak override --system --env=QT_STYLE_OVERRIDE=kvantum
     log "Kvantum overrides applied successfully"
 fi
 
