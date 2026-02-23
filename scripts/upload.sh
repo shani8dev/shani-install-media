@@ -204,17 +204,6 @@ else
   log "Warning: No .zst.sha256 files found in ${OUTPUT_SUBDIR}"
 fi
 
-# zsync files
-if ls "${OUTPUT_SUBDIR}"/*.zst.zsync 1>/dev/null 2>&1; then
-  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.zsync "${REMOTE_SUBPATH}" \
-    || die "Upload of base image zsync failed"
-  for f in "${OUTPUT_SUBDIR}"/*.zst.zsync; do
-    r2_upload "$f" "${R2_SUBPATH}"
-  done
-else
-  log "Warning: No .zst.zsync files found in ${OUTPUT_SUBDIR}"
-fi
-
 # latest.txt from build folder
 if [[ -f "${OUTPUT_SUBDIR}/latest.txt" ]]; then
   rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}" \
