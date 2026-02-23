@@ -1,40 +1,24 @@
 #!/bin/bash
-
-STAMP="/run/start-overlay-services.done"
-if [[ -f "$STAMP" ]]; then
-    echo "Overlay services already started this session, skipping."
-    exit 0
-fi
-
 services_started=0
 services_list=""
 
 while read -r service; do
     [[ "$service" == *"@"* ]] && continue
 
-    # One dbus call per service — parse by key=value, NOT by line order
-    # (systemd does not guarantee property output order)
-    props=$(systemctl show \
-        --property=ActiveState \
-        --property=InactiveExitTimestamp \
-        --property=ExecMainExitTimestamp \
-        "$service" 2>/dev/null)
+    if ! systemctl is-active --quiet "$service"; then
+        if systemctl is-enabled --quiet "$service" 2>/dev/null; then
+            start_time=$(systemctl show --property=ActiveEnterTimestamp --value "$service" 2>/dev/null)
+            [[ -z "$start_time" ]] && \
+                start_time=$(systemctl show --property=ExecMainStartTimestamp --value "$service" 2>/dev/null)
 
-    active_state=$(echo "$props"   | grep '^ActiveState='           | cut -d= -f2)
-    inactive_exit=$(echo "$props"  | grep '^InactiveExitTimestamp=' | cut -d= -f2-)
-    exec_main_exit=$(echo "$props" | grep '^ExecMainExitTimestamp=' | cut -d= -f2-)
-
-    # Already active — skip
-    [[ "$active_state" == "active" ]] && continue
-
-    # Has run before (has exit timestamps) — skip
-    [[ -n "$inactive_exit" || -n "$exec_main_exit" ]] && continue
-
-    systemctl start "$service" &
-    ((services_started++))
-    services_list="$services_list $service"
+            if [[ -z "$start_time" ]]; then
+                systemctl start "$service" &
+                ((services_started++))
+                services_list="$services_list $service"
+            fi
+        fi
+    fi
 done < <(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}')
-
 wait
 
 if [ $services_started -gt 0 ]; then
@@ -43,4 +27,4 @@ else
     echo "No new overlay services to start"
 fi
 
-touch "$STAMP"
+touch /run/start-overlay-services.done

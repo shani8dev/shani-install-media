@@ -1,11 +1,7 @@
 [Unit]
 Description=Mount overlays and reload systemd daemon
-DefaultDependencies=no
 After=local-fs.target systemd-remount-fs.service
-# beesd-setup.service must complete first so beesd@UUID enable symlink
-# exists before the overlay is mounted and daemon-reload picks it up
-After=beesd-setup.service
-Before=sysinit.target systemd-vconsole-setup.service
+Before=etc-start-services.service display-manager.service
 
 [Service]
 Type=oneshot
@@ -13,4 +9,4 @@ ExecStart=/usr/abin/mount-and-reload
 RemainAfterExit=yes
 
 [Install]
-WantedBy=sysinit.target
+WantedBy=multi-user.target

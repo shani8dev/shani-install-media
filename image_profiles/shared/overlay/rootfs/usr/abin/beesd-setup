@@ -1,37 +1,16 @@
 #!/bin/bash
-# /usr/abin/beesd-setup
-# Runs every boot via beesd-setup.service (enabled in readonly root).
-# Responsible for:
-#   1. Writing /etc/bees/<UUID>.conf
-#   2. Enabling beesd@<UUID>.service so start-overlay-services can find it
-#
-# beesd@<UUID> is a template instance — UUID is only known at runtime,
-# so it cannot be pre-enabled in the overlay at image build time.
-# start-overlay-services starts it after the overlay is mounted.
-#
-# systemctl enable here is safe — this service runs Before=etc-daemon-reload,
-# so there is no active systemd transaction to deadlock against.
-set -euo pipefail
+set -uo pipefail
 
 ROOTLABEL="shani_root"
-SCRIPT_VERSION="1"  # Bump to force conf regeneration after script updates
+SCRIPT_VERSION="1"
 
 log() { echo "$(date "+%Y-%m-%d %H:%M:%S") [beesd-setup] $*"; }
 
-# Wait for labeled device to appear (avoids boot race with udev)
-for i in {1..10}; do
-    [[ -e "/dev/disk/by-label/${ROOTLABEL}" ]] && break
-    log "Waiting for /dev/disk/by-label/${ROOTLABEL} (attempt $i/10)..."
-    sleep 1
-done
-
 if [[ ! -e "/dev/disk/by-label/${ROOTLABEL}" ]] && [[ ! -e "/dev/mapper/${ROOTLABEL}" ]]; then
-    log "ERROR: Device not found after 10s — both by-label and mapper missing."
-    exit 1
+    log "ERROR: Device not found — both by-label and mapper missing."
+    exit 0
 fi
 
-# Resolve BTRFS UUID — plain BTRFS via by-label, LUKS via mapper fallback.
-# beesd always needs the BTRFS UUID, never the LUKS UUID.
 UUID=$(blkid -s UUID -o value /dev/disk/by-label/"${ROOTLABEL}" 2>/dev/null || true)
 if [[ -z "$UUID" ]] && [[ -e "/dev/mapper/${ROOTLABEL}" ]]; then
     UUID=$(blkid -s UUID -o value /dev/mapper/"${ROOTLABEL}" 2>/dev/null || true)
@@ -39,15 +18,12 @@ fi
 
 if [[ -z "$UUID" ]]; then
     log "ERROR: Could not resolve BTRFS UUID for ${ROOTLABEL}."
-    exit 1
+    exit 0
 fi
 
 CONF="/etc/bees/${UUID}.conf"
 SERVICE="beesd@${UUID}.service"
 
-# Early exit — conf at current version and service already enabled.
-# Both must be true: missing conf = beesd can't start correctly,
-# not enabled = start-overlay-services won't find and start it.
 if [[ -f "$CONF" ]] \
     && grep -q "^# version=${SCRIPT_VERSION}$" "$CONF" 2>/dev/null \
     && systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then
@@ -55,9 +31,6 @@ if [[ -f "$CONF" ]] \
     exit 0
 fi
 
-# Resolve block device for lsblk.
-# On LUKS, /dev/disk/by-uuid/<BTRFS_UUID> may not exist as a symlink
-# because the UUID is on the mapper device, not a raw partition.
 if [[ -e "/dev/disk/by-uuid/${UUID}" ]]; then
     BTRFS_DEV="/dev/disk/by-uuid/${UUID}"
 elif [[ -e "/dev/mapper/${ROOTLABEL}" ]]; then
@@ -67,7 +40,7 @@ else
 fi
 
 log "Writing ${CONF} (UUID=${UUID}, device=${BTRFS_DEV})"
-mkdir -p /etc/bees
+mkdir -p /etc/bees || { log "ERROR: cannot create /etc/bees"; exit 0; }
 
 cat > "$CONF" <<CONF
 # /etc/bees/${UUID}.conf
@@ -75,29 +48,19 @@ cat > "$CONF" <<CONF
 # version=${SCRIPT_VERSION}
 UUID=${UUID}
 
-# Hash table sizing — per official docs table:
-#   256MB per TB → 64K average dedupe block size (good for OS + app data)
-#   Must be a multiple of 128KB (= 131072 bytes)
 _fs_bytes=\$(lsblk -b -no SIZE "${BTRFS_DEV}" 2>/dev/null | head -1 | tr -d '[:space:]')
 _fs_bytes=\$(( \${_fs_bytes:-0} ))
 _fs_tb=\$(( (_fs_bytes + 500000000000) / 1000000000000 ))
 _fs_tb=\$(( _fs_tb < 1 ? 1 : _fs_tb ))
 _fs_tb=\$(( _fs_tb > 4 ? 4 : _fs_tb ))
-DB_SIZE=\$(( _fs_tb * 256 * 1024 * 1024 ))   # 256MB per TB; multiple of 128KB
+DB_SIZE=\$(( _fs_tb * 256 * 1024 * 1024 ))
 
-# --strip-paths     : strip working dir prefix from log output
-# --no-timestamps   : journald already timestamps — avoid duplication
-# --throttle-factor 1.0 : pace ops to btrfs queue completion rate
 OPTIONS="--strip-paths --no-timestamps --throttle-factor 1.0"
 CONF
 
-# Enable beesd@<UUID> so start-overlay-services finds and starts it.
-# Safe to call here — we run Before=etc-daemon-reload.service so no
-# active transaction exists. The daemon-reload in etc-daemon-reload.service
-# will pick up this symlink after the overlay is mounted.
 if ! systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then
     log "Enabling ${SERVICE}"
-    systemctl enable "$SERVICE"
+    systemctl enable "$SERVICE" 2>/dev/null || log "WARN: could not enable ${SERVICE}"
 fi
 
 log "Done — UUID=${UUID}"

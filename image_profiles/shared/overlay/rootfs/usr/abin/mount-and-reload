@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Mount all overlay filesystems FIRST
-mount -a
+mount -a 2>/dev/null || true
 
 # THEN reload systemd to discover services in the overlay.
 # --no-block prevents deadlock: this script runs as a systemd service,
