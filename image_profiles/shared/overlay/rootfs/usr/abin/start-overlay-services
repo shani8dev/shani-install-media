@@ -1,32 +1,46 @@
 #!/bin/bash
 
+STAMP="/run/start-overlay-services.done"
+if [[ -f "$STAMP" ]]; then
+    echo "Overlay services already started this session, skipping."
+    exit 0
+fi
+
 services_started=0
 services_list=""
 
-# Use process substitution to avoid subshell
 while read -r service; do
-    [[ "$service" == *"@"* ]] && continue  # Skip template services
+    [[ "$service" == *"@"* ]] && continue
 
-    # Check if service is currently active
-    if ! systemctl is-active --quiet "$service"; then
-        # Check if service should be running (is it wanted by current target)
-        if systemctl is-enabled --quiet "$service" 2>/dev/null; then
-            # Get the service's start timestamp
-            start_time=$(systemctl show --property=ExecMainStartTimestamp --value "$service")
-            
-            # Only start if it has never been started (from overlay, missed during boot)
-            if [[ -z "$start_time" ]]; then
-                systemctl start "$service" &
-                ((services_started++))
-                services_list="$services_list $service"
-            fi
-        fi
-    fi
+    # One dbus call per service — parse by key=value, NOT by line order
+    # (systemd does not guarantee property output order)
+    props=$(systemctl show \
+        --property=ActiveState \
+        --property=InactiveExitTimestamp \
+        --property=ExecMainExitTimestamp \
+        "$service" 2>/dev/null)
+
+    active_state=$(echo "$props"   | grep '^ActiveState='           | cut -d= -f2)
+    inactive_exit=$(echo "$props"  | grep '^InactiveExitTimestamp=' | cut -d= -f2-)
+    exec_main_exit=$(echo "$props" | grep '^ExecMainExitTimestamp=' | cut -d= -f2-)
+
+    # Already active — skip
+    [[ "$active_state" == "active" ]] && continue
+
+    # Has run before (has exit timestamps) — skip
+    [[ -n "$inactive_exit" || -n "$exec_main_exit" ]] && continue
+
+    systemctl start "$service" &
+    ((services_started++))
+    services_list="$services_list $service"
 done < <(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}')
 
-# Log summary
+wait
+
 if [ $services_started -gt 0 ]; then
     echo "Started $services_started new overlay services:$services_list"
 else
     echo "No new overlay services to start"
 fi
+
+touch "$STAMP"

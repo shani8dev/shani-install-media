@@ -3,5 +3,7 @@
 # Mount all overlay filesystems FIRST
 mount -a
 
-# THEN reload systemd to discover services in overlay
-systemctl daemon-reload
+# THEN reload systemd to discover services in the overlay.
+# --no-block prevents deadlock: this script runs as a systemd service,
+# a blocking daemon-reload would wait for itself to finish.
+systemctl daemon-reload --no-block

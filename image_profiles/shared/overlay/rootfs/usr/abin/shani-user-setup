@@ -1,9 +1,20 @@
 #!/bin/bash
-# Get the last created user
+
 NEW_USER=$(awk -F':' '$3 >= 1000 && $3 < 60000 {print $1}' /etc/passwd | tail -n1)
 
-# Add to default groups
-usermod -aG input,realtime,video,sys,cups,lp,kvm,scanner "$NEW_USER"
+# Guard: empty username would corrupt state and re-trigger the path unit
+if [[ -z "$NEW_USER" ]]; then
+    echo "shani-user-setup: no regular user found, nothing to do."
+    exit 0
+fi
 
-# Set default shell
+# Guard: idempotency — skip if already configured to avoid re-triggering
+# the path unit by unnecessarily writing to /etc/group or /etc/passwd
+if id -nG "$NEW_USER" 2>/dev/null | tr ' ' '\n' | grep -q "^input$"; then
+    echo "shani-user-setup: $NEW_USER already configured, skipping."
+    exit 0
+fi
+
+echo "shani-user-setup: configuring new user '$NEW_USER'"
+usermod -aG input,realtime,video,sys,cups,lp,kvm,scanner "$NEW_USER"
 usermod -s /bin/zsh "$NEW_USER"

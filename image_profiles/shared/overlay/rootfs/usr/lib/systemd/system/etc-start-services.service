@@ -1,12 +1,16 @@
 [Unit]
 Description=Start services from overlay filesystem
-After=etc-daemon-reload.service
+After=etc-daemon-reload.service network.target
 Before=display-manager.service
+# If stamp already exists, script exits immediately — belt-and-suspenders
+ConditionPathExists=!/run/start-overlay-services.done
 
 [Service]
 Type=oneshot
 ExecStart=/usr/abin/start-overlay-services
 RemainAfterExit=yes
+TimeoutStartSec=120s
+Restart=no
 
 [Install]
 WantedBy=multi-user.target
