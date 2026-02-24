@@ -1,8 +1,6 @@
 [Unit]
 Description=Start services from overlay filesystem
 After=etc-daemon-reload.service
-Wants=etc-daemon-reload.service
-Before=display-manager.service
 ConditionPathExists=!/run/start-overlay-services.done
 
 [Service]

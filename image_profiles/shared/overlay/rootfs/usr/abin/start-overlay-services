@@ -4,29 +4,16 @@ services_list=""
 
 while read -r service; do
     [[ "$service" == *"@"* ]] && continue
+    systemctl is-active --quiet "$service" 2>/dev/null && continue
 
-    if ! systemctl is-active --quiet "$service"; then
-        if systemctl is-enabled --quiet "$service" 2>/dev/null; then
-            start_time=$(systemctl show --property=ActiveEnterTimestamp --value "$service" 2>/dev/null)
-            [[ -z "$start_time" ]] && \
-                start_time=$(systemctl show --property=ExecMainStartTimestamp --value "$service" 2>/dev/null)
-            [[ -z "$start_time" ]] && \
-                start_time=$(systemctl show --property=InactiveEnterTimestamp --value "$service" 2>/dev/null)
+    result=$(systemctl show --property=Result --value "$service" 2>/dev/null)
+    [[ -n "$result" ]] && continue
 
-            if [[ -z "$start_time" ]]; then
-                systemctl start "$service" &
-                ((services_started++))
-                services_list="$services_list $service"
-            fi
-        fi
-    fi
+    systemctl start "$service" &
+    ((services_started++))
+    services_list="$services_list $service"
 done < <(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}')
-wait
 
-if [ $services_started -gt 0 ]; then
-    echo "Started $services_started new overlay services:$services_list"
-else
-    echo "No new overlay services to start"
-fi
+[ $services_started -gt 0 ] && echo "Started $services_started new overlay services:$services_list" || echo "No new overlay services to start"
 
 touch /run/start-overlay-services.done
