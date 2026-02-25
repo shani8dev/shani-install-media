@@ -3,7 +3,7 @@ services_started=0
 services_list=""
 
 while read -r service; do
-    [[ "$service" == *"@"* ]] && continue
+    [[ "$service" == *"@.service" ]] && continue
     systemctl is-active --quiet "$service" 2>/dev/null && continue
 
     result=$(systemctl show --property=Result --value "$service" 2>/dev/null)
