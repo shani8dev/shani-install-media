@@ -17,7 +17,7 @@
 # │ systemd-boot → Kernel with root= → dracut mounts @blue or @green        │
 # │                                                                          │
 # │    @blue (inactive)  ←→  @green (active)                                │
-# │    Read-only root        Read-only root                                 │
+# │    Read-only root        Read-only root                                  │
 # │                              ↓                                           │
 # │                          Mounted as /                                    │
 # │                                                                          │
@@ -67,6 +67,9 @@
 #   /data/varlib/dbus            => /var/lib/dbus
 #   /data/varlib/systemd         => /var/lib/systemd
 #
+# Font Rendering:
+#   /data/varlib/fontconfig      => /var/lib/fontconfig
+#
 # Networking:
 #   /data/varlib/NetworkManager  => /var/lib/NetworkManager
 #   /data/varlib/bluetooth       => /var/lib/bluetooth
@@ -80,10 +83,12 @@
 #   /data/varlib/cloudflared     => /var/lib/cloudflared
 #   /data/varlib/geoclue         => /var/lib/geoclue
 #
-# Desktop & User:
+# Desktop & Display Manager:
 #   /data/varlib/gdm             => /var/lib/gdm
 #   /data/varlib/sddm            => /var/lib/sddm
 #   /data/varlib/colord          => /var/lib/colord
+#
+# Audio & Peripherals:
 #   /data/varlib/pipewire        => /var/lib/pipewire
 #   /data/varlib/rtkit           => /var/lib/rtkit
 #   /data/varlib/cups            => /var/lib/cups
@@ -94,13 +99,9 @@
 #   /data/varlib/fprint          => /var/lib/fprint
 #   /data/varlib/AccountsService => /var/lib/AccountsService
 #   /data/varlib/boltd           => /var/lib/boltd
-#   /data/varlib/sudo            => /var/lib/sudo
-#   /data/varlib/sshd            => /var/lib/sshd
-#   /data/varlib/polkit-1        => /var/lib/polkit-1
 #
 # Hardware & Firmware:
 #   /data/varlib/fwupd           => /var/lib/fwupd
-#   /data/varlib/tpm2-tss        => /var/lib/tpm2-tss
 #
 # Data Persistence:
 #   /data/varlib/fail2ban        => /var/lib/fail2ban
@@ -412,21 +413,6 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Requires: mkdir -p /data/varlib/boltd
 /data/varlib/boltd            /var/lib/boltd            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# sudo: Authentication timestamp cache
-# Prevents repeated password prompts after reboot
-# Requires: mkdir -p /data/varlib/sudo
-/data/varlib/sudo             /var/lib/sudo             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
-
-# sshd: OpenSSH runtime state
-# Preserves privilege separation directory and revocation DB
-# Requires: mkdir -p /data/varlib/sshd
-/data/varlib/sshd             /var/lib/sshd             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
-
-# polkit-1: PolicyKit authorization cache
-# Preserves authorization decisions across blue/green switches
-# Requires: mkdir -p /data/varlib/polkit-1
-/data/varlib/polkit-1         /var/lib/polkit-1         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
-
 ##############################################################################
 # SECTION 16: HARDWARE & FIRMWARE
 ##############################################################################
@@ -435,11 +421,6 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Preserves device firmware metadata
 # Requires: mkdir -p /data/varlib/fwupd
 /data/varlib/fwupd            /var/lib/fwupd            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
-
-# tpm2-tss: TPM2 Software Stack persistent state
-# Stores TPM2 persistent objects, NV indexes, sealed keys, and metadata
-# Requires: mkdir -p /data/varlib/tpm2-tss
-/data/varlib/tpm2-tss         /var/lib/tpm2-tss         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
 # SECTION 17: DATA PROTECTION & PERSISTENCE
