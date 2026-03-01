@@ -54,7 +54,8 @@
 #   @containers  => /var/lib/containers (Podman/Docker container images)
 #   @machines    => /var/lib/machines   (systemd-nspawn containers)
 #   @lxc         => /var/lib/lxc        (LXC containers)
-#   @libvirt     => /var/lib/libvirt    (QEMU/KVM VM disks - nodatacow)
+#   @libvirt     => /var/lib/libvirt    (libvirt VM disks - nodatacow)
+#   @qemu        => /var/lib/qemu       (bare QEMU VM disk images - nodatacow)
 #
 # Swap:
 #   @swap        => /swap (swap space - nodatacow)
@@ -251,10 +252,15 @@ LABEL=shani_root              /var/lib/machines         btrfs   nofail,defaults,
 # Create: btrfs subvolume create /@lxc
 LABEL=shani_root              /var/lib/lxc              btrfs   nofail,defaults,noatime,subvol=@lxc,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# /var/lib/libvirt — QEMU/KVM virtual machine disk images
-# nodatacow disabled for better VM disk I/O performance; nospace_cache required.
+# /var/lib/libvirt — libvirt daemon VM disk images and network state
+# nodatacow for better VM disk I/O performance; nospace_cache required.
 # Create: btrfs subvolume create /@libvirt
 LABEL=shani_root              /var/lib/libvirt          btrfs   nofail,defaults,noatime,subvol=@libvirt,rw,nodatacow,nospace_cache,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+
+# /var/lib/qemu — bare QEMU VM disk images (without libvirt)
+# nodatacow for better VM disk I/O performance; nospace_cache required.
+# Create: btrfs subvolume create /@qemu
+LABEL=shani_root              /var/lib/qemu             btrfs   nofail,defaults,noatime,subvol=@qemu,rw,nodatacow,nospace_cache,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 ##############################################################################
 # SECTION 7: SWAP

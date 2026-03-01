@@ -1,20 +1,34 @@
 #!/bin/bash
 
-NEW_USER=$(awk -F':' '$3 >= 1000 && $3 < 60000 {print $1}' /etc/passwd | tail -n1)
+EXTRA_GROUPS="input,realtime,video,sys,cups,lp,kvm,libvirt,scanner,nix-users"
 
-# Guard: empty username would corrupt state and re-trigger the path unit
-if [[ -z "$NEW_USER" ]]; then
-    echo "shani-user-setup: no regular user found, nothing to do."
-    exit 0
-fi
+# Process every regular user (UID 1000–59999).
+while IFS=: read -r username _ uid _; do
 
-# Guard: idempotency — skip if already configured to avoid re-triggering
-# the path unit by unnecessarily writing to /etc/group or /etc/passwd
-if id -nG "$NEW_USER" 2>/dev/null | tr ' ' '\n' | grep -q "^input$"; then
-    echo "shani-user-setup: $NEW_USER already configured, skipping."
-    exit 0
-fi
+    # Build list of groups from EXTRA_GROUPS that this user is missing.
+    missing=()
+    IFS=',' read -ra wanted <<< "$EXTRA_GROUPS"
+    for group in "${wanted[@]}"; do
+        # Skip groups that don't exist on the system yet
+        getent group "$group" &>/dev/null || continue
+        # Check if user is already a member
+        id -nG "$username" 2>/dev/null | tr ' ' '\n' | grep -qx "$group" || missing+=("$group")
+    done
 
-echo "shani-user-setup: configuring new user '$NEW_USER'"
-usermod -aG input,realtime,video,sys,cups,lp,kvm,scanner "$NEW_USER"
-usermod -s /bin/zsh "$NEW_USER"
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        echo "shani-user-setup: $username already has all groups, skipping."
+        continue
+    fi
+
+    echo "shani-user-setup: adding $username to: ${missing[*]}"
+    usermod -aG "$(IFS=','; echo "${missing[*]}")" "$username"
+
+    # Set default shell to zsh if available and not already set
+    if [[ -x /bin/zsh ]]; then
+        current_shell=$(getent passwd "$username" | cut -d: -f7)
+        if [[ "$current_shell" != "/bin/zsh" ]]; then
+            usermod -s /bin/zsh "$username"
+        fi
+    fi
+
+done < <(awk -F: '$3 >= 1000 && $3 < 60000 {print $1, $2, $3, $4}' OFS=: /etc/passwd)
