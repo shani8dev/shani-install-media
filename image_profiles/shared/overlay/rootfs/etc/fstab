@@ -18,16 +18,16 @@
 # │                                                                          │
 # │    @blue (inactive)  ←→  @green (active)                                │
 # │    Read-only root        Read-only root                                  │
-# │                              ↓                                           │
+# │                               ↓                                          │
 # │                          Mounted as /                                    │
 # │                                                                          │
 # │ Writable Layers (shared between blue & green):                          │
-# │  /etc   → OverlayFS (changes in /data/overlay/etc)                      │
+# │  /etc   → OverlayFS (changes stored in /data/overlay/etc)               │
 # │  /var   → tmpfs (volatile, cleared on reboot)                           │
 # │  /home  → Persistent Btrfs @home subvolume                              │
 # │  /data  → Persistent Btrfs @data subvolume                              │
 # │                                                                          │
-# │ Update: Write to inactive root → Switch boot entry → Reboot             │
+# │ Update:   Write to inactive root → Switch boot entry → Reboot           │
 # │ Rollback: Change systemd-boot entry back → Reboot                       │
 # └─────────────────────────────────────────────────────────────────────────┘
 
@@ -37,24 +37,24 @@
 #
 # Root Volume: shani_root (main Btrfs filesystem)
 #
-# Immutable Root Slots (choose one at boot):
-#   @blue        => / (blue root - immutable read-only)
-#   @green       => / (green root - immutable read-only)
+# Immutable Root Slots (one chosen at boot):
+#   @blue        => / (blue root - immutable, read-only)
+#   @green       => / (green root - immutable, read-only)
 #
 # Persistent Data & Storage:
-#   @home        => /home (user files & configs - survives root switches)
-#   @data        => /data (overlay storage + service state bind sources)
-#   @nix         => /nix (Nix package manager store - shared between roots)
-#   @cache       => /var/cache (package manager cache - shared)
-#   @log         => /var/log (system logs - persistent)
+#   @home        => /home        (user files & configs - survives root switches)
+#   @data        => /data        (overlay storage + service state bind sources)
+#   @nix         => /nix         (Nix package manager store - shared between roots)
+#   @cache       => /var/cache   (package manager cache - shared)
+#   @log         => /var/log     (system logs - persistent)
 #
 # Container & Virtualization:
-#   @flatpak     => /var/lib/flatpak (Flatpak apps)
-#   @waydroid    => /var/lib/waydroid (Android system images & userdata)
-#   @containers  => /var/lib/containers (Podman/Docker containers)
-#   @machines    => /var/lib/machines (systemd-nspawn containers)
-#   @lxc         => /var/lib/lxc (LXC containers)
-#   @libvirt     => /var/lib/libvirt (QEMU/KVM VM disks - nodatacow)
+#   @flatpak     => /var/lib/flatpak    (Flatpak runtimes and apps)
+#   @waydroid    => /var/lib/waydroid   (Android system images & userdata)
+#   @containers  => /var/lib/containers (Podman/Docker container images)
+#   @machines    => /var/lib/machines   (systemd-nspawn containers)
+#   @lxc         => /var/lib/lxc        (LXC containers)
+#   @libvirt     => /var/lib/libvirt    (QEMU/KVM VM disks - nodatacow)
 #
 # Swap:
 #   @swap        => /swap (swap space - nodatacow)
@@ -74,6 +74,8 @@
 #   /data/varlib/NetworkManager  => /var/lib/NetworkManager
 #   /data/varlib/bluetooth       => /var/lib/bluetooth
 #   /data/varlib/firewalld       => /var/lib/firewalld
+#
+# File Sharing & Network Services:
 #   /data/varlib/samba           => /var/lib/samba
 #   /data/varlib/nfs             => /var/lib/nfs
 #
@@ -83,7 +85,7 @@
 #   /data/varlib/cloudflared     => /var/lib/cloudflared
 #   /data/varlib/geoclue         => /var/lib/geoclue
 #
-# Desktop & Display Manager:
+# Display Manager & Desktop:
 #   /data/varlib/gdm             => /var/lib/gdm
 #   /data/varlib/sddm            => /var/lib/sddm
 #   /data/varlib/colord          => /var/lib/colord
@@ -99,11 +101,15 @@
 #   /data/varlib/fprint          => /var/lib/fprint
 #   /data/varlib/AccountsService => /var/lib/AccountsService
 #   /data/varlib/boltd           => /var/lib/boltd
+#   /data/varlib/sudo            => /var/lib/sudo
+#   /data/varlib/sshd            => /var/lib/sshd
+#   /data/varlib/polkit-1        => /var/lib/polkit-1
+#   /data/varlib/tpm2-tss        => /var/lib/tpm2-tss
 #
 # Hardware & Firmware:
 #   /data/varlib/fwupd           => /var/lib/fwupd
 #
-# Data Persistence:
+# Data Protection & Persistence:
 #   /data/varlib/fail2ban        => /var/lib/fail2ban
 #   /data/varlib/restic          => /var/lib/restic
 #   /data/varlib/rclone          => /var/lib/rclone
@@ -114,7 +120,7 @@
 #   /data/varspool/cron          => /var/spool/cron
 #   /data/varspool/at            => /var/spool/at
 #
-# Print & Mail Queues:
+# Print & Mail Spools:
 #   /data/varspool/cups          => /var/spool/cups
 #   /data/varspool/samba         => /var/spool/samba
 #   /data/varspool/postfix       => /var/spool/postfix
@@ -124,34 +130,36 @@
 ##############################################################################
 #
 # Btrfs Options:
-#   noatime         - Disable access time updates (reduces writes)
-#   compress=zstd   - Enable transparent compression
-#   space_cache=v2  - Use modern free space cache
-#   autodefrag      - Enable automatic defragmentation
-#   nodatacow       - Disable Copy-on-Write (for VMs/swap performance)
-#   nospace_cache   - Disable space cache (required with nodatacow)
-#   nofail          - Boot continues if subvolume doesn't exist (optional)
+#   noatime         - Disable access time updates (reduces write amplification)
+#   compress=zstd   - Enable transparent Zstandard compression
+#   space_cache=v2  - Use modern free space cache implementation
+#   autodefrag      - Enable automatic background defragmentation
+#   nodatacow       - Disable Copy-on-Write (required for VMs and swap)
+#   nospace_cache   - Disable space cache (required when using nodatacow)
+#   nofail          - Boot continues if subvolume is absent (optional mounts)
 #
-# systemd Options:
-#   x-systemd.after                - Mount after specified unit
-#   x-systemd.requires             - Hard dependency on another mount
-#   x-systemd.requires-mounts-for  - Require mount point to exist first
+# systemd Mount Options:
+#   x-systemd.after                - Mount after the specified unit starts
+#   x-systemd.requires             - Hard dependency on another mount unit
+#   x-systemd.requires-mounts-for  - Require a mount point to exist first
 #
 # Filesystem Labels:
-#   shani_boot - EFI System Partition (FAT32, 512MB minimum)
-#   shani_root - Main Btrfs volume (all subvolumes)
+#   shani_boot - EFI System Partition (FAT32, 512 MiB minimum)
+#   shani_root - Main Btrfs volume (contains all subvolumes)
 
 ##############################################################################
 
+
 ##############################################################################
-# SECTION 1: UEFI Boot & Runtime Storage
+# SECTION 1: UEFI BOOT PARTITION & RUNTIME TMPFS
 ##############################################################################
 
 # EFI System Partition
-# Contains systemd-boot, kernels, initramfs
+# Contains systemd-boot loader, kernels, and initramfs images.
+# noauto: not mounted by default; mounted explicitly when needed (e.g. updates).
 LABEL=shani_boot              /boot/efi                 vfat    defaults,noatime,noauto   0 2
 
-# Temporary runtime data (cleared on reboot)
+# Temporary runtime data — cleared on every reboot
 tmpfs                         /tmp                      tmpfs   defaults,noatime   0 0
 tmpfs                         /run                      tmpfs   defaults,noatime   0 0
 
@@ -159,60 +167,58 @@ tmpfs                         /run                      tmpfs   defaults,noatime
 # SECTION 2: CORE PERSISTENT BTRFS SUBVOLUMES
 ##############################################################################
 
-# /home: User files, configs, personal data
-# Persists across blue/green switches so users keep their data
+# /home — User files, dotfiles, and personal data
+# Persists across blue/green root switches so users retain their data.
 # Create: btrfs subvolume create /@home
 LABEL=shani_root              /home                     btrfs   defaults,noatime,subvol=@home,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
-# /data: Overlay backing storage + service state directories
-# Stores /etc changes (in /data/overlay/etc) and service data (in /data/varlib)
-# Shared between blue/green so config and service state persist
+# /data — Overlay backing storage and service state source tree
+# Stores /etc overlay changes (in /data/overlay/etc) and all bind-mount
+# service state directories (in /data/varlib and /data/varspool).
+# Shared between blue and green so config and service state persist.
 # Create: btrfs subvolume create /@data
-# Then: mkdir -p /data/overlay/etc/{upper,work}
+# Then:   mkdir -p /data/overlay/etc/{upper,work}
 LABEL=shani_root              /data                     btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
 ##############################################################################
-# SECTION 3: SYSTEM INTEGRITY & CACHING
+# SECTION 3: NIX PACKAGE STORE & PACKAGE CACHE
 ##############################################################################
 
-# /nix: Nix package manager store
-# Shared between blue/green — packages survive slot switches
-# Nix daemon controls all writes, store integrity is daemon-enforced
-# CoW kept intentionally: enables compression and dedup via bees
-# nofail: boot continues if @nix subvolume doesn't exist yet
+# /nix — Nix package manager store
+# Shared between blue and green roots so packages survive slot switches.
+# CoW is intentionally kept to enable compression and deduplication via bees.
+# nofail: boot continues if @nix does not yet exist.
 # Create: btrfs subvolume create /@nix
 LABEL=shani_root              /nix                      btrfs   nofail,noatime,subvol=@nix,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
-# /var/cache: Package manager cache
-# Speeds up package installation in both blue and green
-# Shared to avoid re-downloading packages when switching roots
+# /var/cache — Package manager download and metadata cache
+# Shared between roots to avoid re-downloading packages after slot switches.
 # Create: btrfs subvolume create /@cache
 LABEL=shani_root              /var/cache                btrfs   defaults,noatime,subvol=@cache,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 ##############################################################################
-# SECTION 4: SYSTEM LOGGING & DIAGNOSTICS
+# SECTION 4: SYSTEM LOGGING
 ##############################################################################
 
-# /var/log: System and application logs
-# Persistent logs for troubleshooting across reboots and blue/green switches
-# Shared so you can review logs from both roots
+# /var/log — System and application logs
+# Persistent across reboots and blue/green switches for troubleshooting.
 # Create: btrfs subvolume create /@log
 LABEL=shani_root              /var/log                  btrfs   defaults,noatime,subvol=@log,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 ##############################################################################
-# SECTION 5: OVERLAY FILESYSTEMS FOR WRITABILITY
+# SECTION 5: OVERLAY FILESYSTEMS (WRITABLE /etc)
 ##############################################################################
 
-# /etc: Makes read-only root's /etc writable by layering changes on top
-# lowerdir: Read-only /etc from active root (@blue or @green)
-# upperdir: Writable layer in /data (stores all changes)
-# workdir: Required by OverlayFS for atomic operations
-# Changes persist across blue/green switches
+# /etc — OverlayFS making the read-only root's /etc writable
+# lowerdir: read-only /etc from the active root slot (@blue or @green)
+# upperdir: writable layer in /data storing all modifications
+# workdir:  required by OverlayFS for atomic rename operations
+# Changes persist across blue/green switches via @data.
 # Requires: mkdir -p /data/overlay/etc/{upper,work}
 overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
-# /var overlay: Optional overlay for /var (disabled by default)
-# Only used if NOT using systemd.volatile=state kernel parameter
+# /var overlay — Optional OverlayFS for /var (disabled by default)
+# Enable only when NOT using the systemd.volatile=state kernel parameter.
 # Requires: mkdir -p /data/overlay/var/{upper,work}
 #overlay   /var   overlay   rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
@@ -220,63 +226,61 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # SECTION 6: CONTAINER & VIRTUALIZATION PLATFORMS
 ##############################################################################
 
-# Flatpak: Runtimes and applications
-# Keeps Flatpak apps available in both blue and green roots
+# /var/lib/flatpak — Flatpak runtimes and applications
+# Keeps Flatpak apps available in both blue and green roots.
 # Create: btrfs subvolume create /@flatpak
 LABEL=shani_root              /var/lib/flatpak          btrfs   nofail,defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# Waydroid: Android system images & userdata
-# Persistent Btrfs subvolume for Waydroid apps & images
-# Keeps Waydroid installed & persistent across blue/green root switches
+# /var/lib/waydroid — Android system images and userdata
+# Keeps Waydroid installed and persistent across blue/green root switches.
+# Create: btrfs subvolume create /@waydroid
 LABEL=shani_root              /var/lib/waydroid         btrfs   nofail,defaults,noatime,subvol=@waydroid,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# Podman/Docker: Container images and volumes
-# Keeps containers available in both blue and green roots
+# /var/lib/containers — Podman/Docker container images and volumes
+# Keeps containers available in both blue and green roots.
 # Create: btrfs subvolume create /@containers
 LABEL=shani_root              /var/lib/containers       btrfs   nofail,defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# systemd-nspawn: System containers
-# Keeps system containers available in both blue and green roots
+# /var/lib/machines — systemd-nspawn system containers
+# Keeps system containers available in both blue and green roots.
 # Create: btrfs subvolume create /@machines
 LABEL=shani_root              /var/lib/machines         btrfs   nofail,defaults,noatime,subvol=@machines,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# LXC: System and application containers
-# Keeps LXC containers available in both blue and green roots
+# /var/lib/lxc — LXC system and application containers
+# Keeps LXC containers available in both blue and green roots.
 # Create: btrfs subvolume create /@lxc
 LABEL=shani_root              /var/lib/lxc              btrfs   nofail,defaults,noatime,subvol=@lxc,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# libvirt: Virtual machine disk images (QEMU/KVM)
-# Keeps VMs available in both blue and green roots
-# nodatacow for better VM disk performance
-# nospace_cache required when using nodatacow
+# /var/lib/libvirt — QEMU/KVM virtual machine disk images
+# nodatacow disabled for better VM disk I/O performance; nospace_cache required.
 # Create: btrfs subvolume create /@libvirt
 LABEL=shani_root              /var/lib/libvirt          btrfs   nofail,defaults,noatime,subvol=@libvirt,rw,nodatacow,nospace_cache,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 ##############################################################################
-# SECTION 7: SWAP SPACE
+# SECTION 7: SWAP
 ##############################################################################
 
-# /swap: Swap subvolume container
-# nodatacow for swap performance (CoW causes fragmentation)
-# nospace_cache required when using nodatacow
+# /swap — Btrfs subvolume container for the swapfile
+# nodatacow required for swap correctness; nospace_cache required with nodatacow.
 # Create: btrfs subvolume create /@swap
 LABEL=shani_root              /swap                     btrfs   nofail,noatime,subvol=@swap,rw,nodatacow,nospace_cache   0 0
 
-# Swapfile: Actual swap space
-# Create: btrfs filesystem mkswapfile --size 8G /swap/swapfile && chmod 600 /swap/swapfile
+# Swapfile — actual swap space inside the @swap subvolume
+# Create: btrfs filesystem mkswapfile --size 8G /swap/swapfile
+#         chmod 600 /swap/swapfile
 /swap/swapfile                none                      swap    nofail,sw   0 0
 
 ##############################################################################
-# SECTION 8: SYSTEM FOUNDATION (Core System Services)
+# SECTION 8: SYSTEM CORE STATE
 ##############################################################################
 
-# D-Bus: Machine ID and system bus state
-# Ensures consistent machine-id across blue/green switches
+# /var/lib/dbus — D-Bus machine ID and system bus state
+# Ensures a consistent machine-id across blue/green root switches.
 # Requires: mkdir -p /data/varlib/dbus
 /data/varlib/dbus             /var/lib/dbus             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# systemd: System manager state, timers, random seed
-# Preserves systemd unit states and timer schedules
+# /var/lib/systemd — systemd manager state, timers, and random seed
+# Preserves unit states, timer schedules, and the persistent random seed.
 # Requires: mkdir -p /data/varlib/systemd
 /data/varlib/systemd          /var/lib/systemd          none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -284,8 +288,8 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 9: FONT RENDERING
 ##############################################################################
 
-# fontconfig: Font configuration cache
-# Preserves font settings across blue/green switches
+# /var/lib/fontconfig — Font configuration and rendering cache
+# Preserves font settings and cache across blue/green root switches.
 # Requires: mkdir -p /data/varlib/fontconfig
 /data/varlib/fontconfig       /var/lib/fontconfig       none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -293,18 +297,18 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 10: NETWORKING & CONNECTIVITY
 ##############################################################################
 
-# NetworkManager: Connection profiles, WiFi passwords, VPN configs
-# Keeps network settings across blue/green switches
+# /var/lib/NetworkManager — Connection profiles, Wi-Fi passwords, VPN configs
+# Keeps all network settings intact across blue/green root switches.
 # Requires: mkdir -p /data/varlib/NetworkManager
 /data/varlib/NetworkManager   /var/lib/NetworkManager   none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# Bluetooth: Paired device database
-# Keeps Bluetooth pairings across blue/green switches
+# /var/lib/bluetooth — Paired device database and keys
+# Keeps Bluetooth pairings across blue/green root switches.
 # Requires: mkdir -p /data/varlib/bluetooth
 /data/varlib/bluetooth        /var/lib/bluetooth        none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# firewalld: Firewall rules and configuration
-# Keeps firewall settings across blue/green switches
+# /var/lib/firewalld — Firewall rules and zone configuration
+# Keeps firewall policy intact across blue/green root switches.
 # Requires: mkdir -p /data/varlib/firewalld
 /data/varlib/firewalld        /var/lib/firewalld        none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -312,13 +316,13 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 11: FILE SHARING & NETWORK SERVICES
 ##############################################################################
 
-# samba: Samba server configuration and state
-# Keeps Samba shares and settings across blue/green switches
+# /var/lib/samba — Samba server configuration and runtime state
+# Keeps Samba shares and settings across blue/green root switches.
 # Requires: mkdir -p /data/varlib/samba
 /data/varlib/samba            /var/lib/samba            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# nfs: NFS server exports, client tracking, and lock state
-# Keeps NFS shares and client connections across blue/green switches
+# /var/lib/nfs — NFS server exports, client tracking, and lock state
+# Keeps NFS share state and client connections across blue/green root switches.
 # Requires: mkdir -p /data/varlib/nfs
 /data/varlib/nfs              /var/lib/nfs              none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -326,23 +330,23 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 12: REMOTE ACCESS & VPN SERVICES
 ##############################################################################
 
-# caddy: Web server state and configs
-# Preserves caddy configs across blue/green switches
+# /var/lib/caddy — Caddy web server state and TLS certificates
+# Preserves certificates and configuration across blue/green root switches.
 # Requires: mkdir -p /data/varlib/caddy
 /data/varlib/caddy            /var/lib/caddy            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# tailscale: VPN state and keys
-# Preserves tailscale keys across blue/green switches
+# /var/lib/tailscale — Tailscale VPN node keys and state
+# Preserves node identity and keys across blue/green root switches.
 # Requires: mkdir -p /data/varlib/tailscale
 /data/varlib/tailscale        /var/lib/tailscale        none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# cloudflared: Persistent configuration and credentials
-# Preserves cloudflared config across blue/green switches
+# /var/lib/cloudflared — Cloudflare Tunnel credentials and configuration
+# Preserves tunnel credentials across blue/green root switches.
 # Requires: mkdir -p /data/varlib/cloudflared
 /data/varlib/cloudflared      /var/lib/cloudflared      none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# geoclue: Geolocation service state
-# Preserves location settings and permissions across blue/green switches
+# /var/lib/geoclue — Geolocation service state and permissions
+# Preserves location settings and app permissions across blue/green root switches.
 # Requires: mkdir -p /data/varlib/geoclue
 /data/varlib/geoclue          /var/lib/geoclue          none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -350,18 +354,18 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 13: DISPLAY MANAGER & DESKTOP
 ##############################################################################
 
-# GDM: GNOME Display Manager session state
-# Preserves GDM settings across blue/green switches (if using GDM)
+# /var/lib/gdm — GNOME Display Manager session state
+# Preserves GDM autologin and session settings (when using GDM).
 # Requires: mkdir -p /data/varlib/gdm
 /data/varlib/gdm              /var/lib/gdm              none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# SDDM: Simple Desktop Display Manager state
-# Preserves SDDM settings across blue/green switches (if using SDDM)
+# /var/lib/sddm — Simple Desktop Display Manager state
+# Preserves SDDM session settings (when using SDDM).
 # Requires: mkdir -p /data/varlib/sddm
 /data/varlib/sddm             /var/lib/sddm             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# colord: Color management profiles
-# Keeps display/printer color profiles across blue/green switches
+# /var/lib/colord — Color management profiles for displays and printers
+# Keeps calibration profiles across blue/green root switches.
 # Requires: mkdir -p /data/varlib/colord
 /data/varlib/colord           /var/lib/colord           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -369,28 +373,28 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 14: AUDIO & PERIPHERALS
 ##############################################################################
 
-# pipewire: Audio session and runtime state
-# Preserves PipeWire configuration state
+# /var/lib/pipewire — PipeWire audio session state
+# Preserves PipeWire configuration state across blue/green root switches.
 # Requires: mkdir -p /data/varlib/pipewire
 /data/varlib/pipewire         /var/lib/pipewire         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# rtkit: Realtime scheduling service state
-# Preserves realtime priority tracking
+# /var/lib/rtkit — RealtimeKit scheduling service state
+# Preserves realtime priority grants across blue/green root switches.
 # Requires: mkdir -p /data/varlib/rtkit
 /data/varlib/rtkit            /var/lib/rtkit            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# cups: Printer configurations and queues
-# Keeps printer settings across blue/green switches
+# /var/lib/cups — Printer driver configurations and PPD files
+# Keeps printer settings across blue/green root switches.
 # Requires: mkdir -p /data/varlib/cups
 /data/varlib/cups             /var/lib/cups             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# sane: Scanner configurations
-# Keeps scanner settings across blue/green switches
+# /var/lib/sane — Scanner backend configurations
+# Keeps scanner settings across blue/green root switches.
 # Requires: mkdir -p /data/varlib/sane
 /data/varlib/sane             /var/lib/sane             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# upower: Power management statistics
-# Preserves battery/power history across blue/green switches
+# /var/lib/upower — Power management statistics and battery history
+# Preserves battery charge history across blue/green root switches.
 # Requires: mkdir -p /data/varlib/upower
 /data/varlib/upower           /var/lib/upower           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
@@ -398,110 +402,108 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # SECTION 15: USER AUTHENTICATION & SECURITY
 ##############################################################################
 
-# fprint: Fingerprint enrollment data
-# Keeps enrolled fingerprints across blue/green switches
+# /var/lib/fprint — Fingerprint enrollment data
+# Keeps enrolled fingerprints across blue/green root switches.
 # Requires: mkdir -p /data/varlib/fprint
 /data/varlib/fprint           /var/lib/fprint           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# AccountsService: User account metadata, avatars, session preferences
-# Preserves user profile info across blue/green switches
+# /var/lib/AccountsService — User account metadata, avatars, and session preferences
+# Preserves user profile information across blue/green root switches.
 # Requires: mkdir -p /data/varlib/AccountsService
 /data/varlib/AccountsService  /var/lib/AccountsService  none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# boltd: Thunderbolt device authorization database
-# Keeps Thunderbolt device trust across blue/green switches
+# /var/lib/boltd — Thunderbolt device authorization database
+# Keeps Thunderbolt device trust across blue/green root switches.
 # Requires: mkdir -p /data/varlib/boltd
 /data/varlib/boltd            /var/lib/boltd            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-
-# sudo: Authentication timestamp cache
-# Preserves sudo timestamp state across blue/green switches
+# /var/lib/sudo — sudo authentication timestamp cache
+# Preserves sudo session timestamps across blue/green root switches.
 # Requires: mkdir -p /data/varlib/sudo
 /data/varlib/sudo             /var/lib/sudo             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# sshd: OpenSSH runtime state
-# Preserves privilege separation directory across blue/green switches
+# /var/lib/sshd — OpenSSH privilege separation directory
+# Preserves sshd runtime state across blue/green root switches.
 # Requires: mkdir -p /data/varlib/sshd
 /data/varlib/sshd             /var/lib/sshd             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# polkit-1: PolicyKit authorization cache
-# Preserves authorization decisions across blue/green switches
+# /var/lib/polkit-1 — PolicyKit authorization rules and cache
+# Preserves authorization decisions across blue/green root switches.
 # Requires: mkdir -p /data/varlib/polkit-1
 /data/varlib/polkit-1         /var/lib/polkit-1         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# tpm2-tss: TPM2 Software Stack persistent state
-# Stores TPM2 persistent objects and sealed keys
+# /var/lib/tpm2-tss — TPM2 Software Stack persistent state
+# Stores TPM2 persistent objects and sealed keys across blue/green root switches.
 # Requires: mkdir -p /data/varlib/tpm2-tss
 /data/varlib/tpm2-tss         /var/lib/tpm2-tss         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 17: HARDWARE & FIRMWARE
+# SECTION 16: HARDWARE & FIRMWARE
 ##############################################################################
 
-# fwupd: Firmware update state database
-# Preserves device firmware metadata
+# /var/lib/fwupd — fwupd firmware update state and device metadata
+# Preserves firmware update history and device records across blue/green root switches.
 # Requires: mkdir -p /data/varlib/fwupd
 /data/varlib/fwupd            /var/lib/fwupd            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 18: DATA PROTECTION & PERSISTENCE
+# SECTION 17: DATA PROTECTION & BACKUP
 ##############################################################################
 
-# fail2ban: Persistent jail and log database
-# Preserves fail2ban state across blue/green switches
+# /var/lib/fail2ban — fail2ban jail database and ban state
+# Preserves active bans and counters across blue/green root switches.
 # Requires: mkdir -p /data/varlib/fail2ban
 /data/varlib/fail2ban         /var/lib/fail2ban         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# restic: Backup and restore state
-# Persistent configuration and backup metadata
+# /var/lib/restic — Restic backup state and repository metadata
+# Preserves backup index and configuration across blue/green root switches.
 # Requires: mkdir -p /data/varlib/restic
 /data/varlib/restic           /var/lib/restic           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# rclone: Cloud sync and mount configuration
-# Persistent rclone mount state and remote configs
+# /var/lib/rclone — rclone remote configuration and mount state
+# Preserves remote credentials and mount state across blue/green root switches.
 # Requires: mkdir -p /data/varlib/rclone
 /data/varlib/rclone           /var/lib/rclone           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# appimage: AppImage runtime and cache
-# Persistent AppImage cache and runtime state
+# /var/lib/appimage — AppImage runtime cache and integration state
+# Preserves AppImage desktop integration across blue/green root switches.
 # Requires: mkdir -p /data/varlib/appimage
 /data/varlib/appimage         /var/lib/appimage         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 19: JOB SCHEDULING
+# SECTION 18: JOB SCHEDULING
 ##############################################################################
 
-# anacron: persistent timestamps for daily/weekly/monthly scheduled jobs
-# Keeps track of last run times across reboots and blue/green root switches
+# /var/spool/anacron — anacron last-run timestamps
+# Keeps track of daily/weekly/monthly job schedules across reboots and root switches.
 # Requires: mkdir -p /data/varspool/anacron
 /data/varspool/anacron        /var/spool/anacron        none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# cronie: System cron scheduler state and user crontabs
-# Keeps system and user cron jobs across blue/green switches
+# /var/spool/cron — cronie system and user crontab spool
+# Keeps system and user cron jobs across blue/green root switches.
 # Requires: mkdir -p /data/varspool/cron
 /data/varspool/cron           /var/spool/cron           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# at: Job scheduler spool
-# Preserves scheduled one-time jobs
+# /var/spool/at — at(1) one-time job scheduler spool
+# Preserves scheduled one-time jobs across blue/green root switches.
 # Requires: mkdir -p /data/varspool/at
 /data/varspool/at             /var/spool/at             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 20: PRINT QUEUES & MAIL SPOOLS
+# SECTION 19: PRINT QUEUES & MAIL SPOOLS
 ##############################################################################
 
-# cups (spool): Printer job queue and pending jobs
-# Keeps print queue state across blue/green switches
+# /var/spool/cups — CUPS printer job queue
+# Keeps pending print jobs across blue/green root switches.
 # Requires: mkdir -p /data/varspool/cups
 /data/varspool/cups           /var/spool/cups           none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# samba (spool): SMB file lock state + Samba print spool
-# Preserves Samba client lock files, tdb state, and spool data across reboots
-# Required for stable SMB shares on immutable root
+# /var/spool/samba — Samba SMB file lock state and print spool
+# Preserves Samba TDB state, client lock files, and print queue across root switches.
 # Requires: mkdir -p /data/varspool/samba
 /data/varspool/samba          /var/spool/samba          none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
-# postfix: Mail transfer agent spool
-# Keeps mail queue persistent
+# /var/spool/postfix — Postfix mail transfer agent queue
+# Keeps the mail queue persistent across blue/green root switches.
 # Requires: mkdir -p /data/varspool/postfix
 /data/varspool/postfix        /var/spool/postfix        none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
