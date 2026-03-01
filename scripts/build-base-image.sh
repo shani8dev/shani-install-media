@@ -104,7 +104,7 @@ mkdir -p /var/lib/waydroid
 mkdir -p /var/lib/containers
 mkdir -p /var/lib/machines
 mkdir -p /var/lib/lxc
-mkdir -p /var/lib/incus
+mkdir -p /var/lib/lxd
 mkdir -p /var/lib/libvirt
 mkdir -p /var/lib/qemu
 
@@ -114,7 +114,7 @@ mkdir -p /var/log
 
 # Create required groups
 groupadd -r nix-users
-groupadd -r incus-admin
+groupadd -r lxd
 groupadd -r lxc    
 
 EOF

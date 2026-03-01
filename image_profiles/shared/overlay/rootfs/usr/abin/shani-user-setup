@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXTRA_GROUPS="input,realtime,video,sys,cups,lp,scanner,kvm,lxc,nix-users,libvirt,incus-admin"
+EXTRA_GROUPS="input,realtime,video,sys,cups,lp,scanner,nix-users,lxc,lxd,kvm,libvirt"
 
 # Process every regular user (UID 1000–59999).
 while IFS=: read -r username _ uid _; do
