@@ -113,9 +113,9 @@ mkdir -p /var/cache
 mkdir -p /var/log
 
 # Create required groups
-groupadd -r nix-users
-groupadd -r lxd
-groupadd -r lxc    
+groupadd -r nix-users 2>/dev/null || true
+groupadd -r lxd 2>/dev/null || true
+groupadd -r lxc 2>/dev/null || true
 
 EOF
 
