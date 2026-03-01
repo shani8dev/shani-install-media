@@ -209,7 +209,7 @@ LABEL=shani_root              /var/log                  btrfs   defaults,noatime
 # workdir: Required by OverlayFS for atomic operations
 # Changes persist across blue/green switches
 # Requires: mkdir -p /data/overlay/etc/{upper,work}
-#overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
+overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 # /var overlay: Optional overlay for /var (disabled by default)
 # Only used if NOT using systemd.volatile=state kernel parameter
@@ -413,8 +413,29 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Requires: mkdir -p /data/varlib/boltd
 /data/varlib/boltd            /var/lib/boltd            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
+
+# sudo: Authentication timestamp cache
+# Preserves sudo timestamp state across blue/green switches
+# Requires: mkdir -p /data/varlib/sudo
+/data/varlib/sudo             /var/lib/sudo             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# sshd: OpenSSH runtime state
+# Preserves privilege separation directory across blue/green switches
+# Requires: mkdir -p /data/varlib/sshd
+/data/varlib/sshd             /var/lib/sshd             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# polkit-1: PolicyKit authorization cache
+# Preserves authorization decisions across blue/green switches
+# Requires: mkdir -p /data/varlib/polkit-1
+/data/varlib/polkit-1         /var/lib/polkit-1         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
+# tpm2-tss: TPM2 Software Stack persistent state
+# Stores TPM2 persistent objects and sealed keys
+# Requires: mkdir -p /data/varlib/tpm2-tss
+/data/varlib/tpm2-tss         /var/lib/tpm2-tss         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
+
 ##############################################################################
-# SECTION 16: HARDWARE & FIRMWARE
+# SECTION 17: HARDWARE & FIRMWARE
 ##############################################################################
 
 # fwupd: Firmware update state database
@@ -423,7 +444,7 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 /data/varlib/fwupd            /var/lib/fwupd            none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 17: DATA PROTECTION & PERSISTENCE
+# SECTION 18: DATA PROTECTION & PERSISTENCE
 ##############################################################################
 
 # fail2ban: Persistent jail and log database
@@ -447,7 +468,7 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 /data/varlib/appimage         /var/lib/appimage         none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 18: JOB SCHEDULING
+# SECTION 19: JOB SCHEDULING
 ##############################################################################
 
 # anacron: persistent timestamps for daily/weekly/monthly scheduled jobs
@@ -466,7 +487,7 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 /data/varspool/at             /var/spool/at             none    bind,nofail,x-systemd.after=var.mount,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
-# SECTION 19: PRINT QUEUES & MAIL SPOOLS
+# SECTION 20: PRINT QUEUES & MAIL SPOOLS
 ##############################################################################
 
 # cups (spool): Printer job queue and pending jobs
