@@ -1,5 +1,5 @@
 #!/bin/bash
-DEFAULT_EXTRA_GROUPS="input,realtime,video,sys,cups,lp,scanner,nix-users,lxc,lxd,kvm,libvirt"
+DEFAULT_EXTRA_GROUPS="input,realtime,video,sys,cups,lp,scanner,nixbld,lxc,lxd,kvm,libvirt"
 new_args=()
 provided_G=0
 
