@@ -92,17 +92,23 @@ echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
 echo "stable" > /etc/shani-channel  
 
-# Create directories required for the read-only root fstab mounts that are missing
+# Create directories required for the read-only root fstab mounts
 mkdir -p /boot/efi
 mkdir -p /swap
 mkdir -p /data
 mkdir -p /nix
+
+# Container & virtualization mount points
 mkdir -p /var/lib/flatpak
 mkdir -p /var/lib/waydroid
 mkdir -p /var/lib/containers
 mkdir -p /var/lib/machines
 mkdir -p /var/lib/lxc
 mkdir -p /var/lib/libvirt
+mkdir -p /var/lib/qemu
+
+# Create nix-users group (not created by the Arch nix package)
+groupadd -r nix-users
 
 EOF
 
@@ -146,4 +152,3 @@ sha256sum "$(basename "${IMAGE_FILE}")" > "$(basename "${IMAGE_FILE}").sha256" |
 # Write latest.txt in the same output subdirectory
 echo "$(basename "${IMAGE_FILE}")" > "${OUTPUT_SUBDIR}/latest.txt"
 log "Base image build completed successfully!"
-
