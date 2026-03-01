@@ -253,10 +253,10 @@ LABEL=shani_root              /var/lib/machines         btrfs   nofail,defaults,
 # Create: btrfs subvolume create /@lxc
 LABEL=shani_root              /var/lib/lxc              btrfs   nofail,defaults,noatime,subvol=@lxc,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
-# /var/lib/incus — Incus container and VM storage
-# Keeps Incus containers and VMs available in both blue and green roots.
-# Create: btrfs subvolume create /@incus
-LABEL=shani_root              /var/lib/incus            btrfs   nofail,defaults,noatime,subvol=@incus,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+# /var/lib/lxd — LXD container and VM storage
+# Keeps LXD containers and VMs available in both blue and green roots.
+# Create: btrfs subvolume create /@lxd
+LABEL=shani_root              /var/lib/lxd              btrfs   nofail,defaults,noatime,subvol=@lxd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 # /var/lib/libvirt — libvirt daemon VM disk images and network state
 # nodatacow for better VM disk I/O performance; nospace_cache required.
