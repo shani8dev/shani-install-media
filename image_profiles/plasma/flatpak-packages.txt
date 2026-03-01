@@ -14,6 +14,8 @@ io.github.benjamimgois.goverlay
 org.freedesktop.Platform.VulkanLayer.MangoHud
 org.freedesktop.Platform.VulkanLayer.gamescope
 org.freedesktop.Platform.VulkanLayer.vkBasalt
+org.virt_manager.virt_manager.Extension.Qemu
+org.virt_manager.virt-manager
 it.mijorus.gearlever
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
