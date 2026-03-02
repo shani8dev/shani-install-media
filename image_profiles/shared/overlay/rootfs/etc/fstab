@@ -42,6 +42,7 @@
 #   @green       => / (green root - immutable, read-only)
 #
 # Persistent Data & Storage:
+#   @root        => /root        (root user home - persists across root switches)
 #   @home        => /home        (user files & configs - survives root switches)
 #   @data        => /data        (overlay storage + service state bind sources)
 #   @nix         => /nix         (Nix package manager store - shared between roots)
@@ -168,6 +169,11 @@ tmpfs                         /run                      tmpfs   defaults,noatime
 ##############################################################################
 # SECTION 2: CORE PERSISTENT BTRFS SUBVOLUMES
 ##############################################################################
+
+# /root — Root user home directory
+# Persists across blue/green root switches same as @home.
+# Create: btrfs subvolume create /@root
+LABEL=shani_root              /root                     btrfs   defaults,noatime,subvol=@root,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
 # /home — User files, dotfiles, and personal data
 # Persists across blue/green root switches so users retain their data.
