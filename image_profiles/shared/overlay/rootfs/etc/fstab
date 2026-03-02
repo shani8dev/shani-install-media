@@ -51,6 +51,7 @@
 #
 # Container & Virtualization:
 #   @flatpak     => /var/lib/flatpak    (Flatpak runtimes and apps)
+#   @snapd       => /var/lib/snapd      (snapd runtimes and apps)
 #   @waydroid    => /var/lib/waydroid   (Android system images & userdata)
 #   @containers  => /var/lib/containers (Podman/Docker container images)
 #   @machines    => /var/lib/machines   (systemd-nspawn containers)
@@ -238,6 +239,11 @@ overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,wor
 # Keeps Flatpak apps available in both blue and green roots.
 # Create: btrfs subvolume create /@flatpak
 LABEL=shani_root              /var/lib/flatpak          btrfs   nofail,defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
+
+# /var/lib/snapd — Snap package storage, revisions, and writable snap data
+# Persistent across blue/green root switches.
+# Create : btrfs subvolume create /@snapd
+LABEL=shani_root   /var/lib/snapd   btrfs   nofail,defaults,noatime,subvol=@snapd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
 # /var/lib/waydroid — Android system images and userdata
 # Keeps Waydroid installed and persistent across blue/green root switches.
