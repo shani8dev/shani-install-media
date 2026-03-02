@@ -1,15 +1,15 @@
 [Unit]
 Description=Bees BTRFS deduplication setup
 Documentation=https://github.com/Zygo/bees
-After=local-fs.target dev-disk-by\x2dlabel-shani_root.device etc-overlay.mount
-Wants=local-fs.target dev-disk-by\x2dlabel-shani_root.device etc-overlay.mount
+
+Requires=etc-overlay.mount
+After=etc-overlay.mount local-fs.target
 Before=etc-daemon-reload.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/abin/beesd-setup
-Restart=no
 
 [Install]
 WantedBy=multi-user.target

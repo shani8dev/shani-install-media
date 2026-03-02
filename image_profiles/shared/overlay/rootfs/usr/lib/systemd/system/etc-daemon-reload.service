@@ -1,6 +1,8 @@
 [Unit]
 Description=Mount overlays and reload systemd daemon
-After=local-fs.target systemd-remount-fs.service beesd-setup.service
+
+Requires=etc-overlay.mount
+After=etc-overlay.mount beesd-setup.service
 Before=etc-start-services.service
 
 [Service]

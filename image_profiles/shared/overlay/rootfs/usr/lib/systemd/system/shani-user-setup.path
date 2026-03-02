@@ -1,10 +1,11 @@
 [Unit]
 Description=Watch for new users
-After=multi-user.target
+After=etc-overlay.mount
+Requires=etc-overlay.mount
 
 [Path]
 PathChanged=/etc/passwd
-PathChanged=/data/overlay/etc/upper/passwd
+Unit=shani-user-setup.service
 TriggerLimitIntervalSec=30s
 TriggerLimitBurst=3
 
