@@ -100,6 +100,7 @@ mkdir -p /nix
 
 # Container & virtualization mount points
 mkdir -p /var/lib/flatpak
+mkdir -p /var/lib/snapd
 mkdir -p /var/lib/waydroid
 mkdir -p /var/lib/containers
 mkdir -p /var/lib/machines
@@ -113,7 +114,6 @@ mkdir -p /var/cache
 mkdir -p /var/log
 
 # Create required groups
-groupadd -r nix-users 2>/dev/null || true
 groupadd -r lxd 2>/dev/null || true
 groupadd -r lxc 2>/dev/null || true
 
