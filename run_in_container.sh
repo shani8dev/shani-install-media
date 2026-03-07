@@ -36,7 +36,7 @@ CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CONTAINER_SNAPD_DATA="/var/lib/snapd"
 CONTAINER_SNAPD_SEED="/tmp/snap-seed"
 
-DOCKER_IMAGE="${DOCKER_IMAGE:-shrinivasvkumbhar/shani-builder}"  # systemd-enabled image
+DOCKER_IMAGE="${DOCKER_IMAGE:-docker.io/shrinivasvkumbhar/shani-builder}"  # systemd-enabled image
 CUSTOM_MIRROR="${CUSTOM_MIRROR:-https://mirror.albony.in/archlinux/\$repo/os/\$arch}"
 
 # Determine whether a TTY is available
