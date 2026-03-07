@@ -39,15 +39,6 @@ CONTAINER_SNAPD_SEED="/tmp/snap-seed"
 DOCKER_IMAGE="${DOCKER_IMAGE:-docker.io/shrinivasvkumbhar/shani-builder}"  # systemd-enabled image
 CUSTOM_MIRROR="${CUSTOM_MIRROR:-https://mirror.albony.in/archlinux/\$repo/os/\$arch}"
 
-# Detect container runtime (works with podman-docker where docker is a podman alias)
-if podman version &>/dev/null; then
-    RUNTIME_EXTRA_FLAGS="--userns=host --init"
-    RUN_TMPFS="--tmpfs /tmp --tmpfs /run/lock"
-else
-    RUNTIME_EXTRA_FLAGS=""
-    RUN_TMPFS="--tmpfs /tmp --tmpfs /run/lock --tmpfs /run"
-fi
-
 # Determine whether a TTY is available
 if [ -t 0 ]; then
     TTY_FLAGS="-it"
@@ -67,7 +58,11 @@ USER_CMD=$(printf '%q ' "$CMD" "$@")
 
 # Build a command prefix that imports SSH, GPG keys, and rclone config if provided.
 # Dollar signs are not escaped here because we want the container's shell to expand them.
+# Podman: disable pacman signature verification to work around gpg-agent socket issues
 IMPORT_KEYS_CMD=""
+if podman version &>/dev/null; then
+    IMPORT_KEYS_CMD="sed -i 's/^SigLevel[[:space:]]*.*/SigLevel = Never/' /etc/pacman.conf && "
+fi
 
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
     IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
@@ -83,6 +78,9 @@ if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
 fi
 
 # Write rclone config for Cloudflare R2 (S3-compatible) if credentials are provided.
+# R2_ACCOUNT_ID is your Cloudflare account ID (32-char hex, found in R2 dashboard).
+# no_check_bucket skips the BucketExists API call which R2 does not support.
+# The remote is named "r2" so upload.sh needs no changes.
 if [[ -n "${R2_ACCESS_KEY_ID:-}" && -n "${R2_SECRET_ACCESS_KEY:-}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
     IMPORT_KEYS_CMD+="mkdir -p ~/.config/rclone && cat > ~/.config/rclone/rclone.conf << 'RCLONE_EOF'
 [r2]
@@ -101,8 +99,10 @@ fi
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
 # Run Docker container
-docker run --rm ${TTY_FLAGS} --privileged ${RUNTIME_EXTRA_FLAGS} \
-    ${RUN_TMPFS} \
+docker run --rm ${TTY_FLAGS} --privileged \
+    --tmpfs /tmp \
+    --tmpfs /run/lock \
+    --tmpfs /run \
     --cap-add SYS_ADMIN \
     --device=/dev/fuse \
     --security-opt apparmor:unconfined \
