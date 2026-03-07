@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_in_container.sh — Docker wrapper to run a command inside a container
+# run_in_container.sh — Docker/Podman wrapper to run a command inside a container
 set -Eeuo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -36,8 +36,15 @@ CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CONTAINER_SNAPD_DATA="/var/lib/snapd"
 CONTAINER_SNAPD_SEED="/tmp/snap-seed"
 
-DOCKER_IMAGE="${DOCKER_IMAGE:-docker.io/shrinivasvkumbhar/shani-builder}"  # systemd-enabled image
+DOCKER_IMAGE="${DOCKER_IMAGE:-docker.io/shrinivasvkumbhar/shani-builder}"
 CUSTOM_MIRROR="${CUSTOM_MIRROR:-https://mirror.albony.in/archlinux/\$repo/os/\$arch}"
+
+# Detect container runtime
+if podman version &>/dev/null && ! docker version &>/dev/null 2>&1 | grep -q "Docker Engine"; then
+    IS_PODMAN=true
+else
+    IS_PODMAN=false
+fi
 
 # Determine whether a TTY is available
 if [ -t 0 ]; then
@@ -57,7 +64,6 @@ fi
 USER_CMD=$(printf '%q ' "$CMD" "$@")
 
 # Build a command prefix that imports SSH, GPG keys, and rclone config if provided.
-# Dollar signs are not escaped here because we want the container's shell to expand them.
 IMPORT_KEYS_CMD=""
 
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
@@ -73,10 +79,6 @@ if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     rm -f /tmp/gpg_private.key && gpg --homedir \"$GNUPGHOME\" --list-secret-keys && "
 fi
 
-# Write rclone config for Cloudflare R2 (S3-compatible) if credentials are provided.
-# R2_ACCOUNT_ID is your Cloudflare account ID (32-char hex, found in R2 dashboard).
-# no_check_bucket skips the BucketExists API call which R2 does not support.
-# The remote is named "r2" so upload.sh needs no changes.
 if [[ -n "${R2_ACCESS_KEY_ID:-}" && -n "${R2_SECRET_ACCESS_KEY:-}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
     IMPORT_KEYS_CMD+="mkdir -p ~/.config/rclone && cat > ~/.config/rclone/rclone.conf << 'RCLONE_EOF'
 [r2]
@@ -91,14 +93,21 @@ RCLONE_EOF
 echo 'rclone config written for Cloudflare R2' && "
 fi
 
-# Final command that first imports keys/config (if any) then executes the user command.
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
-# Run Docker container
-docker run --rm ${TTY_FLAGS} --privileged \
-    --tmpfs /tmp \
-    --tmpfs /run/lock \
-    --tmpfs /run \
+# Runtime-specific flags
+if [ "$IS_PODMAN" = true ]; then
+    RUNTIME_FLAGS="--userns=host"
+    # Podman: don't mount /run as tmpfs — GPG agent needs a stable socket there
+    TMPFS_FLAGS="--tmpfs /tmp --tmpfs /run/lock"
+else
+    RUNTIME_FLAGS=""
+    TMPFS_FLAGS="--tmpfs /tmp --tmpfs /run/lock --tmpfs /run"
+fi
+
+# Run container
+docker run --rm ${TTY_FLAGS} --privileged ${RUNTIME_FLAGS} \
+    ${TMPFS_FLAGS} \
     --cap-add SYS_ADMIN \
     --device=/dev/fuse \
     --security-opt apparmor:unconfined \
