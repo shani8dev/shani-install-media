@@ -3,17 +3,25 @@ services_started=0
 services_list=""
 
 while read -r service; do
+    # Skip bare template definitions (e.g. beesd@.service)
     [[ "$service" == *"@.service" ]] && continue
+
+    # Skip already-active services
     systemctl is-active --quiet "$service" 2>/dev/null && continue
 
+    # Skip services that have previously failed
     result=$(systemctl show --property=Result --value "$service" 2>/dev/null)
-    [[ -n "$result" ]] && continue
+    [[ "$result" == "exit-code" || "$result" == "signal" || "$result" == "timeout" || "$result" == "watchdog" || "$result" == "oom-kill" ]] && continue
 
-    systemctl start "$service" &
+    # Skip services that were cleanly stopped (have run before)
+    active=$(systemctl show --property=ActiveState --value "$service" 2>/dev/null)
+    [[ "$active" == "inactive" && "$result" == "success" ]] && continue
+
+    systemctl start "$service" 2>/dev/null &
+
     ((services_started++))
     services_list="$services_list $service"
 done < <(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}')
 
 [ $services_started -gt 0 ] && echo "Started $services_started new overlay services:$services_list" || echo "No new overlay services to start"
-
 touch /run/start-overlay-services.done
