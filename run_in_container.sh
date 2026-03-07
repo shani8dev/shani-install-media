@@ -58,7 +58,11 @@ USER_CMD=$(printf '%q ' "$CMD" "$@")
 
 # Build a command prefix that imports SSH, GPG keys, and rclone config if provided.
 # Dollar signs are not escaped here because we want the container's shell to expand them.
+# Podman: disable pacman signature verification to work around gpg-agent socket issues
 IMPORT_KEYS_CMD=""
+if podman version &>/dev/null; then
+    IMPORT_KEYS_CMD="sed -i 's/^SigLevel[[:space:]]*.*/SigLevel = Never/' /etc/pacman.conf && "
+fi
 
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
     IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
