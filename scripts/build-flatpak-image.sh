@@ -324,11 +324,11 @@ fi
 log "Configuring gaming application permissions..."
 
 declare -A gaming_apps=(
-    ["com.valvesoftware.Steam"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
-    ["com.heroicgameslauncher.hgl"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
-    ["net.lutris.Lutris"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
-    ["org.libretro.RetroArch"]="$HOME/Games:create,xdg-download,/mnt,/media,/run/media"
-    ["com.usebottles.bottles"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["com.valvesoftware.Steam"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["com.heroicgameslauncher.hgl"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["net.lutris.Lutris"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["org.libretro.RetroArch"]="~/Games:create,xdg-download,/mnt,/media,/run/media"
+    ["com.usebottles.bottles"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)
