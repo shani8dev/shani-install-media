@@ -3,6 +3,7 @@ com.github.tchx84.Flatseal
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
 com.usebottles.bottles
+net.lutris.Lutris
 com.heroicgameslauncher.hgl
 com.valvesoftware.Steam
 org.libretro.RetroArch
