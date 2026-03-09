@@ -322,23 +322,33 @@ fi
 
 # Configure gaming app permissions (applies to all profiles)
 log "Configuring gaming application permissions..."
+
 declare -A gaming_apps=(
-    ["com.valvesoftware.Steam"]="~/Games:create,/mnt,/media,/run/media"
-    ["com.heroicgameslauncher.hgl"]="home,/mnt,/media,/run/media"
-    ["org.libretro.RetroArch"]="home,/mnt,/media,/run/media"
-    ["com.usebottles.bottles"]="home,/mnt,/media,/run/media"
+    ["com.valvesoftware.Steam"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["com.heroicgameslauncher.hgl"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["net.lutris.Lutris"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["org.libretro.RetroArch"]="$HOME/Games:create,xdg-download,/mnt,/media,/run/media"
+    ["com.usebottles.bottles"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
 )
 
+installed_apps=$(flatpak list --system --app --columns=application)
+
 for app in "${!gaming_apps[@]}"; do
-    if flatpak list --system --app --columns=application | grep -Fxq "$app"; then
-        IFS=',' read -ra perms <<< "${gaming_apps[$app]}"
-        log "Setting permissions for $app: ${gaming_apps[$app]}"
-        
-        for perm in "${perms[@]}"; do
+    if grep -Fxq "$app" <<< "$installed_apps"; then
+        perms="${gaming_apps[$app]}"
+        log "Setting permissions for $app"
+
+        IFS=',' read -ra perm_list <<< "$perms"
+
+        for perm in "${perm_list[@]}"; do
+            log "  -> filesystem=$perm"
             sudo flatpak override --system "$app" --filesystem="$perm"
         done
+    else
+        log "Skipping $app (not installed)"
     fi
 done
+
 log "Gaming app permissions configured"
 
 # Prepare Btrfs image for Flatpak data (14G)
