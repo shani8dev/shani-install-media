@@ -1,34 +1,279 @@
 #!/bin/bash
+# shani-user-setup — provision groups, shell, skel, and container namespaces
+# for every regular user (UID 1000–59999).
+# Runs as root via shani-user-setup.service (triggered by shani-user-setup.path).
 
-EXTRA_GROUPS="input,realtime,video,sys,cups,lp,scanner,nixbld,lxc,lxd,kvm,libvirt"
+set -uo pipefail   # -e intentionally omitted: one bad user must not abort the rest
 
-# Process every regular user (UID 1000–59999).
-while IFS=: read -r username _ uid _; do
+EXTRA_GROUPS="sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld"
+SKEL_DIR="/etc/skel"
 
-    # Build list of groups from EXTRA_GROUPS that this user is missing.
+log()  { logger -t shani-user-setup -p user.info    "$*"; }
+warn() { logger -t shani-user-setup -p user.warning "$*"; }
+
+# ── Root guard ────────────────────────────────────────────────────────────────
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo "shani-user-setup: must run as root" >&2
+    exit 1
+fi
+
+# ── Dry-run support ───────────────────────────────────────────────────────────
+# Set DRY_RUN=1 in the environment to audit without making changes.
+DRY_RUN=${DRY_RUN:-0}
+run() {
+    if [[ "$DRY_RUN" == "1" ]]; then
+        log "DRY-RUN: $*"
+    else
+        "$@"
+    fi
+}
+
+# Parse wanted groups once, outside the loop
+IFS=',' read -ra WANTED_GROUPS <<< "$EXTRA_GROUPS"
+
+# Under 'set -u', "${arr[*]}" on an empty array is an unbound-variable error.
+# Use the ${arr[@]+"${arr[@]}"} expansion idiom instead when referencing them.
+processed=()
+skipped=()
+failed=()
+
+# Use getent to enumerate users — safer on an OverlayFS /etc and also picks
+# up LDAP/sssd users.
+while IFS=: read -r username _ uid gid _ home shell; do
+    [[ -z "$username" || -z "$home" ]] && continue
+
+    # ── Skip non-interactive accounts ────────────────────────────────────────
+    case "$shell" in
+        */nologin|*/false|*/sync|*/halt|*/shutdown)
+            log "skipping $username (non-interactive shell: $shell)"
+            skipped+=("$username")
+            continue
+            ;;
+    esac
+
+    log "processing $username (uid=$uid home=$home)"
+
+    user_ok=1
+
+    # ── Group membership ──────────────────────────────────────────────────────
     missing=()
-    IFS=',' read -ra wanted <<< "$EXTRA_GROUPS"
-    for group in "${wanted[@]}"; do
-        # Skip groups that don't exist on the system yet
+    for group in "${WANTED_GROUPS[@]}"; do
         getent group "$group" &>/dev/null || continue
-        # Check if user is already a member
         id -nG "$username" 2>/dev/null | tr ' ' '\n' | grep -qx "$group" || missing+=("$group")
     done
 
-    if [[ ${#missing[@]} -eq 0 ]]; then
-        echo "shani-user-setup: $username already has all groups, skipping."
-        continue
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        joined=$(printf '%s,' "${missing[@]}")
+        joined="${joined%,}"
+        log "adding $username to: $joined"
+        run usermod -aG "$joined" "$username" || { warn "usermod -aG failed for $username"; user_ok=0; }
+    else
+        log "$username already has all groups"
     fi
 
-    echo "shani-user-setup: adding $username to: ${missing[*]}"
-    usermod -aG "$(IFS=','; echo "${missing[*]}")" "$username"
+    # ── Default shell ─────────────────────────────────────────────────────────
+    # Re-read from getent — $shell is stale if usermod changed it earlier.
+    current_shell=$(getent passwd "$username" | cut -d: -f7)
 
-    # Set default shell to zsh if available and not already set
-    if [[ -x /bin/zsh ]]; then
-        current_shell=$(getent passwd "$username" | cut -d: -f7)
-        if [[ "$current_shell" != "/bin/zsh" ]]; then
-            usermod -s /bin/zsh "$username"
+    # Resolve via 'command -v' to handle Nix-managed shells under
+    # /run/current-system/sw/bin or a Nix profile path.
+    zsh_path=$(command -v zsh 2>/dev/null || true)
+    bash_path=$(command -v bash 2>/dev/null || true)
+
+    if [[ -n "$zsh_path" && -x "$zsh_path" && "$current_shell" != "$zsh_path" ]]; then
+        log "setting shell to zsh ($zsh_path) for $username"
+        run usermod -s "$zsh_path" "$username" || { warn "usermod -s zsh failed for $username"; user_ok=0; }
+    elif [[ -z "$zsh_path" && -n "$bash_path" && -x "$bash_path" && "$current_shell" != "$bash_path" ]]; then
+        log "zsh not found, setting shell to bash ($bash_path) for $username"
+        run usermod -s "$bash_path" "$username" || { warn "usermod -s bash failed for $username"; user_ok=0; }
+    fi
+
+    # ── Home directory ────────────────────────────────────────────────────────
+    if [[ ! -d "$home" ]]; then
+        log "creating home directory $home for $username"
+        run install -d -m 750 -o "$uid" -g "$gid" "$home" \
+            || { warn "failed to create $home"; user_ok=0; }
+    else
+        run chmod 750 "$home" || { warn "chmod failed for $home"; user_ok=0; }
+    fi
+
+    # ── Skel sync ─────────────────────────────────────────────────────────────
+    if [[ -d "$home" && -d "$SKEL_DIR" ]]; then
+        log "syncing skel to $home for $username"
+        if command -v rsync &>/dev/null; then
+            # --update preserves user modifications — updated skel files will
+            # not overwrite existing user copies. Intentional: users own their dotfiles.
+            run rsync -a --update --exclude='.gitkeep' "$SKEL_DIR/" "$home/" \
+                || warn "rsync skel failed for $username, falling back"
+        else
+            while IFS= read -r item; do
+                [[ "$(basename "$item")" == ".gitkeep" ]] && continue
+                dest="$home/$(basename "$item")"
+                [[ -e "$dest" ]] && continue
+                run cp -a "$item" "$dest" || warn "cp skel item $item failed for $username"
+            done < <(find "$SKEL_DIR" -mindepth 1 -maxdepth 1)
         fi
     fi
 
-done < <(awk -F: '$3 >= 1000 && $3 < 60000 {print $1, $2, $3, $4}' OFS=: /etc/passwd)
+    # ── Skel dir permissions ──────────────────────────────────────────────────
+    # Git does not preserve directory permissions — fix sensitive dirs after
+    # skel sync to ensure correct modes regardless of how they were deployed.
+    for d in .ssh .gnupg .config/systemd/user .local/share/keyrings .local/share/zsh; do
+        [[ -d "$home/$d" ]] && {
+            run chmod 700 "$home/$d" \
+                && run chown "$uid:$gid" "$home/$d" \
+                || warn "failed to fix permissions on $home/$d"
+        }
+    done
+
+    # ── XDG user dirs ─────────────────────────────────────────────────────────
+    if command -v xdg-user-dirs-update &>/dev/null; then
+        run runuser -u "$username" -- xdg-user-dirs-update 2>/dev/null \
+            || warn "xdg-user-dirs-update failed for $username"
+    fi
+
+    # ── SSH key permissions ───────────────────────────────────────────────────
+    if [[ -d "$home/.ssh" ]]; then
+        # Private keys — 600
+        while IFS= read -r keyfile; do
+            run chmod 600 "$keyfile" \
+                && run chown "$uid:$gid" "$keyfile" \
+                || warn "failed to fix permissions on $keyfile"
+        done < <(find "$home/.ssh" -maxdepth 1 -type f \
+            ! -name "*.pub" \
+            ! -name "authorized_keys" \
+            ! -name "known_hosts" \
+            ! -name "config" \
+            ! -name ".gitkeep")
+
+        # Public keys — 644
+        while IFS= read -r pubfile; do
+            run chmod 644 "$pubfile" \
+                && run chown "$uid:$gid" "$pubfile" \
+                || warn "failed to fix permissions on $pubfile"
+        done < <(find "$home/.ssh" -maxdepth 1 -type f -name "*.pub")
+
+        [[ -f "$home/.ssh/authorized_keys" ]] && {
+            run chmod 600 "$home/.ssh/authorized_keys" \
+                && run chown "$uid:$gid" "$home/.ssh/authorized_keys" \
+                || warn "failed to fix permissions on authorized_keys for $username"
+        }
+
+        [[ -f "$home/.ssh/known_hosts" ]] && {
+            run chmod 644 "$home/.ssh/known_hosts" \
+                && run chown "$uid:$gid" "$home/.ssh/known_hosts" \
+                || warn "failed to fix permissions on known_hosts for $username"
+        }
+
+        [[ -f "$home/.ssh/config" ]] && {
+            run chmod 600 "$home/.ssh/config" \
+                && run chown "$uid:$gid" "$home/.ssh/config" \
+                || warn "failed to fix permissions on ssh config for $username"
+        }
+    fi
+
+    # ── GnuPG key permissions ─────────────────────────────────────────────────
+    if [[ -d "$home/.gnupg" ]]; then
+        while IFS= read -r f; do
+            [[ "$(basename "$f")" == ".gitkeep" ]] && continue
+            run chmod 600 "$f" \
+                && run chown "$uid:$gid" "$f" \
+                || warn "failed to fix permissions on $f"
+        done < <(find "$home/.gnupg" -maxdepth 1 -type f)
+
+        while IFS= read -r d; do
+            run chmod 700 "$d" \
+                && run chown "$uid:$gid" "$d" \
+                || warn "failed to fix permissions on $d"
+        done < <(find "$home/.gnupg" -mindepth 1 -maxdepth 1 -type d)
+
+        if [[ -d "$home/.gnupg/private-keys-v1.d" ]]; then
+            while IFS= read -r f; do
+                run chmod 600 "$f" \
+                    && run chown "$uid:$gid" "$f" \
+                    || warn "failed to fix permissions on $f"
+            done < <(find "$home/.gnupg/private-keys-v1.d" -maxdepth 1 -type f)
+        fi
+    fi
+
+    # ── Flatpak user remote ───────────────────────────────────────────────────
+    if command -v flatpak &>/dev/null; then
+        if ! runuser -u "$username" -- flatpak remote-list --user 2>/dev/null \
+                | grep -q flathub; then
+            run runuser -u "$username" -- flatpak remote-add --user --if-not-exists flathub \
+                https://dl.flathub.org/repo/flathub.flatpakrepo 2>/dev/null \
+                || warn "flatpak remote-add failed for $username"
+            log "added flathub remote for $username"
+        fi
+    fi
+
+    # ── Nix user channel ──────────────────────────────────────────────────────
+    # Only bootstrap a default channel if the user has none named nixpkgs.
+    # Never overwrite an existing nixpkgs channel — the user may have
+    # deliberately chosen a different URL.
+    if command -v nix-channel &>/dev/null; then
+        if ! runuser -u "$username" -- nix-channel --list 2>/dev/null \
+                | grep -q "^nixpkgs "; then
+            run runuser -u "$username" -- nix-channel --add \
+                https://nixos.org/channels/nixpkgs-unstable nixpkgs 2>/dev/null \
+                || warn "nix-channel add failed for $username"
+            log "added nixpkgs channel for $username"
+        fi
+    fi
+
+    # ── subuid/subgid (rootless podman / lxc / lxd) ──────────────────────────
+    if command -v podman &>/dev/null || command -v lxc &>/dev/null || command -v lxd &>/dev/null; then
+        if ! grep -q "^${username}:" /etc/subuid 2>/dev/null; then
+            last=$(awk -F: 'BEGIN{max=100000} {n=$2+$3; if(n>max)max=n} END{print max}' \
+                /etc/subuid 2>/dev/null || echo 100000)
+            run usermod --add-subuids "${last}-$((last + 65535))" "$username" \
+                || { warn "subuid setup failed for $username"; user_ok=0; }
+            log "added subuid range for $username (${last}-$((last + 65535)))"
+        fi
+        if ! grep -q "^${username}:" /etc/subgid 2>/dev/null; then
+            last=$(awk -F: 'BEGIN{max=100000} {n=$2+$3; if(n>max)max=n} END{print max}' \
+                /etc/subgid 2>/dev/null || echo 100000)
+            run usermod --add-subgids "${last}-$((last + 65535))" "$username" \
+                || { warn "subgid setup failed for $username"; user_ok=0; }
+            log "added subgid range for $username (${last}-$((last + 65535)))"
+        fi
+    fi
+
+    # ── Podman storage migration ──────────────────────────────────────────────
+    # Guard with mountpoint check — /var is a volatile tmpfs on this system and
+    # @containers is a separate Btrfs subvolume. Running migrate before it is
+    # mounted would reinitialise the storage graph against an empty tmpfs.
+    if command -v podman &>/dev/null; then
+        if mountpoint -q /var/lib/containers 2>/dev/null; then
+            run runuser -u "$username" -- podman system migrate 2>/dev/null \
+                || warn "podman system migrate failed for $username"
+        else
+            warn "skipping podman system migrate for $username: /var/lib/containers not mounted"
+        fi
+    fi
+
+    # ── Fix ownership ─────────────────────────────────────────────────────────
+    # Only chown if the home dir root isn't already owned correctly — avoids
+    # hammering NFS mounts or large trees unnecessarily.
+    if [[ -d "$home" ]]; then
+        current_owner=$(stat -c %u "$home" 2>/dev/null)
+        if [[ "$current_owner" != "$uid" ]]; then
+            log "fixing ownership of $home (was uid $current_owner, want $uid)"
+            run chown -R "${uid}:${gid}" "$home" \
+                || { warn "chown failed for $home"; user_ok=0; }
+        fi
+    fi
+
+    if [[ "$user_ok" -eq 1 ]]; then
+        processed+=("$username")
+    else
+        failed+=("$username")
+    fi
+
+done < <(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print}')
+
+log "done — processed ${#processed[@]} user(s): ${processed[@]+"${processed[@]}"}"
+[[ ${#skipped[@]}  -gt 0 ]] && log "skipped  ${#skipped[@]}  user(s): ${skipped[@]+"${skipped[@]}"}"
+[[ ${#failed[@]}   -gt 0 ]] && warn "FAILED   ${#failed[@]}  user(s): ${failed[@]+"${failed[@]}"}"
+
+[[ ${#failed[@]} -eq 0 ]]

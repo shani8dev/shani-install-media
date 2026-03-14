@@ -77,7 +77,7 @@ set -euo pipefail
 
 # Configure locale and keyboard settings
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
-echo "KEYMAP=us" > /etc/vconsole.conf 
+echo "KEYMAP=us" > /etc/vconsole.conf
 
 # Set the timezone to UTC and update hardware clock
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
@@ -90,7 +90,7 @@ systemd-machine-id-setup --commit
 echo "${OS_NAME}" > /etc/hostname
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
-echo "stable" > /etc/shani-channel  
+echo "stable" > /etc/shani-channel
 
 # Create directories required for the read-only root fstab mounts
 mkdir -p /boot/efi
@@ -113,9 +113,23 @@ mkdir -p /var/lib/qemu
 mkdir -p /var/cache
 mkdir -p /var/log
 
-# Create required groups
-groupadd -r lxd 2>/dev/null || true
-groupadd -r lxc 2>/dev/null || true
+# Groups with confirmed static GIDs from Arch archwiki / systemd basic.conf
+getent group sys     &>/dev/null || groupadd -r -g 3   sys
+getent group lp      &>/dev/null || groupadd -r -g 7   lp
+getent group kvm     &>/dev/null || groupadd -r -g 78  kvm
+getent group video   &>/dev/null || groupadd -r -g 91  video
+getent group scanner &>/dev/null || groupadd -r -g 96  scanner
+getent group input   &>/dev/null || groupadd -r -g 97  input
+getent group cups    &>/dev/null || groupadd -r -g 209 cups
+
+# Groups with no upstream static GID — allocate dynamically to avoid conflicts
+getent group realtime &>/dev/null || groupadd -r realtime
+getent group nixbld   &>/dev/null || groupadd -r nixbld
+getent group lxd      &>/dev/null || groupadd -r lxd
+getent group libvirt  &>/dev/null || groupadd -r libvirt
+
+# subuid/subgid for root — required for rootless podman, lxc, lxd
+usermod -v 1000000-1000999999 -w 1000000-1000999999 root
 
 EOF
 

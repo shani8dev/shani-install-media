@@ -1,5 +1,5 @@
 [Unit]
-Description=Add default groups to newly created users
+Description=Sync groups, shell, and skel for all regular users
 
 Requires=accounts-daemon.service etc-overlay.mount
 After=accounts-daemon.service etc-overlay.mount
@@ -7,4 +7,7 @@ After=accounts-daemon.service etc-overlay.mount
 [Service]
 Type=oneshot
 ExecStart=/usr/abin/shani-user-setup
-TimeoutStartSec=30s
+TimeoutStartSec=60s
+
+[Install]
+WantedBy=multi-user.target

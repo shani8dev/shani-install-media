@@ -5,8 +5,9 @@ Requires=etc-overlay.mount
 
 [Path]
 PathChanged=/etc/passwd
+PathChanged=/etc/skel
 Unit=shani-user-setup.service
-TriggerLimitIntervalSec=30s
+TriggerLimitIntervalSec=60s
 TriggerLimitBurst=3
 
 [Install]
