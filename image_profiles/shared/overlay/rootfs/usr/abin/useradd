@@ -1,5 +1,16 @@
 #!/bin/bash
+
 DEFAULT_EXTRA_GROUPS="sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld"
+
+# keep only existing groups
+EXISTING_GROUPS=""
+IFS=',' read -ra groups <<< "$DEFAULT_EXTRA_GROUPS"
+for g in "${groups[@]}"; do
+    if getent group "$g" >/dev/null; then
+        EXISTING_GROUPS+="${EXISTING_GROUPS:+,}$g"
+    fi
+done
+
 new_args=()
 provided_G=0
 
@@ -9,14 +20,14 @@ while [[ $# -gt 0 ]]; do
             provided_G=1
             shift
             provided_groups="$1"
-            merged_groups="${provided_groups:+${provided_groups},}${DEFAULT_EXTRA_GROUPS}"
+            merged_groups="${provided_groups:+${provided_groups},}${EXISTING_GROUPS}"
             new_args+=("-G" "$merged_groups")
             shift
             ;;
         -G*)
             provided_G=1
             provided_groups="${1:2}"
-            merged_groups="${provided_groups:+${provided_groups},}${DEFAULT_EXTRA_GROUPS}"
+            merged_groups="${provided_groups:+${provided_groups},}${EXISTING_GROUPS}"
             new_args+=("-G" "$merged_groups")
             shift
             ;;
@@ -28,7 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ $provided_G -eq 0 ]; then
-    new_args+=("-G" "$DEFAULT_EXTRA_GROUPS")
+    new_args+=("-G" "$EXISTING_GROUPS")
 fi
 
 exec /usr/bin/useradd "${new_args[@]}"
