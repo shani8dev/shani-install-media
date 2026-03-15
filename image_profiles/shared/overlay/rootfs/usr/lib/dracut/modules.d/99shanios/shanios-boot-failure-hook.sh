@@ -43,14 +43,18 @@ if ! mount -t btrfs -o subvol=@data,rw "$DATA_DEV" "$DATA_MNT" 2>/dev/null; then
 fi
 
 # Record which slot was being attempted, then unmount immediately.
-# The marker is written unconditionally here — shanios-boot-success-clear.sh
-# removes it if the boot succeeds and reaches pre-pivot.
-if [ ! -f "$DATA_MNT/boot_hard_failure" ]; then
-    ATTEMPTED_SLOT=$(getarg rootflags | sed 's/.*subvol=@//;s/,.*//')
-    ATTEMPTED_SLOT="${ATTEMPTED_SLOT:-unknown}"
-    printf '%s\n' "$ATTEMPTED_SLOT" > "$DATA_MNT/boot_hard_failure" 2>/dev/null && \
-        warn "shanios-hook: boot_hard_failure written for slot '@${ATTEMPTED_SLOT}' (will be cleared on successful pivot)"
-fi
+# Always overwrite — if a stale marker from a previous failed slot exists,
+# it must reflect the current boot attempt. The clear hook removes it on
+# success, so persistence only means the current attempt failed.
+ATTEMPTED_SLOT=$(getarg rootflags | sed 's/.*subvol=@//;s/,.*//')
+# Validate — if rootflags has no subvol=@ or sed returns garbage, use "unknown"
+# as a sentinel. shani-update handles unknown gracefully via its fallback logic.
+case "$ATTEMPTED_SLOT" in
+    blue|green) ;;
+    *) ATTEMPTED_SLOT="unknown" ;;
+esac
+printf '%s\n' "$ATTEMPTED_SLOT" > "$DATA_MNT/boot_hard_failure" 2>/dev/null && \
+    warn "shanios-hook: boot_hard_failure written for slot '@${ATTEMPTED_SLOT}' (will be cleared on successful pivot)"
 
 umount "$DATA_MNT" 2>/dev/null || true
 rmdir  "$DATA_MNT" 2>/dev/null || true
