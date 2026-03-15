@@ -13,7 +13,7 @@ start_if_needed() {
     ts=$(systemctl show --property=InactiveEnterTimestamp --value "$service" 2>/dev/null)
     [[ -n "$ts" ]] && return
     systemctl start "$service" 2>/dev/null &
-    ((services_started++))
+    services_started=$((services_started + 1))
     services_list="$services_list $service"
 }
 

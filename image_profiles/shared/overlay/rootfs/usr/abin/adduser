@@ -1,8 +1,25 @@
 #!/bin/bash
+# ShaniOS adduser wrapper — merges ShaniOS extra groups into every adduser call.
+# Reads extra groups from /etc/shani-extra-groups (shared with useradd wrapper
+# and shani-user-setup). Falls back to built-in default if file is missing.
+#
+# Install: /usr/local/bin/adduser  (shadows /usr/bin/adduser via PATH)
 
-DEFAULT_EXTRA_GROUPS="sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld"
+EXTRA_GROUPS_FILE="/etc/shani-extra-groups"
 
-# keep only existing groups
+DEFAULT_EXTRA_GROUPS=""
+if [[ -f "$EXTRA_GROUPS_FILE" ]]; then
+    DEFAULT_EXTRA_GROUPS=$(head -n1 "$EXTRA_GROUPS_FILE" 2>/dev/null | tr -d '[:space:]')
+fi
+
+# Check that the underlying binary exists before doing anything
+REAL_BIN="/usr/bin/adduser"
+if [[ ! -x "$REAL_BIN" ]]; then
+    echo "shani adduser wrapper: $REAL_BIN not found or not executable" >&2
+    exit 127
+fi
+
+# Keep only groups that exist on this system
 EXISTING_GROUPS=""
 IFS=',' read -ra groups <<< "$DEFAULT_EXTRA_GROUPS"
 for g in "${groups[@]}"; do
@@ -20,15 +37,25 @@ while [[ $# -gt 0 ]]; do
             provided_G=1
             shift
             provided_groups="$1"
-            merged_groups="${provided_groups:+${provided_groups},}${EXISTING_GROUPS}"
-            new_args+=("-G" "$merged_groups")
+            if [[ -n "$EXISTING_GROUPS" ]]; then
+                merged=$(echo "${provided_groups:+${provided_groups},}${EXISTING_GROUPS}" \
+                    | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+            else
+                merged="$provided_groups"
+            fi
+            new_args+=("-G" "$merged")
             shift
             ;;
         -G*)
             provided_G=1
             provided_groups="${1:2}"
-            merged_groups="${provided_groups:+${provided_groups},}${EXISTING_GROUPS}"
-            new_args+=("-G" "$merged_groups")
+            if [[ -n "$EXISTING_GROUPS" ]]; then
+                merged=$(echo "${provided_groups:+${provided_groups},}${EXISTING_GROUPS}" \
+                    | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+            else
+                merged="$provided_groups"
+            fi
+            new_args+=("-G" "$merged")
             shift
             ;;
         *)
@@ -38,8 +65,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ $provided_G -eq 0 ]; then
-    new_args+=("-G" "$EXISTING_GROUPS")
+if [[ $provided_G -eq 0 ]]; then
+    if [[ -z "$EXISTING_GROUPS" ]]; then
+        echo "shani adduser wrapper: WARNING: no groups from '$EXTRA_GROUPS_FILE' exist on this system — skipping -G" >&2
+    else
+        new_args+=("-G" "$EXISTING_GROUPS")
+    fi
 fi
 
-exec /usr/bin/adduser "${new_args[@]}"
+exec "$REAL_BIN" "${new_args[@]}"

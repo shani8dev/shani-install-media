@@ -1,19 +1,70 @@
 #!/usr/bin/env bash
+# ShaniOS pacman wrapper — blocks write operations on an immutable OS.
+#
+# ShaniOS roots (@blue/@green) are read-only. Installing, removing, or
+# upgrading packages via pacman would modify the live root and be lost on
+# the next slot switch or update. Use Flatpak for applications and
+# shani-deploy for OS updates instead.
+#
+# Allowed: -Q/--query, -F/--file, -Ss/--search, -Sl/--list, -h/--help, --version
+# Blocked: any operation that modifies the filesystem (-S, -R, -U, -D and variants)
+
+REAL_PACMAN="/usr/bin/pacman"
+
+# Check that the underlying binary exists
+if [[ ! -x "$REAL_PACMAN" ]]; then
+    echo "shani pacman wrapper: $REAL_PACMAN not found or not executable" >&2
+    exit 127
+fi
+
+_blocked=0
 
 for arg in "$@"; do
-    case "$arg" in
-        -S|-Su|-Sy|-Syu|-Syuu|-Sc|-Scc|-Sw|\
-        --sync|--upgrade|--remove|-R|-Rs|-Rn|\
-        -U|--upgrade|-D|--database)
-            echo "Error: Shanios is an immutable distro."
-            echo "System modifications (install, remove, upgrade, sync, etc.) are not permitted via pacman."
-            echo "Disallowed operation: '$arg'"
-            echo "Allowed operations: query (-Q/--query), file lookup (-F/--file), search (-Ss/--search), list (-Sl/--list), help (-h/--help), and version (--version)."
-            echo "To install or update applications, please use Flatpak."
-            echo "System updates must be performed only via shani-deploy command."
-            exit 1
+    # Strip leading dashes to get the raw argument
+    raw="${arg#-}"
+    raw="${raw#-}"  # strip second dash for long options
+
+    case "$raw" in
+        # Long-form write operations
+        sync|remove|upgrade|database|deptest)
+            _blocked=1
+            break
+            ;;
+        # Short operations: extract the operation letter (first char after -)
+        # Block S (sync), R (remove), U (upgrade), D (database)
+        # Allow Q (query), F (file), V (version), h (help)
+        *)
+            # For short flags like -Syu, -Rs, -U, extract the operation char
+            if [[ "$arg" == -* && "${arg:0:2}" != "--" ]]; then
+                op="${arg:1:1}"  # first char after the single dash
+                case "$op" in
+                    S|R|U|D)
+                        _blocked=1
+                        break
+                        ;;
+                esac
+            fi
             ;;
     esac
 done
 
-exec /usr/bin/pacman "$@"
+if [[ $_blocked -eq 1 ]]; then
+    echo "ShaniOS: this operation is not permitted on an immutable OS." >&2
+    echo "" >&2
+    echo "  ShaniOS roots are read-only. Package manager write operations" >&2
+    echo "  would be lost on the next system update or slot switch." >&2
+    echo "" >&2
+    echo "  For applications:  use Flatpak (flatpak install ...)" >&2
+    echo "  For OS updates:    use shani-update or shani-deploy" >&2
+    echo "" >&2
+    echo "  Allowed pacman operations:" >&2
+    echo "    -Q / --query     query installed packages" >&2
+    echo "    -F / --file      search package file ownership" >&2
+    echo "    -Ss              search available packages" >&2
+    echo "    -Sl              list repository packages" >&2
+    echo "    -h / --help      show pacman help" >&2
+    echo "    --version        show pacman version" >&2
+    exit 1
+fi
+
+exec "$REAL_PACMAN" "$@"

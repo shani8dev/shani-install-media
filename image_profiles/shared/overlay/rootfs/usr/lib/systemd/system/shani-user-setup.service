@@ -1,13 +1,17 @@
 [Unit]
 Description=Sync groups, shell, and skel for all regular users
-
-Requires=accounts-daemon.service etc-overlay.mount
+# Wants= (not Requires=) so missing accounts-daemon does not block user setup.
+# The script does not call any AccountsService API — the dependency was wrong.
+Wants=accounts-daemon.service
 After=accounts-daemon.service etc-overlay.mount
+Requires=etc-overlay.mount
 
 [Service]
 Type=oneshot
 ExecStart=/usr/abin/shani-user-setup
-TimeoutStartSec=60s
+TimeoutStartSec=120s
+RemainAfterExit=yes
 
-[Install]
-WantedBy=multi-user.target
+# No [Install] section — activated exclusively by shani-user-setup.path.
+# A WantedBy=multi-user.target here would cause a double-run on every boot:
+# once at multi-user.target and once when the .path unit fires.
