@@ -7,7 +7,7 @@ SCRIPT_VERSION="1"
 log() { echo "$(date "+%Y-%m-%d %H:%M:%S") [beesd-setup] $*"; }
 
 if [[ ! -e "/dev/disk/by-label/${ROOTLABEL}" ]] && [[ ! -e "/dev/mapper/${ROOTLABEL}" ]]; then
-    log "ERROR: Device not found — both by-label and mapper missing."
+    log "WARN: Device not found — both by-label and mapper missing."
     exit 0
 fi
 
@@ -17,7 +17,7 @@ if [[ -z "$UUID" ]] && [[ -e "/dev/mapper/${ROOTLABEL}" ]]; then
 fi
 
 if [[ -z "$UUID" ]]; then
-    log "ERROR: Could not resolve BTRFS UUID for ${ROOTLABEL}."
+    log "WARN: Could not resolve BTRFS UUID for ${ROOTLABEL}."
     exit 0
 fi
 
@@ -40,7 +40,7 @@ else
 fi
 
 log "Writing ${CONF} (UUID=${UUID}, device=${BTRFS_DEV})"
-mkdir -p /etc/bees || { log "ERROR: cannot create /etc/bees"; exit 0; }
+mkdir -p /etc/bees || { log "WARN: cannot create /etc/bees — bees deduplication will not be configured"; exit 0; }
 
 cat > "$CONF" <<CONF
 # /etc/bees/${UUID}.conf

@@ -1,14 +1,26 @@
 [Unit]
-Description=Watch for new users
-After=etc-overlay.mount
+Description=Watch for new users and skel changes
+After=etc-overlay.mount data.mount
 Requires=etc-overlay.mount
+Wants=data.mount
 
 [Path]
+# Watch /etc/passwd for new user additions (adduser writes here via overlay).
 PathChanged=/etc/passwd
-PathChanged=/etc/skel
+# PathModified catches inotify IN_ATTRIB on the skel directory, which fires
+# when files are added inside it — PathChanged only fires on the dir entry
+# itself (rename/close_write on the dir node), not on new files within it.
+PathModified=/etc/skel
+# Also watch for the deploy marker — fires shani-user-setup after a slot
+# switch even though skel is on the read-only root and inotify won't fire.
+PathExists=/data/user-setup-needed
 Unit=shani-user-setup.service
+# Rate-limit: at most 3 triggers per 60s to prevent runaway loops.
 TriggerLimitIntervalSec=60s
 TriggerLimitBurst=3
+# Ensure /etc/skel exists before inotify setup — avoids silent watch failure
+# on a fresh install before skel is populated.
+MakeDirectory=yes
 
 [Install]
 WantedBy=multi-user.target

@@ -1,13 +1,24 @@
 [Unit]
 Description=Sync groups, shell, and skel for all regular users
-
-Requires=accounts-daemon.service etc-overlay.mount
-After=accounts-daemon.service etc-overlay.mount
+# Run on boot if shani-deploy wrote a user-setup-needed marker (new slot
+# deployed with potentially updated skel/groups), OR when triggered by the
+# .path unit watching /etc/passwd and /etc/skel for runtime user additions.
+ConditionPathExists=|/data/user-setup-needed
+ConditionPathExists=|/etc/shani-extra-groups
+# Wants= (not Requires=) so missing accounts-daemon does not block user setup.
+Wants=accounts-daemon.service
+After=accounts-daemon.service etc-overlay.mount data.mount
+Requires=etc-overlay.mount
+# data.mount needed to read/clear the user-setup-needed marker.
+Wants=data.mount
 
 [Service]
 Type=oneshot
-ExecStart=/usr/abin/shani-user-setup
-TimeoutStartSec=60s
+ExecStart=/usr/local/bin/shani-user-setup
+# Clear the marker after a successful run so we don't re-run on every boot.
+ExecStartPost=-/bin/rm -f /data/user-setup-needed
+TimeoutStartSec=120s
+RemainAfterExit=yes
 
-[Install]
-WantedBy=multi-user.target
+# No [Install] section — activated exclusively by shani-user-setup.path
+# on runtime user additions, and by ConditionPathExists on boot after deploy.

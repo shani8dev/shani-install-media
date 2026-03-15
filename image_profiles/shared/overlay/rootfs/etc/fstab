@@ -227,8 +227,20 @@ LABEL=shani_root              /var/log                  btrfs   defaults,noatime
 overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 # /var overlay — Optional OverlayFS for /var (disabled by default)
-# Enable only when NOT using the systemd.volatile=state kernel parameter.
-# Requires: mkdir -p /data/overlay/var/{upper,work}
+#
+# WARNING: MUTUALLY EXCLUSIVE with systemd.volatile=state (kernel cmdline).
+# If both are active simultaneously, /var is first created as a tmpfs by the
+# kernel parameter, then this overlay mounts on top of it — making the tmpfs
+# the lowerdir instead of the read-only root's /var. All reads come from the
+# empty tmpfs lower; all writes go to /data/overlay/var/upper. The result is
+# silent data corruption with no error message.
+#
+# Before enabling this entry:
+#   1. Remove 'systemd.volatile=state' from the kernel cmdline in
+#      /etc/kernel/install_cmdline_<slot> and regenerate the UKI with gen-efi.
+#   2. Confirm volatile=state is gone: grep -c volatile /proc/cmdline  (must be 0)
+#   3. Requires: mkdir -p /data/overlay/var/{upper,work}
+#
 #overlay   /var   overlay   rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 ##############################################################################
@@ -292,7 +304,7 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Swapfile — actual swap space inside the @swap subvolume
 # Create: btrfs filesystem mkswapfile --size 8G /swap/swapfile
 #         chmod 600 /swap/swapfile
-/swap/swapfile                none                      swap    nofail,sw   0 0
+/swap/swapfile                none                      swap    nofail,defaults   0 0
 
 ##############################################################################
 # SECTION 8: SYSTEM CORE STATE

@@ -1,6 +1,10 @@
 [Unit]
 Description=Recreate /data subdirectories for overlays and varlib
 DefaultDependencies=no
+# BindsTo=data.mount: if data.mount fails or is stopped, this service fails too.
+# This prevents systemd-tmpfiles from running against the read-only root's /data
+# directory and silently producing no output when the persistent @data is missing.
+BindsTo=data.mount
 After=data.mount
 Before=etc-overlay.mount
 
@@ -8,3 +12,6 @@ Before=etc-overlay.mount
 Type=oneshot
 ExecStart=/usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/shanios-data-structure.conf
 RemainAfterExit=yes
+
+[Install]
+WantedBy=data.mount

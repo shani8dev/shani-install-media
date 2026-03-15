@@ -2,11 +2,20 @@
 # shani-user-setup — provision groups, shell, skel, and container namespaces
 # for every regular user (UID 1000–59999).
 # Runs as root via shani-user-setup.service (triggered by shani-user-setup.path).
+#
+# Extra groups are read from /etc/shani-extra-groups (one comma-separated line).
+# This is the single source of truth shared with the adduser/useradd wrappers.
+# Falls back to the built-in default if the file is missing.
 
 set -uo pipefail   # -e intentionally omitted: one bad user must not abort the rest
 
-EXTRA_GROUPS="sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld"
 SKEL_DIR="/etc/skel"
+EXTRA_GROUPS_FILE="/etc/shani-extra-groups"
+
+EXTRA_GROUPS=""
+if [[ -f "$EXTRA_GROUPS_FILE" ]]; then
+    EXTRA_GROUPS=$(head -n1 "$EXTRA_GROUPS_FILE" 2>/dev/null | tr -d '[:space:]')
+fi
 
 log()  { logger -t shani-user-setup -p user.info    "$*"; }
 warn() { logger -t shani-user-setup -p user.warning "$*"; }
@@ -28,8 +37,11 @@ run() {
     fi
 }
 
-# Parse wanted groups once, outside the loop
-IFS=',' read -ra WANTED_GROUPS <<< "$EXTRA_GROUPS"
+# Parse wanted groups once, outside the loop (empty if file was absent)
+WANTED_GROUPS=()
+if [[ -n "$EXTRA_GROUPS" ]]; then
+    IFS=',' read -ra WANTED_GROUPS <<< "$EXTRA_GROUPS"
+fi
 
 # Under 'set -u', "${arr[*]}" on an empty array is an unbound-variable error.
 # Use the ${arr[@]+"${arr[@]}"} expansion idiom instead when referencing them.
@@ -224,15 +236,33 @@ while IFS=: read -r username _ uid gid _ home shell; do
     # ── subuid/subgid (rootless podman / lxc / lxd) ──────────────────────────
     if command -v podman &>/dev/null || command -v lxc &>/dev/null || command -v lxd &>/dev/null; then
         if ! grep -q "^${username}:" /etc/subuid 2>/dev/null; then
-            last=$(awk -F: 'BEGIN{max=100000} {n=$2+$3; if(n>max)max=n} END{print max}' \
-                /etc/subuid 2>/dev/null || echo 100000)
+            # Find the highest end of any existing range to avoid collisions.
+            # If /etc/subuid is missing or empty, start at 100000.
+            last=100000
+            if [[ -s /etc/subuid ]]; then
+                last=$(awk -F: '
+                    /^[^#]/ {
+                        end = $2 + $3
+                        if (end > max) max = end
+                    }
+                    END { print (max > 0 ? max : 100000) }
+                ' /etc/subuid 2>/dev/null || echo 100000)
+            fi
             run usermod --add-subuids "${last}-$((last + 65535))" "$username" \
                 || { warn "subuid setup failed for $username"; user_ok=0; }
             log "added subuid range for $username (${last}-$((last + 65535)))"
         fi
         if ! grep -q "^${username}:" /etc/subgid 2>/dev/null; then
-            last=$(awk -F: 'BEGIN{max=100000} {n=$2+$3; if(n>max)max=n} END{print max}' \
-                /etc/subgid 2>/dev/null || echo 100000)
+            last=100000
+            if [[ -s /etc/subgid ]]; then
+                last=$(awk -F: '
+                    /^[^#]/ {
+                        end = $2 + $3
+                        if (end > max) max = end
+                    }
+                    END { print (max > 0 ? max : 100000) }
+                ' /etc/subgid 2>/dev/null || echo 100000)
+            fi
             run usermod --add-subgids "${last}-$((last + 65535))" "$username" \
                 || { warn "subgid setup failed for $username"; user_ok=0; }
             log "added subgid range for $username (${last}-$((last + 65535)))"

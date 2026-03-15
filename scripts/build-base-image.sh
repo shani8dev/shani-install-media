@@ -92,6 +92,14 @@ echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
 echo "stable" > /etc/shani-channel
 
+# Extra groups added to every user account at creation time.
+# This is the single source of truth read by shani-user-setup,
+# adduser wrapper, and useradd wrapper. Lives on the read-only root
+# so it survives a factory reset (/data wipe) and is available
+# before the /etc overlay activates.
+echo "sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld" > /etc/shani-extra-groups
+chmod 644 /etc/shani-extra-groups
+
 # Create directories required for the read-only root fstab mounts
 mkdir -p /boot/efi
 mkdir -p /swap
