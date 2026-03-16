@@ -20,5 +20,6 @@ ExecStartPost=-/bin/rm -f /data/user-setup-needed
 TimeoutStartSec=120s
 RemainAfterExit=yes
 
-# No [Install] section — activated exclusively by shani-user-setup.path
-# on runtime user additions, and by ConditionPathExists on boot after deploy.
+
+[Install]
+WantedBy=multi-user.target
