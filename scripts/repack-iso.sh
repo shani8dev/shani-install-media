@@ -89,11 +89,29 @@ sha256sum "$(basename "$final_iso")" > "$(basename "$final_iso").sha256" || erro
 cat "$(basename "$final_iso").sha256"
 popd > /dev/null
 
+# Ensure all GPG operations use the correct home directory
+export GNUPGHOME="/home/builduser/.gnupg"
+
+# Trust the key in the USER keyring
+echo -e "trust\n5\ny\nsave\n" | gpg --homedir "$GNUPGHOME" --batch --command-fd 0 --edit-key "$GPG_KEY_ID"
+
+# Verify key exists in USER keyring
+if ! gpg --homedir "$GNUPGHOME" --list-secret-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
+    die "GPG key not found in $GNUPGHOME: $GPG_KEY_ID"
+fi
+
+# Sign using USER keyring
 log "Signing ISO with GPG..."
-gpg --batch --yes \
-  --detach-sign --armor \
-  --output "${final_iso}.asc" \
-  "${final_iso}" || error_exit "GPG signing of ISO failed"
+gpg --homedir "$GNUPGHOME" \
+    --batch \
+    --yes \
+    --pinentry-mode loopback \
+    --passphrase "$GPG_PASSPHRASE" \
+    --default-key "$GPG_KEY_ID" \
+    --detach-sign \
+    --armor \
+    --output "${final_iso}.asc" \
+    "${final_iso}" || error_exit "GPG signing of ISO failed"
 log "GPG signature created: ${final_iso}.asc"
 
 # ---------------------------------------------------------------------------
