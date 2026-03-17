@@ -4,7 +4,7 @@
 # This script uploads:
 #   - Base image artifacts: *.zst, *.zst.sha256, *.zst.zsync, *.zst.asc, and latest.txt from the build folder.
 #   - Central release files: latest.txt and stable.txt from the OUTPUT_DIR root (if they exist).
-#   - ISO artifacts (signed ISO and its .sha256 checksum) if in "all" mode.
+#   - ISO artifacts (signed ISO, its .sha256 checksum, .asc signature, and .torrent) if in "all" mode.
 #
 # All uploads are mirrored to Cloudflare R2 if R2_BUCKET is set in the environment.
 # After a successful upload, old dated build folders for the profile are deleted from R2,
@@ -30,6 +30,11 @@ r2_upload() {
   local src="$1"
   local dest_subpath="$2"
 
+  if [[ "${NO_R2}" == "true" ]]; then
+    log "R2: skipping $(basename "${src}") (--no-r2)"
+    return 0
+  fi
+
   if [[ -z "${R2_BUCKET:-}" ]]; then
     return 0
   fi
@@ -48,6 +53,11 @@ r2_upload() {
 # Silently skipped if R2_BUCKET is not set.
 # ---------------------------------------------------------------------------
 r2_cleanup() {
+  if [[ "${NO_R2}" == "true" ]]; then
+    log "R2: skipping cleanup (--no-r2)"
+    return 0
+  fi
+
   if [[ -z "${R2_BUCKET:-}" ]]; then
     return 0
   fi
@@ -101,15 +111,44 @@ r2_cleanup() {
   log "R2: cleanup complete."
 }
 
+# ---------------------------------------------------------------------------
+# SourceForge upload helper
+# Wraps rsync over SSH. Skipped entirely when --no-sf is active.
+# ---------------------------------------------------------------------------
+sf_upload() {
+  local label="$1"; shift   # human-readable label for log messages
+  if [[ "${NO_SF}" == "true" ]]; then
+    log "SF: skipping ${label} (--no-sf)"
+    return 0
+  fi
+  rsync -e ssh -avz --progress "$@" || die "Upload of ${label} failed"
+}
+
 usage() {
-  echo "Usage: $(basename "$0") -p <profile> [mode]"
+  echo "Usage: $(basename "$0") -p <profile> [--no-sf] [--no-r2] [mode]"
   echo "  -p <profile>         Profile name (e.g. gnome, plasma)"
+  echo "  --no-sf              Skip all SourceForge uploads (or set NO_SF=true)"
+  echo "  --no-r2              Skip all Cloudflare R2 uploads (or set NO_R2=true)"
   echo "  mode                 Upload mode: 'image' (default) or 'all'"
   exit 1
 }
 
 # Parse profile option
 PROFILE=""
+NO_SF="${NO_SF:-false}"
+NO_R2="${NO_R2:-false}"
+
+# Strip --no-sf / --no-r2 before getopts so they don't confuse it
+_CLEAN_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-sf) NO_SF=true ;;
+    --no-r2) NO_R2=true ;;
+    *)        _CLEAN_ARGS+=("$arg") ;;
+  esac
+done
+set -- "${_CLEAN_ARGS[@]+"${_CLEAN_ARGS[@]}"}"
+
 while getopts "p:h" opt; do
   case "$opt" in
     p) PROFILE="$OPTARG" ;;
@@ -159,9 +198,11 @@ R2_SUBPATH="${PROFILE}/${BUILD_DATE}"
 R2_PATH="${PROFILE}"
 
 # Create remote directory if it doesn't exist
-log "Ensuring remote directory exists: ${REMOTE_SUBPATH}"
-ssh librewish@frs.sourceforge.net "mkdir -p /home/frs/project/shanios/${PROFILE}/${BUILD_DATE}" \
-  || log "Warning: Could not create remote directory (may already exist)"
+if [[ "${NO_SF}" == "false" ]]; then
+  log "Ensuring remote directory exists: ${REMOTE_SUBPATH}"
+  ssh librewish@frs.sourceforge.net "mkdir -p /home/frs/project/shanios/${PROFILE}/${BUILD_DATE}" \
+    || log "Warning: Could not create remote directory (may already exist)"
+fi
 
 # ---------------------------------------------------------------------------
 # Upload base image artifacts from the build folder
@@ -170,10 +211,9 @@ log "Uploading base image artifacts from ${OUTPUT_SUBDIR}:"
 
 # .zst files (excluding flatpakfs.zst and snapfs.zst)
 if ls "${OUTPUT_SUBDIR}"/*.zst 1>/dev/null 2>&1; then
-  rsync -e ssh -avz --progress \
+  sf_upload "base image" \
     --exclude="flatpakfs.zst" --exclude="snapfs.zst" \
-    "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}" \
-    || die "Upload of base image failed"
+    "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}"
   for f in "${OUTPUT_SUBDIR}"/*.zst; do
     [[ "$f" == *flatpakfs.zst || "$f" == *snapfs.zst ]] && continue
     r2_upload "$f" "${R2_SUBPATH}"
@@ -184,8 +224,7 @@ fi
 
 # Signature files
 if ls "${OUTPUT_SUBDIR}"/*.zst.asc 1>/dev/null 2>&1; then
-  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.asc "${REMOTE_SUBPATH}" \
-    || die "Upload of base image signatures failed"
+  sf_upload "base image signatures" "${OUTPUT_SUBDIR}"/*.zst.asc "${REMOTE_SUBPATH}"
   for f in "${OUTPUT_SUBDIR}"/*.zst.asc; do
     r2_upload "$f" "${R2_SUBPATH}"
   done
@@ -195,8 +234,7 @@ fi
 
 # Checksum files
 if ls "${OUTPUT_SUBDIR}"/*.zst.sha256 1>/dev/null 2>&1; then
-  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/*.zst.sha256 "${REMOTE_SUBPATH}" \
-    || die "Upload of base image checksums failed"
+  sf_upload "base image checksums" "${OUTPUT_SUBDIR}"/*.zst.sha256 "${REMOTE_SUBPATH}"
   for f in "${OUTPUT_SUBDIR}"/*.zst.sha256; do
     r2_upload "$f" "${R2_SUBPATH}"
   done
@@ -206,8 +244,7 @@ fi
 
 # latest.txt from build folder
 if [[ -f "${OUTPUT_SUBDIR}/latest.txt" ]]; then
-  rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}" \
-    || die "Upload of latest.txt failed"
+  sf_upload "latest.txt" "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}"
   r2_upload "${OUTPUT_SUBDIR}/latest.txt" "${R2_SUBPATH}"
 else
   log "Warning: No latest.txt found in ${OUTPUT_SUBDIR}"
@@ -221,8 +258,7 @@ fi
 CENTRAL_LATEST="${OUTPUT_DIR}/${PROFILE}/latest.txt"
 if [[ -f "${CENTRAL_LATEST}" ]]; then
   log "Uploading central release file (latest.txt) from ${OUTPUT_DIR}/${PROFILE}:"
-  rsync -e ssh -avz --progress "${CENTRAL_LATEST}" "${REMOTE_PATH}" \
-    || die "Upload of central latest.txt failed"
+  sf_upload "central latest.txt" "${CENTRAL_LATEST}" "${REMOTE_PATH}"
   r2_upload "${CENTRAL_LATEST}" "${R2_PATH}"
 else
   log "No central latest.txt found to upload."
@@ -232,8 +268,7 @@ fi
 CENTRAL_STABLE="${OUTPUT_DIR}/${PROFILE}/stable.txt"
 if [[ -f "${CENTRAL_STABLE}" ]]; then
   log "Uploading central release file (stable.txt) from ${OUTPUT_DIR}/${PROFILE}:"
-  rsync -e ssh -avz --progress "${CENTRAL_STABLE}" "${REMOTE_PATH}" \
-    || die "Upload of central stable.txt failed"
+  sf_upload "central stable.txt" "${CENTRAL_STABLE}" "${REMOTE_PATH}"
   r2_upload "${CENTRAL_STABLE}" "${R2_PATH}"
 else
   log "No central stable.txt found to upload."
@@ -247,8 +282,7 @@ if [[ "$MODE" == "all" ]]; then
 
   # Signed ISO files
   if ls "${OUTPUT_SUBDIR}"/signed_*.iso 1>/dev/null 2>&1; then
-    rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/signed_*.iso "${REMOTE_SUBPATH}" \
-      || die "Upload of signed ISO failed"
+    sf_upload "signed ISO" "${OUTPUT_SUBDIR}"/signed_*.iso "${REMOTE_SUBPATH}"
     for f in "${OUTPUT_SUBDIR}"/signed_*.iso; do
       r2_upload "$f" "${R2_SUBPATH}"
     done
@@ -258,8 +292,7 @@ if [[ "$MODE" == "all" ]]; then
 
   # ISO checksums
   if ls "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 1>/dev/null 2>&1; then
-    rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 "${REMOTE_SUBPATH}" \
-      || die "Upload of ISO checksum failed"
+    sf_upload "ISO checksum" "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 "${REMOTE_SUBPATH}"
     for f in "${OUTPUT_SUBDIR}"/signed_*.iso.sha256; do
       r2_upload "$f" "${R2_SUBPATH}"
     done
@@ -269,13 +302,22 @@ if [[ "$MODE" == "all" ]]; then
 
   # ISO signature files
   if ls "${OUTPUT_SUBDIR}"/signed_*.iso.asc 1>/dev/null 2>&1; then
-    rsync -e ssh -avz --progress "${OUTPUT_SUBDIR}"/signed_*.iso.asc "${REMOTE_SUBPATH}" \
-      || die "Upload of ISO signatures failed"
+    sf_upload "ISO signatures" "${OUTPUT_SUBDIR}"/signed_*.iso.asc "${REMOTE_SUBPATH}"
     for f in "${OUTPUT_SUBDIR}"/signed_*.iso.asc; do
       r2_upload "$f" "${R2_SUBPATH}"
     done
   else
     log "Warning: No signed_*.iso.asc files found in ${OUTPUT_SUBDIR}"
+  fi
+
+  # Torrent files
+  if ls "${OUTPUT_SUBDIR}"/signed_*.iso.torrent 1>/dev/null 2>&1; then
+    sf_upload "ISO torrents" "${OUTPUT_SUBDIR}"/signed_*.iso.torrent "${REMOTE_SUBPATH}"
+    for f in "${OUTPUT_SUBDIR}"/signed_*.iso.torrent; do
+      r2_upload "$f" "${R2_SUBPATH}"
+    done
+  else
+    log "Warning: No signed_*.iso.torrent files found in ${OUTPUT_SUBDIR}"
   fi
 fi
 

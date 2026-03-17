@@ -89,5 +89,40 @@ sha256sum "$(basename "$final_iso")" > "$(basename "$final_iso").sha256" || erro
 cat "$(basename "$final_iso").sha256"
 popd > /dev/null
 
-log "ISO repackaging completed successfully!"
+log "Signing ISO with GPG..."
+gpg --batch --yes \
+  --detach-sign --armor \
+  --output "${final_iso}.asc" \
+  "${final_iso}" || error_exit "GPG signing of ISO failed"
+log "GPG signature created: ${final_iso}.asc"
 
+# ---------------------------------------------------------------------------
+# Generate torrent with R2 and SourceForge webseeds + public trackers
+# ---------------------------------------------------------------------------
+log "Generating torrent for $(basename "$final_iso")..."
+
+ISO_FILENAME="$(basename "$final_iso")"
+R2_WEBSEED="https://downloads.shani.dev/${PROFILE}/${BUILD_DATE}/${ISO_FILENAME}"
+SF_WEBSEED="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE}/${ISO_FILENAME}"
+
+TORRENT_FILE="${OUTPUT_SUBDIR}/${ISO_FILENAME}.torrent"
+
+mktorrent \
+  -a "udp://open.demonii.com:1337/announce" \
+  -a "udp://tracker.openbittorrent.com:6969/announce" \
+  -a "udp://opentracker.i2p.rocks:6969/announce" \
+  -a "udp://tracker.opentrackr.org:1337/announce" \
+  -a "udp://tracker.bt4g.com:2095/announce" \
+  -a "udp://tracker.torrent.eu.org:451/announce" \
+  -w "${R2_WEBSEED}" \
+  -w "${SF_WEBSEED}" \
+  -l 22 \
+  -o "${TORRENT_FILE}" \
+  "${final_iso}" || error_exit "mktorrent failed"
+
+log "Torrent created: ${TORRENT_FILE}"
+log "  Webseeds:"
+log "    R2 : ${R2_WEBSEED}"
+log "    SF : ${SF_WEBSEED}"
+
+log "ISO repackaging completed successfully!"
