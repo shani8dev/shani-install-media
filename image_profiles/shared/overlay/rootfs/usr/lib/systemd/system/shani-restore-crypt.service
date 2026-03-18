@@ -1,0 +1,20 @@
+[Unit]
+Description=Restore /etc crypttab and dracut crypt config after @data wipe
+DefaultDependencies=no
+# Only run on encrypted systems — skip entirely if the LUKS mapper isn't open.
+ConditionPathExists=/dev/mapper/shani_root
+# tmpfiles must have created upper/work before we write into them.
+Requires=shanios-tmpfiles-data.service
+After=shanios-tmpfiles-data.service
+# We must complete before the /etc overlay goes live.
+Before=etc-overlay.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/shani/restore-crypt.sh
+RemainAfterExit=yes
+# Failure here means /etc/crypttab is missing — block the overlay mount
+# so the system fails loudly rather than booting with broken crypto config.
+
+[Install]
+WantedBy=etc-overlay.mount
