@@ -56,7 +56,9 @@ mountpoint "${BUILD_DIR}/${BASE_SUBVOL}" || die "Subvolume mount verification fa
 # Copy Secure Boot keys
 secureboot_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/secureboot/keys"
 mkdir -p "$secureboot_target"
-cp "${MOK_DIR}/MOK.key" "${MOK_DIR}/MOK.crt" "${MOK_DIR}/MOK.der" "$secureboot_target" || die "Failed to copy secure boot keys"
+install -m 600 "${MOK_DIR}/MOK.key" "$secureboot_target/MOK.key" || die "Failed to install MOK.key"
+install -m 644 "${MOK_DIR}/MOK.crt" "$secureboot_target/MOK.crt" || die "Failed to install MOK.crt"
+install -m 644 "${MOK_DIR}/MOK.der" "$secureboot_target/MOK.der" || die "Failed to install MOK.der"
 
 # Install base system via pacstrap and apply overlays/customizations
 log "Installing base system..."
@@ -138,6 +140,19 @@ getent group libvirt  &>/dev/null || groupadd -r libvirt
 
 # subuid/subgid for root — required for rootless podman, lxc, lxd
 usermod -v 1000000-1000999999 -w 1000000-1000999999 root
+
+# --------------------------------------------------
+# Import Shani signing public key (for verification)
+# --------------------------------------------------
+if [[ -f /etc/shani-keys/signing.asc ]]; then
+    mkdir -p /root/.gnupg
+    chmod 700 /root/.gnupg
+
+    gpg --homedir /root/.gnupg --import /etc/shani-keys/signing.asc
+
+    # Set trust (ultimate for system key)
+    echo "${GPG_KEY_ID}:6:" | gpg --homedir /root/.gnupg --import-ownertrust
+fi
 
 EOF
 
