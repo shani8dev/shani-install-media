@@ -1,25 +1,35 @@
 [Unit]
 Description=Sync groups, shell, and skel for all regular users
-# Run on boot if shani-deploy wrote a user-setup-needed marker (new slot
-# deployed with potentially updated skel/groups), OR when triggered by the
-# .path unit watching /etc/passwd and /etc/skel for runtime user additions.
+# Triggered by shani-user-setup.path when:
+#   - /data/overlay/etc/upper/passwd is created or changed (user added at runtime)
+#   - /data/user-setup-needed exists (first install or slot switch via shani-deploy)
+#   - /etc/skel is modified (skel update via slot switch)
+#
+# ConditionPathExists with | prefix = OR logic.
+# The service runs if either the deploy marker OR the extra-groups file exists.
+# The deploy marker is written by configure.sh on install and by shani-deploy on
+# every slot switch — it is the single signal that setup is needed.
 ConditionPathExists=|/data/user-setup-needed
 ConditionPathExists=|/etc/shani-extra-groups
-# Wants= (not Requires=) so missing accounts-daemon does not block user setup.
+
+# Wants= (not Requires=) so a missing accounts-daemon does not block user setup.
 Wants=accounts-daemon.service
 After=accounts-daemon.service etc-overlay.mount data.mount
-Requires=etc-overlay.mount
-# data.mount needed to read/clear the user-setup-needed marker.
-Wants=data.mount
+# Both mounts are hard requirements — /etc overlay must be active so passwd and
+# shani-extra-groups are readable, and /data must be mounted to read/clear the
+# user-setup-needed marker.
+Requires=etc-overlay.mount data.mount
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/shani-user-setup
-# Clear the marker after a successful run so we don't re-run on every boot.
+# Clear the deploy marker after a successful run so the service does not
+# re-trigger on the next boot. The .path unit will still re-trigger it if a
+# new user is added (via passwd change) or shani-deploy writes the marker again.
 ExecStartPost=-/bin/rm -f /data/user-setup-needed
 TimeoutStartSec=120s
 RemainAfterExit=yes
 
-
-[Install]
-WantedBy=multi-user.target
+# No [Install] section — this service is activated exclusively by
+# shani-user-setup.path, never directly by multi-user.target. Installing it
+# directly would race against data.mount and etc-overlay.mount at boot.
