@@ -257,6 +257,18 @@ LABEL=shani_root              /var/lib/flatpak          btrfs   nofail,defaults,
 # Create : btrfs subvolume create /@snapd
 LABEL=shani_root   /var/lib/snapd   btrfs   nofail,defaults,noatime,subvol=@snapd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount   0 0
 
+# /snap — Bind mount of /var/lib/snapd/snap onto /snap
+# Required because root is read-only and /snap cannot be a symlink.
+# Systemd generates snap-*.mount units targeting /snap/* as literal paths;
+# symlinks are not followed when creating mountpoints on an immutable root,
+# causing all snap revision directories to appear empty at runtime.
+# Bind mount solves this by making /snap a real VFS mountpoint resolved
+# before snapd attempts to loop-mount squashfs images into /snap/<name>/<rev>/.
+# Ordering: @snapd subvol must be mounted first (var-lib-snapd.mount),
+# then /snap is bind-mounted, then snapd.service starts and mounts snaps.
+# Create: mkdir -p /snap
+/var/lib/snapd/snap   /snap   none   bind,nofail,x-systemd.after=var-lib-snapd.mount,x-systemd.requires=var-lib-snapd.mount,x-systemd.requires-mounts-for=/var/lib/snapd   0 0
+
 # /var/lib/waydroid — Android system images and userdata
 # Keeps Waydroid installed and persistent across blue/green root switches.
 # Create: btrfs subvolume create /@waydroid
