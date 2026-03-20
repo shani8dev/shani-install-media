@@ -6,7 +6,7 @@ DefaultDependencies=no
 # directory and silently producing no output when the persistent @data is missing.
 BindsTo=data.mount
 After=data.mount
-Before=etc-overlay.mount
+Before=etc.mount
 
 [Service]
 Type=oneshot

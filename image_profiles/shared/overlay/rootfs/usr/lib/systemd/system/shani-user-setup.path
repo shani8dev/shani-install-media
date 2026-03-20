@@ -1,7 +1,7 @@
 [Unit]
 Description=Watch for new users and skel changes
-After=etc-overlay.mount data.mount
-Requires=etc-overlay.mount data.mount
+After=etc.mount data.mount
+Requires=etc.mount data.mount
 
 [Path]
 # Watch the upper-layer passwd directly — inotify on the OverlayFS merged path

@@ -14,11 +14,11 @@ ConditionPathExists=|/etc/shani-extra-groups
 
 # Wants= (not Requires=) so a missing accounts-daemon does not block user setup.
 Wants=accounts-daemon.service
-After=accounts-daemon.service etc-overlay.mount data.mount
+After=accounts-daemon.service etc.mount data.mount
 # Both mounts are hard requirements — /etc overlay must be active so passwd and
 # shani-extra-groups are readable, and /data must be mounted to read/clear the
 # user-setup-needed marker.
-Requires=etc-overlay.mount data.mount
+Requires=etc.mount data.mount
 
 [Service]
 Type=oneshot
@@ -32,4 +32,4 @@ RemainAfterExit=yes
 
 # No [Install] section — this service is activated exclusively by
 # shani-user-setup.path, never directly by multi-user.target. Installing it
-# directly would race against data.mount and etc-overlay.mount at boot.
+# directly would race against data.mount and etc.mount at boot.
