@@ -107,6 +107,7 @@ mkdir -p /boot/efi
 mkdir -p /swap
 mkdir -p /data
 mkdir -p /nix
+mkdir -p /snap
 
 # Container & virtualization mount points
 mkdir -p /var/lib/flatpak

@@ -22,7 +22,7 @@ Requires=etc.mount data.mount
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/shani-user-setup
+ExecStart=/usr/abin/shani-user-setup
 # Clear the deploy marker after a successful run so the service does not
 # re-trigger on the next boot. The .path unit will still re-trigger it if a
 # new user is added (via passwd change) or shani-deploy writes the marker again.
