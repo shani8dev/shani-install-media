@@ -1,0 +1,21 @@
+[Unit]
+Description=Ensure /var/lib/snapd/snap exists inside @snapd subvolume
+DefaultDependencies=no
+# Run strictly after @snapd is mounted so tmpfiles writes into the persistent
+# subvolume, not onto the tmpfs underneath it. Without this ordering the
+# directory would be created on the tmpfs and then hidden when @snapd mounts.
+#
+# No BindsTo: var-lib-snapd.mount is nofail so if @snapd is absent (e.g. fresh
+# provisioning) this service still runs harmlessly — snap.mount is also nofail
+# so no hard failure results.
+After=var-lib-snapd.mount
+# Must complete before snap.mount tries to bind /var/lib/snapd/snap → /snap.
+Before=snap.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/shanios-snapd-snap-dir.conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=snap.mount
