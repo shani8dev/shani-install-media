@@ -147,10 +147,11 @@ while IFS=: read -r username _ uid gid _ home shell; do
     # Always run — skel files may be updated by packages and should propagate.
     # --update skips dest files newer than the source (user-modified copies),
     # so only genuinely new or updated skel files are written.
-    # --checksum dropped: skel mtimes are authoritative (set by package manager).
+    # Ownership is fixed after copy — skel files are root-owned and the user
+    # must be able to modify or delete their own copies.
     if [[ -d "$home" && -d "$SKEL_DIR" ]]; then
         if [[ "$HAS_RSYNC" -eq 1 ]]; then
-            run rsync -a --update --exclude='.gitkeep' "$SKEL_DIR/" "$home/" \
+            run rsync -a --update --chown="$uid:$gid" --exclude='.gitkeep' "$SKEL_DIR/" "$home/" \
                 || warn "rsync skel failed for $username"
         else
             # Fallback: recurse manually, mirroring rsync --update semantics.
@@ -159,14 +160,19 @@ while IFS=: read -r username _ uid gid _ home shell; do
                 rel="${item#"$SKEL_DIR"/}"
                 dest="$home/$rel"
                 if [[ -d "$item" ]]; then
-                    [[ -d "$dest" ]] || run mkdir -p "$dest" \
-                        || warn "mkdir skel dir $dest failed for $username"
+                    if [[ ! -d "$dest" ]]; then
+                        run mkdir -p "$dest" \
+                            && run chown "$uid:$gid" "$dest" \
+                            || warn "mkdir skel dir $dest failed for $username"
+                    fi
                 else
                     # Copy if missing or skel is newer; skip if dest is newer (user-modified).
                     if [[ -e "$dest" ]]; then
                         [[ "$item" -nt "$dest" ]] || continue
                     fi
-                    run cp -a "$item" "$dest" || warn "cp skel $item failed for $username"
+                    run cp -a "$item" "$dest" \
+                        && run chown "$uid:$gid" "$dest" \
+                        || warn "cp skel $item failed for $username"
                 fi
             done < <(find "$SKEL_DIR" -mindepth 1 ! -name '.gitkeep')
         fi
