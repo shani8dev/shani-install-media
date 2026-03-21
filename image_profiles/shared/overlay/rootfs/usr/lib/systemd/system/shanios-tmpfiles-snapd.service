@@ -1,10 +1,10 @@
 [Unit]
-Description=Ensure /var/lib/snapd/snap and /snap exist for snapd bind mount
+Description=Ensure /var/lib/snapd/snap exists and /snap symlink is in place
 Documentation=man:tmpfiles.d(5)
 DefaultDependencies=no
 After=var-lib-snapd.mount
 RequiresMountsFor=/var/lib/snapd
-Before=snap.mount
+Before=snapd.service
 
 [Service]
 Type=oneshot
@@ -12,4 +12,4 @@ RemainAfterExit=yes
 ExecStart=/usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/shanios-snapd-snap-dir.conf
 
 [Install]
-WantedBy=snap.mount
+WantedBy=snapd.service
