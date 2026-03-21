@@ -90,6 +90,8 @@ systemd-machine-id-setup --commit
 
 # Set system hostname and record build/version information
 echo "${OS_NAME}" > /etc/hostname
+echo "PRETTY_HOSTNAME=${OS_NAME}" > /etc/machine-info
+printf '127.0.0.1 localhost\n::1       localhost\n127.0.1.1 %s\n' "${OS_NAME}" > /etc/hosts
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
 echo "stable" > /etc/shani-channel
@@ -154,6 +156,8 @@ if [[ -f /etc/shani-keys/signing.asc ]]; then
     # Set trust (ultimate for system key)
     echo "${GPG_KEY_ID}:6:" | gpg --homedir /root/.gnupg --import-ownertrust
 fi
+
+chmod 0440 /etc/sudoers.d/path
 
 EOF
 

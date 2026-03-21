@@ -106,7 +106,10 @@ while IFS=: read -r username _ uid gid _ home shell; do
         run install -d -m 750 -o "$uid" -g "$gid" "$home" \
             || { warn "failed to create $home"; user_ok=0; }
     else
-        run chmod 750 "$home" || { warn "chmod failed for $home"; user_ok=0; }
+        current_mode=$(stat -c %a "$home" 2>/dev/null)
+        if [[ "$current_mode" != "750" ]]; then
+            run chmod 750 "$home" || { warn "chmod failed for $home"; user_ok=0; }
+        fi
     fi
 
     # ── Skel sync ─────────────────────────────────────────────────────────────
@@ -287,8 +290,9 @@ while IFS=: read -r username _ uid gid _ home shell; do
     # hammering NFS mounts or large trees unnecessarily.
     if [[ -d "$home" ]]; then
         current_owner=$(stat -c %u "$home" 2>/dev/null)
-        if [[ "$current_owner" != "$uid" ]]; then
-            log "fixing ownership of $home (was uid $current_owner, want $uid)"
+        current_group=$(stat -c %g "$home" 2>/dev/null)
+        if [[ "$current_owner" != "$uid" || "$current_group" != "$gid" ]]; then
+            log "fixing ownership of $home (was $current_owner:$current_group, want $uid:$gid)"
             run chown -R "${uid}:${gid}" "$home" \
                 || { warn "chown failed for $home"; user_ok=0; }
         fi
