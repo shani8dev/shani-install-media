@@ -10,10 +10,11 @@ DEFAULT_PROFILE="gnome"
 OUTPUT_DIR="$(realpath ./cache/output)"
 BUILD_DIR="$(realpath ./cache/build)"
 TEMP_DIR="$(realpath ./cache/temp)"
-MOK_DIR="$(realpath ./mok)"
+MOK_DIR="$(realpath ./keys/mok)"
+GPG_DIR="$(realpath ./keys/gpg)"
 ISO_PROFILES_DIR="$(realpath ./iso_profiles)"
 IMAGE_PROFILES_DIR="$(realpath ./image_profiles)"
-GPG_KEY_ID="7B927BFFD4A9EAAA8B666B77DE217F3DA8014792"
+GPG_KEY_ID="${GPG_KEY_ID:-7B927BFFD4A9EAAA8B666B77DE217F3DA8014792}"
 
 # Logging functions
 log()   { echo "[INFO] $*"; }
@@ -22,7 +23,7 @@ die()   { echo "[ERROR] $*" >&2; exit 1; }
 
 # Check for required commands
 check_dependencies() {
-    local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync genfstab zsyncmake gpg sha256sum zstd fallocate mkfs.btrfs openssl )
+    local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync gpg sha256sum zstd fallocate mkfs.btrfs openssl )
     for cmd in "${deps[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
     done
@@ -70,7 +71,7 @@ setup_btrfs_image() {
     local loop_device
     loop_device=$(losetup --find --show "$img_path") || die "Failed to setup loop device for $img_path"
     log "Loop device assigned: $loop_device"
-    
+
     # Format as Btrfs
     log "Formatting $loop_device as Btrfs..."
     mkfs.btrfs -f "$loop_device" || die "Failed to format $img_path as Btrfs"
@@ -104,4 +105,3 @@ btrfs_send_snapshot() {
     btrfs send "$subvol_path" | zstd --ultra --long=31 -T0 -22 -v > "$output_file" \
       || die "btrfs send failed for ${subvol_path}"
 }
-

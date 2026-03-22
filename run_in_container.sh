@@ -123,6 +123,7 @@ docker run --rm ${TTY_FLAGS} --privileged \
     -e SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}" \
     -e GPG_PRIVATE_KEY="${GPG_PRIVATE_KEY:-}" \
     -e GPG_PASSPHRASE="${GPG_PASSPHRASE:-}" \
+    -e GPG_KEY_ID="${GPG_KEY_ID:-}" \
     -e GNUPGHOME="${CONTAINER_GNUPGHOME}" \
     -e R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
     -e R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \

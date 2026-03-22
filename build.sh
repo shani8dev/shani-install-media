@@ -67,8 +67,32 @@ case "$COMMAND" in
     exec ./scripts/promote-stable.sh "$@"
     ;;
   all)
+    # Determine profile from remaining args so we can check for optional package lists
+    _ALL_PROFILE=""
+    for _arg in "$@"; do
+      if [[ "${_prev_arg:-}" == "-p" ]]; then
+        _ALL_PROFILE="$_arg"
+      fi
+      _prev_arg="$_arg"
+    done
+    [[ -z "$_ALL_PROFILE" ]] && die "Profile (-p) is required for the 'all' command."
+
     ./scripts/build-base-image.sh "$@"
-    ./scripts/build-flatpak-image.sh "$@"
+
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_ALL_PROFILE}/flatpak-packages.txt" ]]; then
+      log "flatpak-packages.txt found — building Flatpak image..."
+      ./scripts/build-flatpak-image.sh "$@"
+    else
+      log "No flatpak-packages.txt for profile '${_ALL_PROFILE}' — skipping Flatpak build."
+    fi
+
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_ALL_PROFILE}/snap-packages.txt" ]]; then
+      log "snap-packages.txt found — building Snap image..."
+      ./scripts/build-snap-image.sh "$@"
+    else
+      log "No snap-packages.txt for profile '${_ALL_PROFILE}' — skipping Snap build."
+    fi
+
     ./scripts/build-iso.sh "$@"
     ./scripts/repack-iso.sh "$@"
     ./scripts/release.sh "$@" latest

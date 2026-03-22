@@ -1,22 +1,35 @@
 #!/usr/bin/env bash
-# create-gpg-key.sh — Generate a GPG signing key for Shani OS artifact signing.
+# create-gpg-keys.sh — Generate a GPG signing key for Shani OS artifact signing.
 #
-# Produces:
-#   gpg-private.asc       Armored private key  (GPG_PRIVATE_KEY secret)
-#   gpg-public.asc        Armored public key   (embed in base image as signing.asc)
-#   github-gpg-secrets.env Values ready to paste into GitHub Actions secrets
-#
-# The key fingerprint is printed at the end — update GPG_KEY_ID in config/config.sh
-# with that value before running any builds.
+# Produces (in ./gpg/):
+#   gpg/gpg-private.asc        Armored private key  (GPG_PRIVATE_KEY secret)
+#   gpg/gpg-public.asc         Armored public key   (embed in base image as signing.asc)
+#   gpg/gpg-key-id.txt         Key fingerprint      (GPG_KEY_ID value)
+#   gpg/github-gpg-secrets.env Values ready to paste into GitHub Actions secrets
 #
 # Usage:
-#   cd mok/          # or any directory — files are written to the current directory
-#   bash create-gpg-key.sh
+#   bash create-gpg-keys.sh             # generate keys + write env
+#   bash create-gpg-keys.sh --upload    # same, then upload public key to keyservers
 #
-# If gpg-private.asc already exists, key generation is skipped and only
-# github-gpg-secrets.env is regenerated from the existing files.
+# If gpg/gpg-private.asc already exists, key generation is skipped and only
+# gpg/gpg-key-id.txt and gpg/github-gpg-secrets.env are regenerated.
 
 set -Eeuo pipefail
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+UPLOAD_KEY=false
+for arg in "$@"; do
+    case "$arg" in
+        --upload) UPLOAD_KEY=true ;;
+        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+    esac
+done
+
+KEYSERVERS=(
+    "hkps://keys.openpgp.org"
+    "hkps://keyserver.ubuntu.com"
+    "hkps://pgp.mit.edu"
+)
 
 KEY_NAME="Shani OS"
 KEY_EMAIL="shani@shani.dev"
@@ -25,9 +38,14 @@ KEY_TYPE="RSA"
 KEY_LENGTH="4096"
 KEY_EXPIRE="5y"
 
-PRIVATE_KEY_FILE="gpg-private.asc"
-PUBLIC_KEY_FILE="gpg-public.asc"
-ENV_FILE="github-gpg-secrets.env"
+OUTPUT_DIR="gpg"
+PRIVATE_KEY_FILE="${OUTPUT_DIR}/gpg-private.asc"
+PUBLIC_KEY_FILE="${OUTPUT_DIR}/gpg-public.asc"
+ENV_FILE="${OUTPUT_DIR}/github-gpg-secrets.env"
+
+# ── Ensure output directory exists ───────────────────────────────────────────
+mkdir -p "$OUTPUT_DIR"
+chmod 0700 "$OUTPUT_DIR"
 
 # ── Prompt for passphrase ─────────────────────────────────────────────────────
 if [[ -f "$PRIVATE_KEY_FILE" ]]; then
@@ -41,6 +59,7 @@ else
     echo "   Email   : ${KEY_EMAIL}"
     echo "   Type    : ${KEY_TYPE} ${KEY_LENGTH}-bit"
     echo "   Expires : ${KEY_EXPIRE}"
+    echo "   Output  : $(pwd)/${OUTPUT_DIR}/"
     echo ""
 
     while true; do
@@ -98,9 +117,6 @@ EOF
     echo "✅ Key files written:"
     echo "   $(pwd)/${PRIVATE_KEY_FILE}  (private — keep secret)"
     echo "   $(pwd)/${PUBLIC_KEY_FILE}"
-    echo ""
-    echo "⚠️  Update GPG_KEY_ID in config/config.sh:"
-    echo "   GPG_KEY_ID=\"${FINGERPRINT}\""
 fi
 
 # ── Read fingerprint from existing private key (skip-generation path) ─────────
@@ -141,10 +157,6 @@ GPG_PUBLIC_KEY_VAL=$(cat "$PUBLIC_KEY_FILE")
     echo "GPG_PASSPHRASE=${GPG_PASSPHRASE}"
     echo "GPG_KEY_ID=${FINGERPRINT}"
     echo ""
-    echo "# ── Update config/config.sh ─────────────────────────────────────────────────"
-    echo ""
-    echo "# GPG_KEY_ID=\"${FINGERPRINT}\""
-    echo ""
     echo "# ── Embed public key in base image ──────────────────────────────────────────"
     echo "# Copy ${PUBLIC_KEY_FILE} to:"
     echo "#   image_profiles/shared/overlay/rootfs/etc/shani-keys/signing.asc"
@@ -161,14 +173,53 @@ echo ""
 echo "📄 GitHub secrets written to: $(pwd)/${ENV_FILE}"
 echo ""
 echo "Next steps:"
-echo "  1. Update config/config.sh:"
-echo "       GPG_KEY_ID=\"${FINGERPRINT}\""
-echo ""
-echo "  2. Copy the public key into the overlay so it gets embedded in the base image:"
+echo "  1. Copy the public key into the overlay so it gets embedded in the base image:"
 echo "       cp ${PUBLIC_KEY_FILE} ../image_profiles/shared/overlay/rootfs/etc/shani-keys/signing.asc"
 echo ""
-echo "  3. Add GPG_PRIVATE_KEY and GPG_PASSPHRASE to GitHub Actions secrets"
+echo "  2. Add GPG_PRIVATE_KEY, GPG_PASSPHRASE, and GPG_KEY_ID to GitHub Actions secrets"
 echo "     (values are in ${ENV_FILE})"
 echo ""
-echo "  4. When done, shred all key files:"
+echo "  3. When done, shred all key files:"
 echo "       shred -u ${PRIVATE_KEY_FILE} ${PUBLIC_KEY_FILE} ${ENV_FILE}"
+echo "       rmdir ${OUTPUT_DIR} 2>/dev/null || true"
+
+# ── Optional: upload public key to keyservers ─────────────────────────────────
+if [[ "$UPLOAD_KEY" == true ]]; then
+    echo ""
+    echo "🌐 Uploading public key to keyservers..."
+
+    # Import into a temp keyring so we can send-keys without touching the user's keyring
+    TMPGNUPG_UPLOAD="$(mktemp -d)"
+    chmod 700 "$TMPGNUPG_UPLOAD"
+    trap 'rm -rf "$TMPGNUPG_UPLOAD"' EXIT
+
+    gpg --homedir "$TMPGNUPG_UPLOAD" \
+        --batch --import "$PUBLIC_KEY_FILE" >/dev/null 2>&1
+
+    UPLOAD_OK=0
+    UPLOAD_FAIL=0
+    for KS in "${KEYSERVERS[@]}"; do
+        printf "   %-40s " "$KS"
+        if gpg --homedir "$TMPGNUPG_UPLOAD" \
+               --batch \
+               --keyserver "$KS" \
+               --send-keys "$FINGERPRINT" 2>/dev/null; then
+            echo "✅"
+            (( UPLOAD_OK++ )) || true
+        else
+            echo "❌ (failed or unreachable)"
+            (( UPLOAD_FAIL++ )) || true
+        fi
+    done
+
+    echo ""
+    if [[ $UPLOAD_OK -gt 0 ]]; then
+        echo "✅ Key uploaded to ${UPLOAD_OK}/${#KEYSERVERS[@]} keyserver(s)."
+        echo "   Note: keyserver propagation can take a few hours."
+        echo "   Verify with:"
+        echo "     gpg --keyserver hkps://keys.openpgp.org --recv-keys ${FINGERPRINT}"
+    else
+        echo "⚠️  Upload failed on all keyservers. Check your network and try again."
+        echo "   Manual upload: gpg --keyserver hkps://keys.openpgp.org --send-keys ${FINGERPRINT}"
+    fi
+fi

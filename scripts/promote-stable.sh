@@ -94,6 +94,24 @@ fi
 LATEST_RELEASE=$(cat "${LATEST_TXT}")
 log "Current latest release: ${LATEST_RELEASE}"
 
+# Verify the artifact and its signature actually exist on SourceForge before promoting.
+# Promoting a build whose upload never completed would pin users to a broken release.
+log "Verifying artifact exists on SourceForge before promoting..."
+BUILD_DATE_DIR=$(echo "${LATEST_RELEASE}" | grep -oP '\d{8}' | head -1)
+if [[ -z "$BUILD_DATE_DIR" ]]; then
+  die "Could not extract build date from latest release filename: ${LATEST_RELEASE}"
+fi
+ARTIFACT_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
+SIGNATURE_URL="${ARTIFACT_URL}.asc"
+
+if ! curl -fsSL --head --max-time 20 --connect-timeout 10 "${ARTIFACT_URL}" >/dev/null 2>&1; then
+  die "Artifact not reachable on SourceForge: ${ARTIFACT_URL} — aborting promotion."
+fi
+if ! curl -fsSL --head --max-time 20 --connect-timeout 10 "${SIGNATURE_URL}" >/dev/null 2>&1; then
+  die "Signature file not reachable on SourceForge: ${SIGNATURE_URL} — aborting promotion."
+fi
+log "Artifact and signature verified on SourceForge."
+
 # Step 2: Create stable.txt with the same content
 log "Step 2: Creating stable.txt locally..."
 cp "${LATEST_TXT}" "${STABLE_TXT}" || die "Failed to create stable.txt"

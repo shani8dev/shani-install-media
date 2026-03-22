@@ -16,7 +16,13 @@ else
     echo "[airootfs.sh] Warning: /root/watermark.png not found, skipping custom image copy."
 fi
 
-# Profile-specific customizations (uncomment for plasma if needed)
-# Don't skip user and region in installer for plasma
-#sed -i 's/^skip_user: *yes/skip_user: no/' /etc/os-installer/config.yaml
-#sed -i 's/^skip_region: *yes/skip_region: no/' /etc/os-installer/config.yaml
+# Read and immediately remove the injected profile marker (written by build-iso.sh)
+PROFILE=$(cat /etc/shani-build-profile 2>/dev/null || echo "gnome")
+rm -f /etc/shani-build-profile
+
+# Profile-specific customizations
+if [[ "$PROFILE" == "cosmic" ]]; then
+    # Don't skip user and region in installer for cosmic
+    sed -i 's/^skip_user: *yes/skip_user: no/' /etc/os-installer/config.yaml
+    sed -i 's/^skip_region: *yes/skip_region: no/' /etc/os-installer/config.yaml
+fi

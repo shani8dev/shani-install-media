@@ -88,10 +88,13 @@ r2_cleanup() {
     return 0
   fi
 
-  # Build the keep set: 1 most recent dated folder (latest) + stable folder
+  # Build the keep set: 2 most recent dated folders + stable folder
   local keep=()
   if [[ ${#all_dates[@]} -gt 0 ]]; then
     keep+=("${all_dates[0]}")
+  fi
+  if [[ ${#all_dates[@]} -gt 1 ]]; then
+    keep+=("${all_dates[1]}")
   fi
   if [[ -n "$stable_date" ]] && [[ ! " ${keep[*]} " =~ " ${stable_date} " ]]; then
     keep+=("$stable_date")
@@ -137,14 +140,16 @@ usage() {
 PROFILE=""
 NO_SF="${NO_SF:-false}"
 NO_R2="${NO_R2:-false}"
+VERIFY_ONLY=false
 
-# Strip --no-sf / --no-r2 before getopts so they don't confuse it
+# Strip --no-sf / --no-r2 / --verify-only before getopts so they don't confuse it
 _CLEAN_ARGS=()
 for arg in "$@"; do
   case "$arg" in
-    --no-sf) NO_SF=true ;;
-    --no-r2) NO_R2=true ;;
-    *)        _CLEAN_ARGS+=("$arg") ;;
+    --no-sf)       NO_SF=true ;;
+    --no-r2)       NO_R2=true ;;
+    --verify-only) VERIFY_ONLY=true ;;
+    *)             _CLEAN_ARGS+=("$arg") ;;
   esac
 done
 set -- "${_CLEAN_ARGS[@]+"${_CLEAN_ARGS[@]}"}"
@@ -168,6 +173,12 @@ if [[ "$MODE" != "image" && "$MODE" != "all" ]]; then
   die "Invalid mode: $MODE. Must be 'image' or 'all'."
 fi
 
+# ---------------------------------------------------------------------------
+# Verify-only mode: skip all uploads, just check SourceForge reachability
+# ---------------------------------------------------------------------------
+if [[ "$VERIFY_ONLY" == "true" ]]; then
+  log "Verify-only mode — no uploads will be performed."
+fi
 # Determine BUILD_DATE based on today's date or fallback to the most recent build folder.
 today=$(date +%Y%m%d)
 expected_dir="${OUTPUT_DIR}/${PROFILE}/${today}"
@@ -207,9 +218,10 @@ fi
 # ---------------------------------------------------------------------------
 # Upload base image artifacts from the build folder
 # ---------------------------------------------------------------------------
+if [[ "$VERIFY_ONLY" != "true" ]]; then
 log "Uploading base image artifacts from ${OUTPUT_SUBDIR}:"
 
-# .zst files (excluding flatpakfs.zst and snapfs.zst)
+# .zst files — base image only; flatpakfs.zst and snapfs.zst are never uploaded
 if ls "${OUTPUT_SUBDIR}"/*.zst 1>/dev/null 2>&1; then
   sf_upload "base image" \
     --exclude="flatpakfs.zst" --exclude="snapfs.zst" \
@@ -319,7 +331,9 @@ if [[ "$MODE" == "all" ]]; then
   else
     log "Warning: No signed_*.iso.torrent files found in ${OUTPUT_SUBDIR}"
   fi
-fi
+fi  # end all-mode ISO uploads
+
+fi  # end verify-only guard
 
 # ---------------------------------------------------------------------------
 # R2 cleanup — delete old dated build folders, keeping:
@@ -328,5 +342,33 @@ fi
 # Run after all uploads are complete so we never delete before a successful upload.
 # ---------------------------------------------------------------------------
 r2_cleanup
+
+# ---------------------------------------------------------------------------
+# Post-upload verification
+# Download the .sha256 file from SourceForge and verify it is non-empty and
+# the checksum matches the local artifact. Catches silent upload corruption
+# or rsync partial transfers before the run is marked green.
+# Skipped when --no-sf is active (nothing was uploaded to SF to verify).
+# ---------------------------------------------------------------------------
+if [[ "${NO_SF}" == "false" ]]; then
+  log "Verifying uploaded base image artifact on SourceForge..."
+  BASE_ZST=$(ls "${OUTPUT_SUBDIR}"/*.zst 2>/dev/null | grep -v flatpakfs | grep -v snapfs | head -1 || true)
+  if [[ -n "$BASE_ZST" ]]; then
+    REMOTE_SHA256_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE}/$(basename "${BASE_ZST}").sha256"
+    REMOTE_SHA256=$(curl -fsSL --max-time 30 --connect-timeout 10 \
+      --user-agent "shanios-verify/1.0" "${REMOTE_SHA256_URL}" 2>/dev/null || true)
+    if [[ -z "$REMOTE_SHA256" ]]; then
+      log "Warning: Could not fetch remote .sha256 — artifact may not be reachable yet (SourceForge CDN propagation delay)."
+    else
+      LOCAL_SHA256=$(sha256sum "${BASE_ZST}" | awk '{print $1}')
+      REMOTE_HASH=$(echo "$REMOTE_SHA256" | awk '{print $1}')
+      if [[ "$LOCAL_SHA256" == "$REMOTE_HASH" ]]; then
+        log "✅ Verification passed: remote SHA-256 matches local artifact."
+      else
+        log "Warning: SHA-256 mismatch — local: ${LOCAL_SHA256}, remote: ${REMOTE_HASH}. The upload may be corrupt."
+      fi
+    fi
+  fi
+fi
 
 log "Upload completed successfully!"

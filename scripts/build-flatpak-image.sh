@@ -68,7 +68,7 @@ all_installed_apps=$(flatpak list --system --app --columns=application || true)
 
 while IFS= read -r app || [[ -n "$app" ]]; do
     [[ -z "$app" ]] && continue
-    
+
     # Get runtime for this app
     runtime_full=$(flatpak info --show-runtime "$app" 2>/dev/null || true)
     if [[ -n "$runtime_full" ]]; then
@@ -76,10 +76,10 @@ while IFS= read -r app || [[ -n "$app" ]]; do
         required_runtimes["$runtime_base"]=1
         log "App '$app' requires runtime: $runtime_base"
     fi
-    
+
     # Get metadata to find extension points
     metadata=$(flatpak info --show-metadata "$app" 2>/dev/null || true)
-    
+
     # Parse metadata for extension dependencies
     while IFS= read -r line; do
         # Look for Extension point declarations or runtime extensions
@@ -92,7 +92,7 @@ while IFS= read -r app || [[ -n "$app" ]]; do
             fi
         fi
     done <<< "$metadata"
-    
+
 done <<< "$all_installed_apps"
 
 # Additionally, scan all currently installed runtimes to build full dependency tree
@@ -104,13 +104,13 @@ declare -A runtime_deps
 
 while IFS= read -r runtime || [[ -n "$runtime" ]]; do
     [[ -z "$runtime" ]] && continue
-    
+
     runtime_base="${runtime#runtime/}"
     runtime_base="${runtime_base%%/*}"
-    
+
     # Get metadata for this runtime to see what it depends on
     metadata=$(flatpak info --show-metadata "$runtime" 2>/dev/null || true)
-    
+
     # Parse for runtime dependencies
     while IFS= read -r line; do
         if [[ "$line" =~ ^runtime= ]]; then
@@ -120,7 +120,7 @@ while IFS= read -r runtime || [[ -n "$runtime" ]]; do
             log "Runtime '$runtime_base' depends on: $dep_base"
         fi
     done <<< "$metadata"
-    
+
 done <<< "$all_runtimes"
 
 # Mark all transitive dependencies as required
@@ -129,7 +129,7 @@ for app in "${packages[@]}"; do
     app_runtime=$(flatpak info --show-runtime "$app" 2>/dev/null || true)
     if [[ -n "$app_runtime" ]]; then
         app_runtime_base=$(echo "$app_runtime" | cut -d'/' -f1)
-        
+
         # Add this runtime and all its dependencies
         if [[ -n "${runtime_deps[$app_runtime_base]:-}" ]]; then
             for dep in ${runtime_deps[$app_runtime_base]}; do
@@ -161,15 +161,15 @@ log "Scanning filesystem for extension dependencies..."
 if [[ -d /var/lib/flatpak/runtime ]]; then
     for runtime_dir in /var/lib/flatpak/runtime/*/x86_64/*; do
         [[ -d "$runtime_dir" ]] || continue
-        
+
         runtime_name=$(basename "$(dirname "$(dirname "$runtime_dir")")")
         metadata_file="$runtime_dir/active/metadata"
-        
+
         if [[ -f "$metadata_file" ]]; then
             # Check if this is an extension and if any app uses it
             if grep -q "ExtensionOf=" "$metadata_file"; then
                 extension_of=$(grep "ExtensionOf=" "$metadata_file" | cut -d'=' -f2)
-                
+
                 # Check if any of our apps matches this ExtensionOf
                 for app in "${packages[@]}"; do
                     app_runtime=$(flatpak info --show-runtime "$app" 2>/dev/null | cut -d'/' -f1 || true)
@@ -227,7 +227,7 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
 		log "Keeping runtime $pkg because required package ($pkg_base or $base_app) is in the package list"
 		keep=1
 	fi
-	
+
 	# Special case: Keep Wine extensions if Bottles is installed
 	if printf '%s\n' "${packages[@]}" | grep -q "bottles"; then
 		if [[ "$pkg_base" == org.winehq.Wine.* ]]; then
@@ -246,7 +246,7 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
             fi
         done
     fi
-    
+
     # Check if pkg is required as an extension
     if [[ $keep -eq 0 ]]; then
         for req in "${!required_extensions[@]}"; do
@@ -257,19 +257,19 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
             fi
         done
     fi
-    
+
     if [[ $keep -eq 0 ]]; then
         # Before removing, do a final safety check with dry-run
         # Redirect stderr to stdout to capture all messages
         check_output=$(flatpak uninstall --system --noninteractive --dry-run "$pkg" 2>&1 || true)
-        
+
         # Check if output contains "applications using the extension"
         if echo "$check_output" | grep -qi "applications using the extension"; then
             log "Keeping package $pkg (detected as in-use extension via dry-run)"
             keep=1
         fi
     fi
-    
+
     if [[ $keep -eq 0 ]]; then
         log "Removing package not required: $pkg"
         if ! flatpak uninstall --assumeyes --noninteractive --system --delete-data "$pkg"; then
@@ -305,7 +305,7 @@ fi
 if [[ "$PROFILE" == "gamescope" ]]; then
   log "Applying SteamOS-like Flatpak overrides for Steam..."
 
-  sudo flatpak override com.valvesoftware.Steam \
+  flatpak override com.valvesoftware.Steam \
     --share=network \
     --socket=wayland \
     --socket=x11 \
@@ -342,7 +342,7 @@ for app in "${!gaming_apps[@]}"; do
 
         for perm in "${perm_list[@]}"; do
             log "  -> filesystem=$perm"
-            sudo flatpak override --system "$app" --filesystem="$perm"
+            flatpak override --system "$app" --filesystem="$perm"
         done
     else
         log "Skipping $app (not installed)"

@@ -1,5 +1,6 @@
 .env
 cache/
-mok/MOK*
-mok/gpg*
-mok/github*
+keys/mok/MOK*
+keys/gpg/gpg*
+keys/ssh/ssh*
+keys/*/github*

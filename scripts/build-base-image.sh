@@ -53,6 +53,12 @@ mkdir -p "${BUILD_DIR}/${BASE_SUBVOL}"
 mount -o subvol="${BASE_SUBVOL}",compress-force=zstd:19 "$LOOP_DEVICE" "${BUILD_DIR}/${BASE_SUBVOL}" || die "Mounting subvolume failed"
 mountpoint "${BUILD_DIR}/${BASE_SUBVOL}" || die "Subvolume mount verification failed"
 
+# Copy gpg key
+gpg_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/shani-keys/"
+mkdir -p "$gpg_target"
+install -m 644 "${GPG_DIR}/gpg-public.asc" "$gpg_target/signing.asc" || die "Failed to install MOK.der"
+
+
 # Copy Secure Boot keys
 secureboot_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/secureboot/keys"
 mkdir -p "$secureboot_target"
@@ -174,8 +180,10 @@ detach_btrfs_image "${BUILD_DIR}/${BASE_SUBVOL}" "$LOOP_DEVICE"
 # Ensure all GPG operations use the correct home directory
 export GNUPGHOME="/home/builduser/.gnupg"
 
-# Trust the key in the USER keyring
-echo -e "trust\n5\ny\nsave\n" | gpg --homedir "$GNUPGHOME" --batch --command-fd 0 --edit-key "$GPG_KEY_ID"
+# Set ultimate trust on the signing key non-interactively.
+# --import-ownertrust is the correct batch method; the echo|edit-key approach
+# can hang if gpg-agent prompts for input.
+echo "${GPG_KEY_ID}:6:" | gpg --homedir "$GNUPGHOME" --batch --import-ownertrust
 
 # Verify key exists in USER keyring
 if ! gpg --homedir "$GNUPGHOME" --list-secret-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
@@ -194,7 +202,7 @@ gpg --homedir "$GNUPGHOME" \
     --armor \
     --output "${IMAGE_FILE}.asc" \
     "${IMAGE_FILE}" || die "Signing failed"
-    
+
 # Create checksum
 cd "$(dirname "${IMAGE_FILE}")" || die "Failed to change directory"
 sha256sum "$(basename "${IMAGE_FILE}")" > "$(basename "${IMAGE_FILE}").sha256" || die "Checksum generation failed"

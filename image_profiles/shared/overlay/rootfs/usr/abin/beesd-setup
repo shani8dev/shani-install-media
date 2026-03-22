@@ -15,7 +15,6 @@ UUID=$(blkid -s UUID -o value /dev/disk/by-label/"${ROOTLABEL}" 2>/dev/null || t
 if [[ -z "$UUID" ]] && [[ -e "/dev/mapper/${ROOTLABEL}" ]]; then
     UUID=$(blkid -s UUID -o value /dev/mapper/"${ROOTLABEL}" 2>/dev/null || true)
 fi
-
 if [[ -z "$UUID" ]]; then
     log "WARN: Could not resolve BTRFS UUID for ${ROOTLABEL}."
     exit 0
