@@ -98,6 +98,11 @@ fi
 # Final command that first imports keys/config (if any) then executes the user command.
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
+# Pull the latest builder image before running so the local cache never silently
+# falls behind. Non-fatal — if the pull fails (e.g. offline) we proceed with
+# whatever is cached locally.
+docker pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} — using cached image"
+
 # Run Docker container
 docker run --rm ${TTY_FLAGS} --privileged \
     --tmpfs /tmp \

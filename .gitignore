@@ -1,4 +1,5 @@
 .env
 cache/
 mok/MOK*
+mok/gpg*
 mok/github*
