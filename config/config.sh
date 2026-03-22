@@ -42,6 +42,34 @@ check_mok_keys() {
     fi
 }
 
+# Verify GPG public key exists for embedding into the image.
+# In CI the key is pre-exported by the 'Setup GPG public key' workflow step.
+# As a fallback (local builds or if the step was skipped), attempt to export
+# the public key from the container's keyring where GPG_PRIVATE_KEY was imported
+# by run_in_container.sh. Fails hard if neither path produces the file.
+check_gpg_key() {
+    if [[ -f "${GPG_DIR}/gpg-public.asc" ]]; then
+        log "GPG public key exists."
+        return 0
+    fi
+
+    log "GPG public key not found — attempting to export from keyring..."
+    mkdir -p "${GPG_DIR}"
+    gpg --homedir "${GNUPGHOME:-/root/.gnupg}" \
+        --batch \
+        --armor \
+        --export "${GPG_KEY_ID}" \
+        > "${GPG_DIR}/gpg-public.asc" 2>/dev/null \
+        || true
+
+    if [[ ! -s "${GPG_DIR}/gpg-public.asc" ]]; then
+        die "GPG public key not found at ${GPG_DIR}/gpg-public.asc and could not be exported from keyring. " \
+            "Export it manually with: gpg --armor --export ${GPG_KEY_ID} > ${GPG_DIR}/gpg-public.asc"
+    fi
+
+    log "GPG public key exported from keyring."
+}
+
 # Create a Btrfs image file, attach a loop device, and format it.
 # Args:
 #   $1 = path to image file to create

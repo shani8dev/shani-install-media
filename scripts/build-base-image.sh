@@ -31,6 +31,7 @@ BOOTLABEL="shani_boot"
 log "Building base image for profile: ${PROFILE}"
 check_dependencies
 check_mok_keys
+check_gpg_key
 
 # Setup Btrfs image for base system (10G)
 BASE_IMG="${BUILD_DIR}/base.img"
@@ -56,7 +57,7 @@ mountpoint "${BUILD_DIR}/${BASE_SUBVOL}" || die "Subvolume mount verification fa
 # Copy gpg key
 gpg_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/shani-keys/"
 mkdir -p "$gpg_target"
-install -m 644 "${GPG_DIR}/gpg-public.asc" "$gpg_target/signing.asc" || die "Failed to install MOK.der"
+install -m 644 "${GPG_DIR}/gpg-public.asc" "$gpg_target/signing.asc" || die "Failed to install signing.asc"
 
 
 # Copy Secure Boot keys
