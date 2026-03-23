@@ -161,11 +161,7 @@
 # EFI System Partition
 # Contains systemd-boot loader, kernels, and initramfs images.
 # noauto: not mounted by default; mounted explicitly when needed (e.g. updates).
-LABEL=shani_boot              /boot/efi                 vfat    defaults,noatime,noauto   0 2
-
-# Temporary runtime data — cleared on every reboot
-tmpfs                         /tmp                      tmpfs   defaults,noatime   0 0
-tmpfs                         /run                      tmpfs   defaults,noatime   0 0
+LABEL=shani_boot              /boot/efi                 vfat    defaults,noatime,noauto   0 0
 
 ##############################################################################
 # SECTION 2: CORE PERSISTENT BTRFS SUBVOLUMES
@@ -224,7 +220,13 @@ LABEL=shani_root              /var/log                  btrfs   defaults,noatime
 # workdir:  required by OverlayFS for atomic rename operations
 # Changes persist across blue/green switches via @data.
 # Requires: mkdir -p /data/overlay/etc/{upper,work}
-overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
+# /etc OverlayFS — MOVED TO DRACUT (99shanios/shanios-overlay-etc.sh, pre-pivot 50)
+# Mounting /etc overlay here (after pivot_root) is too late: systemd PID 1
+# reads unit files from /etc before any fstab mount unit can run. The overlay
+# is now applied in the initramfs pre-pivot hook so it is live before
+# pivot_root hands control to systemd. See module-setup.sh for details.
+#
+# overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 # /var overlay — Optional OverlayFS for /var (disabled by default)
 #

@@ -4,7 +4,6 @@ Documentation=https://github.com/Zygo/bees
 
 Requires=etc.mount
 After=etc.mount local-fs.target
-Before=etc-daemon-reload.service
 
 [Service]
 Type=oneshot
