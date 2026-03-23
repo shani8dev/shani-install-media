@@ -4,24 +4,27 @@
 #
 # Install: /usr/lib/dracut/modules.d/99shanios/
 #   hook-name: pre-pivot (runs after / is successfully mounted, before pivot_root)
-#   priority:  90
+#   priority:  90 (after shanios-overlay-etc.sh at 50)
 #
 # This hook is the success counterpart to shanios-boot-failure-hook.sh.
 # pre-pivot is only reached if dracut successfully mounted the root filesystem.
 # If root mount failed, this hook never runs and the marker written by the
 # pre-mount hook persists across reboot for shani-update to detect.
 #
-# Note: shanios-overlay-etc.sh has been removed. The /etc OverlayFS is now
-# handled by fstab with x-initrd.mount, processed by systemd inside the
-# initramfs. This hook no longer needs to coordinate with an overlay mount —
-# it simply mounts @data, clears the marker, and unmounts.
+# Ordering note:
+#   shanios-overlay-etc.sh (pre-pivot 50) runs before this hook and mounts
+#   @data at $DATA_MNT, deliberately leaving it mounted so the /etc overlay
+#   upper/work dirs remain accessible. This hook MUST NOT unmount $DATA_MNT
+#   before or after operating on it — the overlay kernel state depends on it
+#   staying mounted through pivot_root. We simply use the already-live mount.
 
 type getarg > /dev/null 2>&1 || return 0   # not in dracut environment
 
 DATA_MNT="/run/shanios-data-tmp"
 ROOT_LABEL="shani_root"
 
-# Mount @data so we can clear the failure marker.
+# If @data is not already mounted (e.g. overlay-etc hook failed to mount it),
+# mount it now so we can still clear the failure marker.
 if ! mountpoint -q "$DATA_MNT" 2>/dev/null; then
     DATA_DEV=$(blkid -L "$ROOT_LABEL" 2>/dev/null) || {
         warn "shanios-hook: cannot locate $ROOT_LABEL device — hard failure marker not cleared"
@@ -40,7 +43,7 @@ if [ -f "$DATA_MNT/boot_hard_failure" ]; then
         warn "shanios-hook: boot_hard_failure cleared — root mount succeeded"
 fi
 
-# @data is no longer needed by this hook or any overlay mount after this point.
-# Unmount cleanly. The real @data will be mounted post-pivot via fstab at /data.
-umount "$DATA_MNT" 2>/dev/null || true
-rmdir  "$DATA_MNT" 2>/dev/null || true
+# Do NOT unmount $DATA_MNT here. The /etc overlay (mounted by
+# shanios-overlay-etc.sh at pre-pivot 50) has its upper and work dirs on
+# this mount. Unmounting would break the overlay before pivot_root.
+# dracut's switch_root moves /run into the new root automatically.

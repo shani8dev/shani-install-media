@@ -183,7 +183,7 @@ LABEL=shani_root              /home                     btrfs   defaults,noatime
 # Shared between blue and green so config and service state persist.
 # Create: btrfs subvolume create /@data
 # Then:   mkdir -p /data/overlay/etc/{upper,work}
-LABEL=shani_root              /data                     btrfs   x-initrd.mount,defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag   0 0
+LABEL=shani_root              /data                     btrfs   defaults,noatime,subvol=@data,rw,compress=zstd,space_cache=v2,autodefrag   0 0
 
 ##############################################################################
 # SECTION 3: NIX PACKAGE STORE & PACKAGE CACHE
@@ -226,7 +226,7 @@ LABEL=shani_root              /var/log                  btrfs   defaults,noatime
 # is now applied in the initramfs pre-pivot hook so it is live before
 # pivot_root hands control to systemd. See module-setup.sh for details.
 #
-overlay   /etc   overlay   x-initrd.mount,rw,lowerdir=/sysroot/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
+# overlay   /etc   overlay   rw,lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
 # /var overlay — Optional OverlayFS for /var (disabled by default)
 #
