@@ -108,7 +108,7 @@ echo "stable" > /etc/shani-channel
 # adduser wrapper, and useradd wrapper. Lives on the read-only root
 # so it survives a factory reset (/data wipe) and is available
 # before the /etc overlay activates.
-echo "sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld" > /etc/shani-extra-groups
+echo "sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld,sambashare" > /etc/shani-extra-groups
 chmod 644 /etc/shani-extra-groups
 
 # Create directories required for the read-only root fstab mounts
@@ -148,6 +148,7 @@ getent group realtime &>/dev/null || groupadd -r realtime
 getent group nixbld   &>/dev/null || groupadd -r nixbld
 getent group lxd      &>/dev/null || groupadd -r lxd
 getent group libvirt  &>/dev/null || groupadd -r libvirt
+getent group sambashare &>/dev/null || groupadd -r sambashare
 
 # subuid/subgid for root — required for rootless podman, lxc, lxd
 usermod -v 1000000-1000999999 -w 1000000-1000999999 root
