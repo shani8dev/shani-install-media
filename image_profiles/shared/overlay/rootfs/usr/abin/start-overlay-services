@@ -1,36 +1,104 @@
 #!/bin/bash
-OVERLAY_UPPER="/data/overlay/etc/upper/systemd/system"
-services_started=0
-services_list=""
+# start-overlay-services — immutable Blue/Green btrfs root
+# Starts overlay-enabled units in parallel; logs what was fired.
+#
+# snap mount unit naming on this system:
+#   var-lib-snapd-snap-*.mount  — canonical form, active/mounted (fire these)
+#   snap-*.mount                — alias form, fail if canonical already mounted (skip these)
+# /var/snap is a runtime bind mount created by snapd, not a directory on disk.
 
-start_if_needed() {
-    local service="$1"
-    systemctl is-active --quiet "$service" 2>/dev/null && return
+set -euo pipefail
+
+OVERLAY_UPPER="${OVERLAY_UPPER:-/data/overlay/etc/upper/systemd/system}"
+DONE_FILE="${DONE_FILE:-/run/start-overlay-services.done}"
+
+UNIT_EXTS="*.service *.mount *.socket *.timer *.path *.target *.slice *.scope *.swap *.automount"
+
+is_startable() {
+    local unit="$1"
+    local active_state
+    active_state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+    case "$active_state" in
+        active|activating|reloading) return 1 ;;
+    esac
     local result
-    result=$(systemctl show --property=Result --value "$service" 2>/dev/null)
-    [[ "$result" == "exit-code" || "$result" == "signal" || "$result" == "timeout" || "$result" == "watchdog" || "$result" == "oom-kill" ]] && return
-    local ts
-    ts=$(systemctl show --property=InactiveEnterTimestamp --value "$service" 2>/dev/null)
-    [[ -n "$ts" ]] && return
-    systemctl start "$service" 2>/dev/null &
-    services_started=$((services_started + 1))
-    services_list="$services_list $service"
+    result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+    case "$result" in
+        exit-code|signal|timeout|watchdog|oom-kill) return 1 ;;
+    esac
+    return 0
 }
 
-# Pass 1: enabled unit files that exist in overlay upper
-while read -r service; do
-    [[ "$service" == *"@.service" ]] && continue
-    find "$OVERLAY_UPPER" -name "$service" 2>/dev/null | grep -q . || continue
-    start_if_needed "$service"
-done < <(systemctl list-unit-files --type=service --state=enabled --no-legend | awk '{print $1}')
+collect_units() {
+    local upper="$1"
+    local -n _out=$2
 
-# Pass 2: template instances whose symlink is in overlay upper .wants dirs
-while read -r symlink; do
-    service=$(basename "$symlink")
-    [[ "$service" == *"@.service" ]] && continue
-    [[ "$service" != *"@"* ]] && continue
-    start_if_needed "$service"
-done < <(find "$OVERLAY_UPPER"/*.wants -name "*.service" 2>/dev/null)
+    [[ -d "$upper" ]] || return 0
 
-[ $services_started -gt 0 ] && echo "Started $services_started new overlay services:$services_list" || echo "No new overlay services to start"
-touch /run/start-overlay-services.done
+    local ext_args=()
+    local first=1
+    for ext in $UNIT_EXTS; do
+        [[ $first -eq 1 ]] && first=0 || ext_args+=(-o)
+        ext_args+=(-name "$ext")
+    done
+
+    while IFS= read -r -d '' f; do
+        _out["$(basename "$f")"]=1
+    done < <(find "$upper" -maxdepth 1 -type f \( "${ext_args[@]}" \) -print0 2>/dev/null)
+
+    while IFS= read -r -d '' s; do
+        _out["$(basename "$s")"]=1
+    done < <(find "$upper" -maxdepth 2 \
+                  \( -name "*.wants" -o -name "*.requires" \) -type d -print0 2>/dev/null \
+             | xargs -0 -r find -maxdepth 1 \( "${ext_args[@]}" \) -print0 2>/dev/null)
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+declare -A seen
+declare -a pids=()
+declare -a started_units=()
+
+collect_units "$OVERLAY_UPPER" seen
+
+# Pass 1: overlay-managed units of all types.
+# Skip snap-*.mount aliases — they fail if the canonical var-lib-snapd-snap-*
+# form is already mounted at the same path.
+for unit in "${!seen[@]}"; do
+    [[ "$unit" == snap-*.mount ]] && continue
+    is_startable "$unit" || continue
+    systemctl start "$unit" 2>/dev/null &
+    pids+=($!)
+    started_units+=("$unit")
+done
+
+# Pass 2: snap squashfs loopbacks — canonical var-lib-snapd-snap-*.mount form only.
+# These are active when snapd has already set up state.json but the loopbacks
+# were torn down by the btrfs subvolume switch.
+# Skip anything already fired in Pass 1.
+while IFS= read -r unit; do
+    [[ -v seen["$unit"] ]] && continue
+    what=$(systemctl show --property=What --value "$unit" 2>/dev/null || true)
+    [[ "$what" == *.snap ]] || continue
+    is_startable "$unit" || continue
+    systemctl start "$unit" 2>/dev/null &
+    pids+=($!)
+    started_units+=("$unit")
+done < <(systemctl list-units --type=mount --all --no-legend --plain 2>/dev/null \
+         | awk '/^var-lib-snapd-snap-/ { print $1 }')
+
+failed=0
+for pid in "${pids[@]}"; do
+    wait "$pid" || failed=$((failed + 1))
+done
+
+total=${#started_units[@]}
+if [[ $total -gt 0 ]]; then
+    printf 'start-overlay-services: fired %d unit(s) (%d failed):\n' "$total" "$failed"
+    printf '  %s\n' "${started_units[@]}"
+else
+    echo "start-overlay-services: nothing fired"
+fi
+
+touch "$DONE_FILE"
