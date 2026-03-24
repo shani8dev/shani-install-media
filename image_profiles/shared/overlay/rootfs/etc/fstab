@@ -213,7 +213,7 @@ LABEL=shani_root              /var/log                  btrfs   defaults,noatime
 ##############################################################################
 # SECTION 5: OVERLAY FILESYSTEMS (WRITABLE /etc)
 ##############################################################################
-
+# WARNING: MUTUALLY EXCLUSIVE with 99shanios/shanios-overlay-etc.sh, pre-pivot 50).
 # /etc — OverlayFS making the read-only root's /etc writable
 # lowerdir: read-only /etc from the active root slot (@blue or @green)
 # upperdir: writable layer in /data storing all modifications

@@ -3,10 +3,10 @@
 # Reads extra groups from /etc/shani-extra-groups (shared with useradd wrapper
 # and shani-user-setup). Falls back gracefully if file is missing.
 #
-# Install: /usr/local/bin/adduser  (shadows /usr/bin/adduser via PATH)
+# Install: /usr/local/bin/adduser  (shadows /usr/bin/useradd via PATH)
 
 EXTRA_GROUPS_FILE="/etc/shani-extra-groups"
-REAL_BIN="/usr/bin/adduser"
+REAL_BIN="/usr/bin/useradd"
 
 if [[ ! -x "$REAL_BIN" ]]; then
     echo "shani adduser wrapper: $REAL_BIN not found or not executable" >&2
