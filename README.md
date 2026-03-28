@@ -15,11 +15,14 @@ run_in_container.sh                  ← sets up Docker, injects all secrets
     ├── scripts/build-flatpak-image.sh  (only if flatpak-packages.txt exists for profile)
     ├── scripts/build-snap-image.sh     (only if snap-packages.txt exists for profile)
     ├── scripts/build-iso.sh          mkarchiso → unsigned ISO
-    │                                   copies flatpakfs.zst / snapfs.zst if present
+    │   [--from-r2]                     downloads base image from R2 instead of local build
+    │                                   local flatpakfs.zst / snapfs.zst used if present,
+    │                                   otherwise falls back to R2 copies
     ├── scripts/repack-iso.sh         sbsign EFI + shim + MOK.der → signed ISO + torrent
     ├── scripts/release.sh            write central latest.txt or stable.txt
     ├── scripts/promote-stable.sh     download latest.txt from SF → publish as stable.txt
     └── scripts/upload.sh             rsync → SourceForge  +  rclone → Cloudflare R2
+                                        modes: image | iso | all
                                         (flatpakfs.zst / snapfs.zst are never uploaded)
 ```
 
@@ -329,10 +332,10 @@ All commands are run via `run_in_container.sh`, which starts a privileged Docker
 ### Full pipeline
 
 ```bash
-./run_in_container.sh build.sh all -p gnome
+./run_in_container.sh build.sh full -p gnome
 ```
 
-`all` runs the complete pipeline in sequence:
+`full` runs the complete pipeline in sequence:
 
 1. `build-base-image.sh` — always
 2. `build-flatpak-image.sh` — only if `image_profiles/<profile>/flatpak-packages.txt` exists
@@ -343,6 +346,32 @@ All commands are run via `run_in_container.sh`, which starts a privileged Docker
 7. `upload all` — uploads base image artifacts and the signed ISO to SourceForge and R2
 
 > `flatpakfs.zst` and `snapfs.zst` are **never uploaded** as standalone artifacts. They are embedded into the ISO only.
+
+### Image + upload only
+
+```bash
+./run_in_container.sh build.sh all -p gnome
+```
+
+`all` builds the base image and uploads it, without building an ISO:
+
+1. `build-base-image.sh`
+2. `release latest`
+3. `upload image`
+
+### ISO-only pipeline (from R2)
+
+```bash
+./run_in_container.sh build.sh iso-only -p gnome
+```
+
+`iso-only` is for when the base image was already built and uploaded in a prior run. It downloads the latest base image from R2, builds the ISO, and uploads only the ISO artifacts:
+
+1. `build-iso.sh --from-r2` — downloads the latest base image from R2; uses local `flatpakfs.zst` / `snapfs.zst` if present, otherwise falls back to R2 copies
+2. `repack-iso.sh` — signs EFI binaries and rebuilds the ISO for Secure Boot
+3. `upload iso` — uploads only the signed ISO, checksum, signature, and torrent
+
+> Requires `R2_BUCKET` and a configured `rclone`. The base image is **not** re-uploaded.
 
 ---
 
@@ -406,11 +435,16 @@ Skipped automatically by `all` if `image_profiles/gnome/snap-packages.txt` does 
 #### `iso` — Build the bootable ISO
 
 ```bash
+# From a locally built base image (default)
 ./run_in_container.sh build.sh iso -p gnome
+
+# Download base image from R2 instead of requiring a local build
+./run_in_container.sh build.sh iso -p gnome --from-r2
 ```
 
-- Requires `cache/output/gnome/<DATE>/latest.txt` (written by `image`)
-- Copies the `.zst` → `cache/temp/gnome/iso/shanios/x86_64/rootfs.zst`
+- Without `--from-r2`: requires `cache/output/gnome/<DATE>/latest.txt` (written by `image`)
+- With `--from-r2`: fetches `<profile>/latest.txt` from R2 to resolve the image name and dated folder, then downloads the base `.zst` into `cache/output/<profile>/<DATE>/`. For `flatpakfs.zst` and `snapfs.zst`: uses local files if already present, otherwise attempts to download from the same dated R2 folder (skipped silently if absent on both). Requires `R2_BUCKET` and a configured `rclone`.
+- Copies the base image → `cache/temp/gnome/iso/shanios/x86_64/rootfs.zst`
 - Copies `flatpakfs.zst` into the ISO directory if present — skips silently if not
 - Copies `snapfs.zst` into the ISO directory if present — skips silently if not
 - Runs `mkarchiso -v -w cache/temp/gnome -o cache/output/gnome/<DATE> iso_profiles/gnome`
@@ -457,6 +491,9 @@ Copies `cache/output/gnome/<DATE>/latest.txt` to `cache/output/gnome/latest.txt`
 # Upload base image artifacts only (default)
 ./run_in_container.sh build.sh upload -p gnome
 
+# Upload ISO artifacts only (signed ISO, sha256, asc, torrent)
+./run_in_container.sh build.sh upload -p gnome iso
+
 # Upload base image + signed ISO + torrent
 ./run_in_container.sh build.sh upload -p gnome all
 
@@ -477,11 +514,15 @@ Plus central files from `cache/output/gnome/` if present:
 - `latest.txt`
 - `stable.txt`
 
-In `all` mode, additionally uploads:
+In `iso` mode, uploads from `cache/output/gnome/<DATE>/`:
 - `signed_*.iso`
 - `signed_*.iso.sha256`
 - `signed_*.iso.asc`
 - `signed_*.iso.torrent`
+
+> Use `iso` mode when the base image was uploaded in a prior run and you only need to push newly built ISO artifacts.
+
+In `all` mode, uploads everything from both `image` and `iso` modes.
 
 SourceForge path: `librewish@frs.sourceforge.net:/home/frs/project/shanios/<profile>/<DATE>/`
 R2 path: `r2:<R2_BUCKET>/<profile>/<DATE>/`
@@ -505,13 +546,15 @@ Equivalent to running `release` then `upload` in sequence.
 | `image` | `build-base-image.sh` | Build Btrfs base image via pacstrap |
 | `flatpak` | `build-flatpak-image.sh` | Build Flatpak image — skipped if `flatpak-packages.txt` absent |
 | `snap` | `build-snap-image.sh` | Build Snap seed image — skipped if `snap-packages.txt` absent |
-| `iso` | `build-iso.sh` | Assemble bootable ISO; includes flatpakfs/snapfs if present |
+| `iso` | `build-iso.sh` | Assemble bootable ISO; includes flatpakfs/snapfs if present. Pass `--from-r2` to download base image from R2 |
 | `repack` | `repack-iso.sh` | Sign EFI binaries + rebuild ISO + generate torrent |
 | `release` | `release.sh` | Write `latest.txt` or `stable.txt` |
-| `upload` | `upload.sh` | Push artifacts to SourceForge and/or R2 (never uploads flatpakfs/snapfs) |
+| `upload` | `upload.sh` | Push artifacts to SourceForge and/or R2. Modes: `image` (default), `iso`, `all`. Never uploads flatpakfs/snapfs |
 | `promote-stable` | `promote-stable.sh` | Fetch `latest.txt` from SF, verify artifact exists, publish as `stable.txt` |
 | `publish` | — | `release` + `upload` |
-| `all` | — | Full pipeline: image → flatpak? → snap? → iso → repack → release latest → upload all |
+| `all` | — | image → release latest → upload image (base image only, no ISO) |
+| `full` | — | Full pipeline: image → flatpak? → snap? → iso → repack → release latest → upload all |
+| `iso-only` | — | Download base image from R2, build ISO → repack → upload iso |
 
 ---
 
@@ -567,12 +610,14 @@ The `workflow_dispatch` trigger accepts three optional inputs:
 | Input | Default | Description |
 |-------|---------|-------------|
 | `profile` | _(empty — builds all)_ | Override to build a single profile, e.g. `gnome` |
-| `build_mode` | `image` | `image` = base image only; `all` = full pipeline |
+| `build_mode` | `image` | `image` = base image only; `iso-only` = ISO from R2; `full` = complete pipeline |
 | `promote_stable` | `false` | If `true`, runs `promote-stable` after upload |
 
 In `image` mode (default + scheduled), each matrix run performs: `image` → `release latest` → `upload image` → optionally `promote-stable`.
 
-In `all` mode (manual dispatch), each matrix run calls `build.sh all` which runs the complete pipeline: `image` → `flatpak`? → `snap`? → `iso` → `repack` → `release latest` → `upload all`.
+In `iso-only` mode, each matrix run calls `build.sh iso-only` which runs: `build-iso.sh --from-r2` → `repack-iso.sh` → `upload iso`. Useful when the base image is already on R2 and only the ISO needs to be rebuilt or re-released.
+
+In `full` mode (manual dispatch), each matrix run calls `build.sh full` which runs the complete pipeline: `image` → `flatpak`? → `snap`? → `iso` → `repack` → `release latest` → `upload all`.
 
 The workflow injects all secrets as environment variables so every `sudo --preserve-env` call inside the container sees them without re-declaration:
 
