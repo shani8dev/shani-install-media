@@ -97,7 +97,7 @@ log "Current latest release: ${LATEST_RELEASE}"
 # Verify the artifact and its signature actually exist on SourceForge before promoting.
 # Promoting a build whose upload never completed would pin users to a broken release.
 log "Verifying artifact exists on SourceForge before promoting..."
-BUILD_DATE_DIR=$(echo "${LATEST_RELEASE}" | grep -oP '\d{8}' | head -1)
+BUILD_DATE_DIR=$(echo "${LATEST_RELEASE}" | grep -oE '[0-9]{8}' | head -1)
 if [[ -z "$BUILD_DATE_DIR" ]]; then
   die "Could not extract build date from latest release filename: ${LATEST_RELEASE}"
 fi

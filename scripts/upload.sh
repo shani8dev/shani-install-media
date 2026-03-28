@@ -1,65 +1,41 @@
 #!/usr/bin/env bash
 # upload.sh – Upload build artifacts to SourceForge FRS and mirror to Cloudflare R2
 #
-# This script uploads:
-#   - Base image artifacts: *.zst, *.zst.sha256, *.zst.asc, and latest.txt from the build folder.
-#   - Central release files: latest.txt and stable.txt from the OUTPUT_DIR root (if they exist).
-#   - ISO artifacts (signed ISO, its .sha256 checksum, .asc signature, and .torrent).
+# Uploads:
+#   image  *.zst, *.zst.sha256, *.zst.asc, latest.txt, central latest/stable.txt
+#   iso    signed_*.iso, .sha256, .asc, .torrent
+#   all    both of the above
 #
-# All uploads are mirrored to Cloudflare R2 if R2_BUCKET is set in the environment.
-# After a successful upload, old dated build folders for the profile are deleted from R2,
-# keeping only the 2 most recent dated folders and the folder pinned by stable.txt.
+# All uploads are mirrored to Cloudflare R2 if R2_BUCKET is set.
+# After upload, old dated R2 folders are pruned (keeps 2 latest + stable pin).
 #
 # Usage:
-#   ./upload.sh -p <profile> [--no-sf] [--no-r2] [mode]
-#
-# Modes:
-#   image   Upload base image artifacts only (default)
-#   iso     Upload ISO artifacts only (signed ISO, sha256, asc, torrent)
-#   all     Upload both base image and ISO artifacts
-#
+#   ./upload.sh -p <profile> [--no-sf] [--no-r2] [--verify-only] [image|iso|all]
+
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/../config/config.sh"
 
 # ---------------------------------------------------------------------------
-# R2 mirror helper
+# Helpers
 # ---------------------------------------------------------------------------
 r2_upload() {
   local src="$1"
   local dest_subpath="$2"
 
-  if [[ "${NO_R2}" == "true" ]]; then
-    log "R2: skipping $(basename "${src}") (--no-r2)"
-    return 0
-  fi
-
-  if [[ -z "${R2_BUCKET:-}" ]]; then
-    return 0
-  fi
+  [[ "${NO_R2}" == "true" ]] && { log "R2: skipping $(basename "${src}") (--no-r2)"; return 0; }
+  [[ -z "${R2_BUCKET:-}" ]]  && return 0
 
   log "R2: mirroring $(basename "${src}") → r2:${R2_BUCKET}/${dest_subpath}"
-  rclone copy --progress "${src}" "r2:${R2_BUCKET}/${dest_subpath}" \
+  rclone copy --progress --stats 5s --stats-one-line "${src}" "r2:${R2_BUCKET}/${dest_subpath}" \
     || log "Warning: R2 mirror failed for ${src} (SourceForge upload unaffected)"
 }
 
-# ---------------------------------------------------------------------------
-# R2 cleanup helper
-# Deletes old dated build folders under <profile>/ in R2, keeping:
-#   - The 2 most recent dated folders (by date, descending)
-#   - The folder pinned by stable.txt (read from R2, may overlap with the 2 latest)
-# Central files (latest.txt, stable.txt) at the profile root are untouched.
-# ---------------------------------------------------------------------------
+# Prune old dated R2 folders, keeping the 2 most recent and the stable-pinned folder.
 r2_cleanup() {
-  if [[ "${NO_R2}" == "true" ]]; then
-    log "R2: skipping cleanup (--no-r2)"
-    return 0
-  fi
-
-  if [[ -z "${R2_BUCKET:-}" ]]; then
-    return 0
-  fi
+  [[ "${NO_R2}" == "true" ]] && { log "R2: skipping cleanup (--no-r2)"; return 0; }
+  [[ -z "${R2_BUCKET:-}" ]]  && return 0
 
   log "R2: cleaning up old build folders under ${PROFILE}/ (keeping 2 latest + stable)..."
 
@@ -67,16 +43,14 @@ r2_cleanup() {
   local stable_content
   stable_content=$(rclone cat "r2:${R2_BUCKET}/${PROFILE}/stable.txt" 2>/dev/null || true)
   if [[ -n "$stable_content" ]]; then
-    stable_date=$(echo "$stable_content" | grep -oP '\d{8}' | head -n1 || true)
+    stable_date=$(echo "$stable_content" | grep -oE '[0-9]{8}' | head -n1 || true)
     [[ -n "$stable_date" ]] && log "R2: stable build pinned to: ${stable_date}"
   fi
 
   local all_dates=()
   while IFS= read -r folder; do
     folder="${folder// /}"
-    if [[ "$folder" =~ ^[0-9]{8}$ ]]; then
-      all_dates+=("$folder")
-    fi
+    [[ "$folder" =~ ^[0-9]{8}$ ]] && all_dates+=("$folder")
   done < <(rclone lsd "r2:${R2_BUCKET}/${PROFILE}/" 2>/dev/null | awk '{print $NF}' | sort -r)
 
   if [[ ${#all_dates[@]} -eq 0 ]]; then
@@ -85,9 +59,9 @@ r2_cleanup() {
   fi
 
   local keep=()
-  if [[ ${#all_dates[@]} -gt 0 ]]; then keep+=("${all_dates[0]}"); fi
-  if [[ ${#all_dates[@]} -gt 1 ]]; then keep+=("${all_dates[1]}"); fi
-  if [[ -n "$stable_date" ]] && [[ ! " ${keep[*]} " =~ " ${stable_date} " ]]; then
+  [[ ${#all_dates[@]} -gt 0 ]] && keep+=("${all_dates[0]}")
+  [[ ${#all_dates[@]} -gt 1 ]] && keep+=("${all_dates[1]}")
+  if [[ -n "$stable_date" && ! " ${keep[*]} " =~ " ${stable_date} " ]]; then
     keep+=("$stable_date")
   fi
 
@@ -104,29 +78,26 @@ r2_cleanup() {
   log "R2: cleanup complete."
 }
 
-# ---------------------------------------------------------------------------
-# SourceForge upload helper
-# ---------------------------------------------------------------------------
 sf_upload() {
   local label="$1"; shift
-  if [[ "${NO_SF}" == "true" ]]; then
-    log "SF: skipping ${label} (--no-sf)"
-    return 0
-  fi
-  rsync -e ssh -avz --progress "$@" || die "Upload of ${label} failed"
+  [[ "${NO_SF}" == "true" ]] && { log "SF: skipping ${label} (--no-sf)"; return 0; }
+  rsync -e ssh -rvz --progress "$@" || die "Upload of ${label} failed"
 }
 
 usage() {
-  echo "Usage: $(basename "$0") -p <profile> [--no-sf] [--no-r2] [mode]"
-  echo ""
-  echo "  -p <profile>   Profile name (e.g. gnome, plasma)"
-  echo "  --no-sf        Skip all SourceForge uploads (or set NO_SF=true)"
-  echo "  --no-r2        Skip all Cloudflare R2 uploads (or set NO_R2=true)"
-  echo ""
-  echo "  Modes:"
-  echo "    image        Upload base image artifacts only (default)"
-  echo "    iso          Upload ISO artifacts only (signed ISO, sha256, asc, torrent)"
-  echo "    all          Upload both base image and ISO artifacts"
+  cat <<EOF
+Usage: $(basename "$0") -p <profile> [--no-sf] [--no-r2] [--verify-only] [mode]
+
+  -p <profile>     Profile name (e.g. gnome, plasma)
+  --no-sf          Skip all SourceForge uploads (or set NO_SF=true)
+  --no-r2          Skip all Cloudflare R2 uploads (or set NO_R2=true)
+  --verify-only    Check remote SHA-256 without uploading anything
+
+  Modes:
+    image          Base image artifacts only (default)
+    iso            Signed ISO, sha256, asc, torrent
+    all            Both image and ISO artifacts
+EOF
   exit 1
 }
 
@@ -153,7 +124,7 @@ while getopts "p:h" opt; do
   case "$opt" in
     p) PROFILE="$OPTARG" ;;
     h) usage ;;
-    *) die "Invalid option. Use -h for help.";;
+    *) die "Invalid option. Use -h for help." ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -163,172 +134,162 @@ MODE="${1:-image}"
 [[ -z "$PROFILE" ]] && usage
 
 if [[ "$MODE" != "image" && "$MODE" != "iso" && "$MODE" != "all" ]]; then
-  die "Invalid mode: $MODE. Must be 'image', 'iso', or 'all'."
+  die "Invalid mode: '$MODE'. Must be 'image', 'iso', or 'all'."
 fi
 
 # ---------------------------------------------------------------------------
-# Resolve BUILD_DATE
+# Resolve build date via shared helper
 # ---------------------------------------------------------------------------
-today=$(date +%Y%m%d)
-expected_dir="${OUTPUT_DIR}/${PROFILE}/${today}"
+RESOLVED_DATE="$(resolve_build_date "$PROFILE")"
+OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${RESOLVED_DATE}"
 
-if [[ -d "${expected_dir}" ]]; then
-  BUILD_DATE="${today}"
-  log "Using today's build folder: ${BUILD_DATE}"
-else
-  BUILD_DATE=$(find "${OUTPUT_DIR}/${PROFILE}" -maxdepth 1 -type d -name '[0-9]*' 2>/dev/null \
-    | sort -r | head -n1 | xargs basename 2>/dev/null || echo "")
-  [[ -z "$BUILD_DATE" ]] && die "No build directory found under ${OUTPUT_DIR}/${PROFILE}"
-  log "Today's build folder not found; using latest build folder: ${BUILD_DATE}"
-fi
-
-OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 [[ -d "${OUTPUT_SUBDIR}" ]] \
   || die "Output directory ${OUTPUT_SUBDIR} does not exist. Build artifacts not found."
 
 REMOTE_PATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFILE}/"
-REMOTE_SUBPATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFILE}/${BUILD_DATE}/"
-R2_SUBPATH="${PROFILE}/${BUILD_DATE}"
+REMOTE_SUBPATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFILE}/${RESOLVED_DATE}/"
+R2_SUBPATH="${PROFILE}/${RESOLVED_DATE}"
 R2_PATH="${PROFILE}"
 
-if [[ "$VERIFY_ONLY" == "true" ]]; then
-  log "Verify-only mode — no uploads will be performed."
-fi
-
-# Ensure remote dated directory exists on SourceForge (skip for iso-only mode
-# if the image was already uploaded in a prior run)
-if [[ "${NO_SF}" == "false" && "$VERIFY_ONLY" != "true" ]]; then
+# ---------------------------------------------------------------------------
+# Ensure remote dated directory exists on SourceForge
+# ---------------------------------------------------------------------------
+if [[ "${NO_SF}" == "false" && "${VERIFY_ONLY}" != "true" ]]; then
   log "Ensuring remote directory exists: ${REMOTE_SUBPATH}"
-  ssh librewish@frs.sourceforge.net "mkdir -p /home/frs/project/shanios/${PROFILE}/${BUILD_DATE}" \
+  ssh librewish@frs.sourceforge.net \
+    "mkdir -p /home/frs/project/shanios/${PROFILE}/${RESOLVED_DATE}" \
     || log "Warning: Could not create remote directory (may already exist)"
 fi
 
-if [[ "$VERIFY_ONLY" != "true" ]]; then
+# ---------------------------------------------------------------------------
+# Uploads (skipped entirely in verify-only mode)
+# ---------------------------------------------------------------------------
+if [[ "${VERIFY_ONLY}" != "true" ]]; then
+
+  # --- Base image artifacts (modes: image, all) ----------------------------
+  if [[ "$MODE" == "image" || "$MODE" == "all" ]]; then
+    log "--- Uploading base image artifacts from ${OUTPUT_SUBDIR} ---"
+
+    if ls "${OUTPUT_SUBDIR}"/*.zst 1>/dev/null 2>&1; then
+      sf_upload "base image" \
+        --exclude="flatpakfs.zst" --exclude="snapfs.zst" \
+        "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/*.zst; do
+        [[ "$f" == *flatpakfs.zst || "$f" == *snapfs.zst ]] && continue
+        r2_upload "$f" "${R2_SUBPATH}"
+      done
+    else
+      log "Warning: No .zst files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    if ls "${OUTPUT_SUBDIR}"/*.zst.asc 1>/dev/null 2>&1; then
+      sf_upload "base image signatures" \
+        --exclude="flatpakfs.zst.asc" --exclude="snapfs.zst.asc" \
+        "${OUTPUT_SUBDIR}"/*.zst.asc "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/*.zst.asc; do
+        [[ "$f" == *flatpakfs.zst.asc || "$f" == *snapfs.zst.asc ]] && continue
+        r2_upload "$f" "${R2_SUBPATH}"
+      done
+    else
+      log "Warning: No .zst.asc files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    if ls "${OUTPUT_SUBDIR}"/*.zst.sha256 1>/dev/null 2>&1; then
+      sf_upload "base image checksums" \
+        --exclude="flatpakfs.zst.sha256" --exclude="snapfs.zst.sha256" \
+        "${OUTPUT_SUBDIR}"/*.zst.sha256 "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/*.zst.sha256; do
+        [[ "$f" == *flatpakfs.zst.sha256 || "$f" == *snapfs.zst.sha256 ]] && continue
+        r2_upload "$f" "${R2_SUBPATH}"
+      done
+    else
+      log "Warning: No .zst.sha256 files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    if [[ -f "${OUTPUT_SUBDIR}/latest.txt" ]]; then
+      sf_upload "dated latest.txt" "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}"
+      r2_upload "${OUTPUT_SUBDIR}/latest.txt" "${R2_SUBPATH}"
+    else
+      log "Warning: No latest.txt found in ${OUTPUT_SUBDIR}"
+    fi
+
+    CENTRAL_LATEST="${OUTPUT_DIR}/${PROFILE}/latest.txt"
+    if [[ -f "${CENTRAL_LATEST}" ]]; then
+      log "Uploading central latest.txt..."
+      sf_upload "central latest.txt" "${CENTRAL_LATEST}" "${REMOTE_PATH}"
+      r2_upload "${CENTRAL_LATEST}" "${R2_PATH}"
+    fi
+
+    CENTRAL_STABLE="${OUTPUT_DIR}/${PROFILE}/stable.txt"
+    if [[ -f "${CENTRAL_STABLE}" ]]; then
+      log "Uploading central stable.txt..."
+      sf_upload "central stable.txt" "${CENTRAL_STABLE}" "${REMOTE_PATH}"
+      r2_upload "${CENTRAL_STABLE}" "${R2_PATH}"
+    fi
+  fi
+
+  # --- ISO artifacts (modes: iso, all) -------------------------------------
+  if [[ "$MODE" == "iso" || "$MODE" == "all" ]]; then
+    log "--- Uploading ISO artifacts from ${OUTPUT_SUBDIR} ---"
+
+    if ls "${OUTPUT_SUBDIR}"/signed_*.iso 1>/dev/null 2>&1; then
+      sf_upload "signed ISO" "${OUTPUT_SUBDIR}"/signed_*.iso "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/signed_*.iso; do r2_upload "$f" "${R2_SUBPATH}"; done
+    else
+      log "Warning: No signed_*.iso files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    if ls "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 1>/dev/null 2>&1; then
+      sf_upload "ISO checksums" "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/signed_*.iso.sha256; do r2_upload "$f" "${R2_SUBPATH}"; done
+    else
+      log "Warning: No signed_*.iso.sha256 files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    if ls "${OUTPUT_SUBDIR}"/signed_*.iso.asc 1>/dev/null 2>&1; then
+      sf_upload "ISO signatures" "${OUTPUT_SUBDIR}"/signed_*.iso.asc "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/signed_*.iso.asc; do r2_upload "$f" "${R2_SUBPATH}"; done
+    else
+      log "Warning: No signed_*.iso.asc files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    if ls "${OUTPUT_SUBDIR}"/signed_*.iso.torrent 1>/dev/null 2>&1; then
+      sf_upload "ISO torrents" "${OUTPUT_SUBDIR}"/signed_*.iso.torrent "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/signed_*.iso.torrent; do r2_upload "$f" "${R2_SUBPATH}"; done
+    else
+      log "Warning: No signed_*.iso.torrent files found in ${OUTPUT_SUBDIR}"
+    fi
+  fi
+
+fi  # end uploads
 
 # ---------------------------------------------------------------------------
-# BASE IMAGE artifacts  (modes: image, all)
-# ---------------------------------------------------------------------------
-if [[ "$MODE" == "image" || "$MODE" == "all" ]]; then
-  log "--- Uploading base image artifacts from ${OUTPUT_SUBDIR} ---"
-
-  # .zst files — base image only; flatpakfs.zst and snapfs.zst are never uploaded
-  if ls "${OUTPUT_SUBDIR}"/*.zst 1>/dev/null 2>&1; then
-    sf_upload "base image" \
-      --exclude="flatpakfs.zst" --exclude="snapfs.zst" \
-      "${OUTPUT_SUBDIR}"/*.zst "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/*.zst; do
-      [[ "$f" == *flatpakfs.zst || "$f" == *snapfs.zst ]] && continue
-      r2_upload "$f" "${R2_SUBPATH}"
-    done
-  else
-    log "Warning: No .zst files found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # Signature files
-  if ls "${OUTPUT_SUBDIR}"/*.zst.asc 1>/dev/null 2>&1; then
-    sf_upload "base image signatures" "${OUTPUT_SUBDIR}"/*.zst.asc "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/*.zst.asc; do r2_upload "$f" "${R2_SUBPATH}"; done
-  else
-    log "Warning: No .zst.asc files found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # Checksum files
-  if ls "${OUTPUT_SUBDIR}"/*.zst.sha256 1>/dev/null 2>&1; then
-    sf_upload "base image checksums" "${OUTPUT_SUBDIR}"/*.zst.sha256 "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/*.zst.sha256; do r2_upload "$f" "${R2_SUBPATH}"; done
-  else
-    log "Warning: No .zst.sha256 files found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # latest.txt from build folder
-  if [[ -f "${OUTPUT_SUBDIR}/latest.txt" ]]; then
-    sf_upload "latest.txt" "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}"
-    r2_upload "${OUTPUT_SUBDIR}/latest.txt" "${R2_SUBPATH}"
-  else
-    log "Warning: No latest.txt found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # Central release files
-  CENTRAL_LATEST="${OUTPUT_DIR}/${PROFILE}/latest.txt"
-  if [[ -f "${CENTRAL_LATEST}" ]]; then
-    log "Uploading central latest.txt..."
-    sf_upload "central latest.txt" "${CENTRAL_LATEST}" "${REMOTE_PATH}"
-    r2_upload "${CENTRAL_LATEST}" "${R2_PATH}"
-  fi
-
-  CENTRAL_STABLE="${OUTPUT_DIR}/${PROFILE}/stable.txt"
-  if [[ -f "${CENTRAL_STABLE}" ]]; then
-    log "Uploading central stable.txt..."
-    sf_upload "central stable.txt" "${CENTRAL_STABLE}" "${REMOTE_PATH}"
-    r2_upload "${CENTRAL_STABLE}" "${R2_PATH}"
-  fi
-fi  # end image/all
-
-# ---------------------------------------------------------------------------
-# ISO artifacts  (modes: iso, all)
-# ---------------------------------------------------------------------------
-if [[ "$MODE" == "iso" || "$MODE" == "all" ]]; then
-  log "--- Uploading ISO artifacts from ${OUTPUT_SUBDIR} ---"
-
-  # Signed ISO files
-  if ls "${OUTPUT_SUBDIR}"/signed_*.iso 1>/dev/null 2>&1; then
-    sf_upload "signed ISO" "${OUTPUT_SUBDIR}"/signed_*.iso "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/signed_*.iso; do r2_upload "$f" "${R2_SUBPATH}"; done
-  else
-    log "Warning: No signed_*.iso files found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # ISO checksums
-  if ls "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 1>/dev/null 2>&1; then
-    sf_upload "ISO checksums" "${OUTPUT_SUBDIR}"/signed_*.iso.sha256 "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/signed_*.iso.sha256; do r2_upload "$f" "${R2_SUBPATH}"; done
-  else
-    log "Warning: No signed_*.iso.sha256 files found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # ISO signature files
-  if ls "${OUTPUT_SUBDIR}"/signed_*.iso.asc 1>/dev/null 2>&1; then
-    sf_upload "ISO signatures" "${OUTPUT_SUBDIR}"/signed_*.iso.asc "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/signed_*.iso.asc; do r2_upload "$f" "${R2_SUBPATH}"; done
-  else
-    log "Warning: No signed_*.iso.asc files found in ${OUTPUT_SUBDIR}"
-  fi
-
-  # Torrent files
-  if ls "${OUTPUT_SUBDIR}"/signed_*.iso.torrent 1>/dev/null 2>&1; then
-    sf_upload "ISO torrents" "${OUTPUT_SUBDIR}"/signed_*.iso.torrent "${REMOTE_SUBPATH}"
-    for f in "${OUTPUT_SUBDIR}"/signed_*.iso.torrent; do r2_upload "$f" "${R2_SUBPATH}"; done
-  else
-    log "Warning: No signed_*.iso.torrent files found in ${OUTPUT_SUBDIR}"
-  fi
-fi  # end iso/all
-
-fi  # end verify-only guard
-
-# ---------------------------------------------------------------------------
-# R2 cleanup
+# R2 cleanup (always runs unless --no-r2, even in verify-only mode)
 # ---------------------------------------------------------------------------
 r2_cleanup
 
 # ---------------------------------------------------------------------------
-# Post-upload verification (base image, skipped in iso-only mode)
+# Post-upload SourceForge verification (base image modes only)
 # ---------------------------------------------------------------------------
-if [[ "${NO_SF}" == "false" && "$MODE" != "iso" ]]; then
+if [[ "${NO_SF}" == "false" && "${VERIFY_ONLY}" != "true" && "$MODE" != "iso" ]]; then
   log "Verifying uploaded base image artifact on SourceForge..."
-  BASE_ZST=$(ls "${OUTPUT_SUBDIR}"/*.zst 2>/dev/null | grep -v flatpakfs | grep -v snapfs | head -1 || true)
+  BASE_ZST=$(ls "${OUTPUT_SUBDIR}"/*.zst 2>/dev/null \
+    | grep -v flatpakfs | grep -v snapfs | head -1 || true)
+
   if [[ -n "$BASE_ZST" ]]; then
-    REMOTE_SHA256_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE}/$(basename "${BASE_ZST}").sha256"
+    REMOTE_SHA256_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${RESOLVED_DATE}/$(basename "${BASE_ZST}").sha256"
     REMOTE_SHA256=$(curl -fsSL --max-time 30 --connect-timeout 10 \
       --user-agent "shanios-verify/1.0" "${REMOTE_SHA256_URL}" 2>/dev/null || true)
+
     if [[ -z "$REMOTE_SHA256" ]]; then
-      log "Warning: Could not fetch remote .sha256 — artifact may not be reachable yet (SourceForge CDN propagation delay)."
+      log "Warning: Could not fetch remote .sha256 — CDN propagation may still be in progress."
     else
       LOCAL_SHA256=$(sha256sum "${BASE_ZST}" | awk '{print $1}')
       REMOTE_HASH=$(echo "$REMOTE_SHA256" | awk '{print $1}')
       if [[ "$LOCAL_SHA256" == "$REMOTE_HASH" ]]; then
         log "✅ Verification passed: remote SHA-256 matches local artifact."
       else
-        log "Warning: SHA-256 mismatch — local: ${LOCAL_SHA256}, remote: ${REMOTE_HASH}. The upload may be corrupt."
+        log "Warning: SHA-256 mismatch — local: ${LOCAL_SHA256}, remote: ${REMOTE_HASH}."
       fi
     fi
   fi
