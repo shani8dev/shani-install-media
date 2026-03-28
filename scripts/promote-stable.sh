@@ -85,6 +85,13 @@ LATEST_TXT="${PROFILE_DIR}/latest.txt"
 STABLE_TXT="${PROFILE_DIR}/stable.txt"
 REMOTE_PATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFILE}/"
 
+# Cloudflare R2 configuration
+# R2_BUCKET: rclone remote bucket name (required for rclone operations)
+# R2_BASE_URL: public HTTP base URL for the bucket (used for HTTP verification)
+# Both can be overridden by environment variables.
+R2_BUCKET="${R2_BUCKET:-shanios}"
+R2_BASE_URL="${R2_BASE_URL:-https://downloads.shani.dev}"
+
 # Ensure profile directory exists
 mkdir -p "${PROFILE_DIR}"
 
@@ -186,10 +193,10 @@ else
   log "Skipping SourceForge artifact verification (--no-sf)."
 fi
 
-# R2 verification — only if not skipped and R2_BASE_URL is configured
+# R2 verification — via HTTP (R2_BASE_URL) or rclone (R2_BUCKET), whichever is configured
 if [[ "${NO_R2}" == "false" ]]; then
   if [[ -n "${R2_BASE_URL:-}" ]]; then
-    log "Verifying artifact on R2 (${R2_BASE_URL})..."
+    log "Verifying artifact on R2 (HTTP)..."
     R2_ARTIFACT_URL="${R2_BASE_URL}/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
     R2_SIGNATURE_URL="${R2_ARTIFACT_URL}.asc"
 
@@ -200,8 +207,22 @@ if [[ "${NO_R2}" == "false" ]]; then
       die "Signature not reachable on R2: ${R2_SIGNATURE_URL} — aborting promotion."
     fi
     log "R2: artifact and signature OK."
+
+  elif [[ -n "${R2_BUCKET:-}" ]]; then
+    log "Verifying artifact on R2 (rclone)..."
+    R2_ARTIFACT_KEY="${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
+    R2_SIGNATURE_KEY="${R2_ARTIFACT_KEY}.asc"
+
+    if ! rclone lsf "r2:${R2_BUCKET}/${R2_ARTIFACT_KEY}" >/dev/null 2>&1; then
+      die "Artifact not found on R2: r2:${R2_BUCKET}/${R2_ARTIFACT_KEY} — aborting promotion."
+    fi
+    if ! rclone lsf "r2:${R2_BUCKET}/${R2_SIGNATURE_KEY}" >/dev/null 2>&1; then
+      die "Signature not found on R2: r2:${R2_BUCKET}/${R2_SIGNATURE_KEY} — aborting promotion."
+    fi
+    log "R2: artifact and signature OK."
+
   else
-    log "Warning: R2_BASE_URL not set — skipping R2 artifact verification."
+    die "R2 verification required but neither R2_BASE_URL nor R2_BUCKET is set — aborting promotion."
   fi
 else
   log "Skipping R2 artifact verification (--no-r2)."
