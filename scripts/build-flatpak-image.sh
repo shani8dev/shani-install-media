@@ -396,6 +396,7 @@ log "Copying Flatpak data into Btrfs subvolume"
 if ! tar -cf - -C /var/lib/flatpak . | tar -xf - -C "$FLATPAK_MOUNT"; then
     die "Failed to copy Flatpak data"
 fi
+chmod 755 "$FLATPAK_MOUNT"
 sync
 
 # Set subvolume read-only before taking snapshot

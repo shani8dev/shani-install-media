@@ -219,6 +219,10 @@ log "Copying /var/lib/snapd → btrfs snapd_subvol using tar"
 
 tar -C /var/lib/snapd -cf - . | tar -C "$SNAP_MOUNT" -xf -
 
+chmod 755 "$SNAP_MOUNT"
+
+sync
+
 if [[ ! -f "$SNAP_MOUNT/seed/assertions/model" ]]; then
     die "Model assertion missing inside btrfs image!"
 fi

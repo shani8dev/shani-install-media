@@ -28,6 +28,10 @@ HOST_FLATPAK_DATA="${HOST_WORK_DIR}/cache/flatpak_data"
 HOST_SNAPD_DATA="${HOST_WORK_DIR}/cache/snapd_data"
 HOST_SNAPD_SEED="${HOST_WORK_DIR}/cache/snapd_seed"
 mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}" "${HOST_SNAPD_DATA}" "${HOST_SNAPD_SEED}"
+chmod 755 "${HOST_FLATPAK_DATA}"   # flatpak creates as 750
+chmod 755 "${HOST_SNAPD_DATA}"     # snapd may do the same
+chmod 755 "${HOST_SNAPD_SEED}"     # snap seed dir
+chmod 755 "${HOST_PACMAN_CACHE}"   # pacman cache, less likely but consistent
 
 # ---------------------------------------------------------------------------
 # Container paths (fixed — must match the Dockerfile)

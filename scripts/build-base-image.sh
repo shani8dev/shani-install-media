@@ -127,6 +127,9 @@ mkdir -p /var/lib/flatpak /var/lib/snapd /var/lib/waydroid /var/lib/containers \
          /var/lib/machines /var/lib/lxc /var/lib/lxd /var/lib/libvirt /var/lib/qemu \
          /var/cache /var/log
 
+chmod 755 /var/lib/flatpak /var/lib/snapd /var/lib/waydroid /var/lib/containers \
+          /var/lib/machines /var/lib/lxc /var/lib/lxd
+
 # Groups with confirmed static GIDs (Arch archwiki / systemd basic.conf)
 getent group sys     &>/dev/null || groupadd -r -g 3   sys
 getent group lp      &>/dev/null || groupadd -r -g 7   lp
