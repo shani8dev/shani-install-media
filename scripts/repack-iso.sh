@@ -41,9 +41,11 @@ osirrox -indev "$OUTPUT_ISO" \
 # osirrox writes the eltorito image asynchronously — wait up to 30 s
 eltorito_img="${REPACK_DIR}/eltorito_img1_uefi.img"
 for i in {1..30}; do
-    [[ -f "$eltorito_img" ]] && break
-    log "Waiting for eltorito image... (${i}/30)"
-    sleep 1
+    if [[ -f "$eltorito_img" ]]; then
+        break
+    else
+        sleep 1
+    fi
 done
 [[ -f "$eltorito_img" ]] || die "Eltorito image not found after 30 s."
 
