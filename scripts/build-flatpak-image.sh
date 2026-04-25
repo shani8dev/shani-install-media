@@ -13,7 +13,7 @@ export XDG_DATA_HOME=/usr/share
 export XDG_DATA_DIRS=/var/lib/flatpak/exports/share:/usr/share
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-source "${SCRIPT_DIR}/../config/config.sh"  # Ensure that functions like die, warn, log, etc. are defined here
+source "${SCRIPT_DIR}/../config/config.sh"
 
 # Parse profile option
 PROFILE="$DEFAULT_PROFILE"
@@ -44,10 +44,18 @@ fi
 
 packages=()
 while IFS= read -r pkg || [[ -n "$pkg" ]]; do
-    # Skip empty lines or lines containing only whitespace
+    # Skip empty lines, whitespace-only lines, and comment lines
     [[ -z "${pkg// }" ]] && continue
+    [[ "$pkg" =~ ^[[:space:]]*# ]] && continue
+    # Strip carriage returns (Windows line endings)
+    pkg="${pkg//$'\r'/}"
     packages+=("$pkg")
 done < "$FLATPAK_PACKAGE_LIST"
+
+if [[ ${#packages[@]} -eq 0 ]]; then
+    log "Flatpak package list is empty for profile '${PROFILE}'. Exiting..."
+    exit 0
+fi
 
 # Install Flatpak packages from profile list
 for pkg in "${packages[@]}"; do
@@ -351,68 +359,88 @@ done
 
 log "Gaming app permissions configured"
 
+# ---------------------------------------------------------------------------
+# Pre-flight: verify host Flatpak data fits in the target image size (14 G).
+# A 10 % headroom is reserved for Btrfs metadata overhead.
+# ---------------------------------------------------------------------------
+FLATPAK_IMG_SIZE_BYTES=$(( 14 * 1024 * 1024 * 1024 ))
+FLATPAK_HEADROOM=90  # percent of image usable
+FLATPAK_DATA_BYTES=$(du -sb /var/lib/flatpak 2>/dev/null | awk '{print $1}')
+FLATPAK_USABLE=$(( FLATPAK_IMG_SIZE_BYTES * FLATPAK_HEADROOM / 100 ))
+if (( FLATPAK_DATA_BYTES > FLATPAK_USABLE )); then
+    die "Flatpak data ($(( FLATPAK_DATA_BYTES / 1024 / 1024 )) MiB) exceeds 90% of the" \
+        "14 GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Increase the image" \
+        "size in build-flatpak-image.sh or reduce the package set."
+fi
+
 # Prepare Btrfs image for Flatpak data (14G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
+FLATPAK_MOUNT="${BUILD_DIR}/flatpak_mount"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
-# This function is assumed to set up a loop device and create a Btrfs image.
-setup_btrfs_image "$FLATPAK_IMG" "14G"  # Make sure this function is defined
-# LOOP_DEVICE is set by setup_btrfs_image
+LOOP_DEVICE=$(setup_btrfs_image "$FLATPAK_IMG" "14G")
 
-# Define mount point for Flatpak image
-FLATPAK_MOUNT="${BUILD_DIR}/flatpak_mount"
+# ---------------------------------------------------------------------------
+# Cleanup trap — releases mount and loop device on any exit
+# ---------------------------------------------------------------------------
+_cleanup() {
+    local rc=$?
+    if mountpoint -q "${FLATPAK_MOUNT}" 2>/dev/null; then
+        log "Cleanup: unmounting ${FLATPAK_MOUNT}"
+        umount -R "${FLATPAK_MOUNT}" 2>/dev/null || warn "Cleanup: umount ${FLATPAK_MOUNT} failed"
+    fi
+    if [[ -n "${LOOP_DEVICE:-}" ]] && losetup "${LOOP_DEVICE}" &>/dev/null; then
+        log "Cleanup: detaching ${LOOP_DEVICE}"
+        losetup -d "${LOOP_DEVICE}" 2>/dev/null || warn "Cleanup: losetup -d ${LOOP_DEVICE} failed"
+    fi
+    exit "$rc"
+}
+trap '_cleanup' EXIT
 
 # Mount the loop device and create (or delete) the subvolume
 mkdir -p "$FLATPAK_MOUNT"
-if ! mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT"; then
-    die "Failed to mount Flatpak image"
-fi
+mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT" \
+    || die "Failed to mount Flatpak image"
 
 if btrfs subvolume list "$FLATPAK_MOUNT" | grep -q "$FLATPAK_SUBVOL"; then
     log "Deleting existing subvolume ${FLATPAK_SUBVOL}..."
-    if ! btrfs subvolume delete "$FLATPAK_MOUNT/$FLATPAK_SUBVOL"; then
-        die "Failed to delete existing subvolume"
-    fi
+    btrfs subvolume delete "$FLATPAK_MOUNT/$FLATPAK_SUBVOL" \
+        || die "Failed to delete existing subvolume"
 fi
 
 log "Creating new subvolume: ${FLATPAK_SUBVOL}"
-if ! btrfs subvolume create "$FLATPAK_MOUNT/$FLATPAK_SUBVOL"; then
-    die "Subvolume creation failed"
-fi
+btrfs subvolume create "$FLATPAK_MOUNT/$FLATPAK_SUBVOL" \
+    || die "Subvolume creation failed"
 sync
-if ! umount "$FLATPAK_MOUNT"; then
-    die "Failed to unmount Flatpak image after subvolume creation"
-fi
+umount "$FLATPAK_MOUNT" \
+    || die "Failed to unmount Flatpak image after subvolume creation"
 
 # Remount the newly created subvolume
 mkdir -p "$FLATPAK_MOUNT"
-if ! mount -o subvol="$FLATPAK_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT"; then
-    die "Mounting Flatpak subvolume failed"
-fi
+mount -o subvol="$FLATPAK_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$FLATPAK_MOUNT" \
+    || die "Mounting Flatpak subvolume failed"
 
 # Copy Flatpak data into the subvolume
 log "Copying Flatpak data into Btrfs subvolume"
-if ! tar -cf - -C /var/lib/flatpak . | tar -xf - -C "$FLATPAK_MOUNT"; then
-    die "Failed to copy Flatpak data"
-fi
+tar -cf - -C /var/lib/flatpak . | tar -xf - -C "$FLATPAK_MOUNT" \
+    || die "Failed to copy Flatpak data"
 chmod 755 "$FLATPAK_MOUNT"
 sync
 
 # Set subvolume read-only before taking snapshot
-if ! btrfs property set -f -ts "$FLATPAK_MOUNT" ro true; then
-    die "Failed to set subvolume read-only"
-fi
+btrfs property set -f -ts "$FLATPAK_MOUNT" ro true \
+    || die "Failed to set subvolume read-only"
 
-# Take a snapshot of the subvolume (this function must be defined)
+# Take a snapshot of the subvolume
 btrfs_send_snapshot "$FLATPAK_MOUNT" "${OUTPUT_FILE}"
 
 # Reset subvolume to writable after snapshot
-if ! btrfs property set -f -ts "$FLATPAK_MOUNT" ro false; then
-    die "Failed to reset subvolume properties"
-fi
+btrfs property set -f -ts "$FLATPAK_MOUNT" ro false \
+    || die "Failed to reset subvolume properties"
 
-# Detach the Btrfs image (this function must be defined)
+# Detach the Btrfs image; clear LOOP_DEVICE so the EXIT trap skips the detach.
 detach_btrfs_image "$FLATPAK_MOUNT" "$LOOP_DEVICE"
+LOOP_DEVICE=""
 
 log "Flatpak image created successfully at ${OUTPUT_FILE}"

@@ -24,6 +24,14 @@ GPG_KEY_ID="${GPG_KEY_ID:-7B927BFFD4A9EAAA8B666B77DE217F3DA8014792}"
 # Canonical GPG home used by the builder container.
 BUILDER_GNUPGHOME="${GNUPGHOME:-/home/builduser/.gnupg}"
 
+# ---------------------------------------------------------------------------
+# Shared network / retry constants (used by promote-stable.sh, upload.sh, etc.)
+# ---------------------------------------------------------------------------
+CURL_RETRIES=3
+CURL_RETRY_DELAY=5
+NETWORK_TIMEOUT=30
+NETWORK_CONNECT_TIMEOUT=10
+
 # Ensure all writable cache directories exist before any script runs.
 mkdir -p "${OUTPUT_DIR}" "${BUILD_DIR}" "${TEMP_DIR}" "${MOK_DIR}" "${GPG_DIR}"
 
@@ -38,12 +46,32 @@ die()  { echo "[ERROR] $*" >&2; exit 1; }
 # Dependency checks
 # ---------------------------------------------------------------------------
 
-# Check for required commands.
+# Check for tools required by build-base-image.sh.
 check_dependencies() {
     local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync gpg sha256sum zstd fallocate mkfs.btrfs openssl )
     for cmd in "${deps[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
     done
+}
+
+# Check for tools required by build-iso.sh / repack-iso.sh.
+check_dependencies_iso() {
+    local deps=( mkarchiso xorriso osirrox sbsign mcopy mktorrent )
+    for cmd in "${deps[@]}"; do
+        command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
+    done
+}
+
+# Check for tools required by upload.sh / promote-stable.sh.
+check_dependencies_upload() {
+    local deps=( rsync curl )
+    for cmd in "${deps[@]}"; do
+        command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
+    done
+    # rclone is only required when R2 uploads are active
+    if [[ -n "${R2_BUCKET:-}" ]]; then
+        command -v rclone >/dev/null 2>&1 || die "rclone is required for R2 uploads but not installed."
+    fi
 }
 
 # Verify or generate Secure Boot (MOK) keys.
@@ -177,11 +205,17 @@ resolve_build_date() {
 # Btrfs helpers
 # ---------------------------------------------------------------------------
 
-# Create a Btrfs image file, attach a loop device, and format it.
+# Create a Btrfs image file, attach a loop device, format it, and print the
+# loop device path to stdout.
+#
 # Args:
 #   $1 = path to image file to create
 #   $2 = size (e.g. "10G")
-# Sets the global LOOP_DEVICE to the allocated loop device path.
+#
+# Callers capture the loop device with:
+#   LOOP_DEVICE=$(setup_btrfs_image "$img" "$size")
+#
+# All diagnostic output goes to stderr so stdout carries only the device path.
 setup_btrfs_image() {
     local img_path="$1"
     local size="$2"
@@ -193,22 +227,25 @@ setup_btrfs_image() {
     if losetup -j "$img_path" | grep -q "$img_path"; then
         local existing_loop
         existing_loop=$(losetup -j "$img_path" | cut -d: -f1)
-        losetup -d "$existing_loop" || warn "Failed to detach existing loop device: $existing_loop"
+        losetup -d "$existing_loop" \
+            || warn "Failed to detach existing loop device: $existing_loop" >&2
     fi
 
-    log "Removing existing image file (if any): $img_path"
+    log "Removing existing image file (if any): $img_path" >&2
     rm -f "$img_path"
 
     fallocate -l "$size" "$img_path" || die "Failed to allocate image file: $img_path"
 
     local loop_device
-    loop_device=$(losetup --find --show "$img_path") || die "Failed to setup loop device for $img_path"
-    log "Loop device assigned: $loop_device"
+    loop_device=$(losetup --find --show "$img_path") \
+        || die "Failed to setup loop device for $img_path"
+    log "Loop device assigned: $loop_device" >&2
 
-    log "Formatting $loop_device as Btrfs..."
+    log "Formatting $loop_device as Btrfs..." >&2
     mkfs.btrfs -f "$loop_device" || die "Failed to format $img_path as Btrfs"
 
-    LOOP_DEVICE="$loop_device"
+    # Print the loop device path — this is the function's return value.
+    echo "$loop_device"
 }
 
 # Unmount a Btrfs subvolume, detach the loop device, and remove the mount point.
@@ -219,11 +256,13 @@ detach_btrfs_image() {
     local mount_point="$1"
     local loop_dev="$2"
 
-    if mountpoint -q "$mount_point"; then
-        umount "$mount_point" || warn "Failed to unmount $mount_point"
+    if mountpoint -q "$mount_point" 2>/dev/null; then
+        umount -R "$mount_point" || warn "Failed to unmount $mount_point"
     fi
 
-    losetup -d "$loop_dev" || warn "Failed to detach loop device $loop_dev"
+    if [[ -n "$loop_dev" ]]; then
+        losetup -d "$loop_dev" || warn "Failed to detach loop device $loop_dev"
+    fi
 
     # Guard against accidentally rm -rf'ing an empty or root path
     if [[ -n "$mount_point" && "$mount_point" != "/" ]]; then

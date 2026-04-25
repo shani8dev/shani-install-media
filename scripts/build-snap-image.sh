@@ -38,6 +38,8 @@ snaps=()
 while IFS= read -r snap || [[ -n "$snap" ]]; do
     [[ -z "${snap// }" ]] && continue
     [[ "$snap" =~ ^# ]] && continue
+    # Strip carriage returns (Windows line endings)
+    snap="${snap//$'\r'/}"
     snaps+=("$snap")
 done < "$SNAP_LIST"
 
@@ -186,9 +188,23 @@ rm -rf /var/lib/snapd/seed
 mkdir -p /var/lib/snapd/seed
 mkdir -p /var/lib/snapd/snap
 
-tar -C "$SEED_DIR" -cf - . | tar -C /var/lib/snapd/seed -xf -
+tar -C "$SEED_DIR" -cf - . | tar -C /var/lib/snapd/seed -xf - \
+    || die "Failed to install snap seed"
 
 log "✓ Seed installed to /var/lib/snapd"
+
+# ---------------------------------------------------------
+# Pre-flight: verify snapd data fits in the target image (10 G).
+# ---------------------------------------------------------
+SNAP_IMG_SIZE_BYTES=$(( 10 * 1024 * 1024 * 1024 ))
+SNAP_HEADROOM=90  # percent of image usable
+SNAP_DATA_BYTES=$(du -sb /var/lib/snapd 2>/dev/null | awk '{print $1}')
+SNAP_USABLE=$(( SNAP_IMG_SIZE_BYTES * SNAP_HEADROOM / 100 ))
+if (( SNAP_DATA_BYTES > SNAP_USABLE )); then
+    die "snapd data ($(( SNAP_DATA_BYTES / 1024 / 1024 )) MiB) exceeds 90% of the" \
+        "10 GiB image budget ($(( SNAP_USABLE / 1024 / 1024 )) MiB). Increase the image" \
+        "size in build-snap-image.sh or reduce the snap package set."
+fi
 
 # ---------------------------------------------------------
 # Create Btrfs image
@@ -200,24 +216,49 @@ OUTPUT_FILE="${OUTPUT_SUBDIR}/snapfs.zst"
 
 log "Creating btrfs image ${SNAP_IMG}"
 
-setup_btrfs_image "$SNAP_IMG" "10G"
+LOOP_DEVICE=$(setup_btrfs_image "$SNAP_IMG" "10G")
+
+# ---------------------------------------------------------------------------
+# Cleanup trap — releases mount and loop device on any exit
+# ---------------------------------------------------------------------------
+_cleanup() {
+    local rc=$?
+    if mountpoint -q "${SNAP_MOUNT}" 2>/dev/null; then
+        log "Cleanup: unmounting ${SNAP_MOUNT}"
+        umount -R "${SNAP_MOUNT}" 2>/dev/null || warn "Cleanup: umount ${SNAP_MOUNT} failed"
+    fi
+    if [[ -n "${LOOP_DEVICE:-}" ]] && losetup "${LOOP_DEVICE}" &>/dev/null; then
+        log "Cleanup: detaching ${LOOP_DEVICE}"
+        losetup -d "${LOOP_DEVICE}" 2>/dev/null || warn "Cleanup: losetup -d ${LOOP_DEVICE} failed"
+    fi
+    exit "$rc"
+}
+trap '_cleanup' EXIT
 
 mkdir -p "$SNAP_MOUNT"
-mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"
+mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT" \
+    || die "Failed to mount snap Btrfs image"
 
-btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL" 2>/dev/null || true
-btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL"
+if btrfs subvolume list "$SNAP_MOUNT" | grep -q "$SNAP_SUBVOL"; then
+    log "Deleting existing subvolume ${SNAP_SUBVOL}..."
+    btrfs subvolume delete "$SNAP_MOUNT/$SNAP_SUBVOL" \
+        || die "Failed to delete existing snap subvolume"
+fi
+btrfs subvolume create "$SNAP_MOUNT/$SNAP_SUBVOL" \
+    || die "Failed to create snap subvolume"
 
-umount "$SNAP_MOUNT"
+umount "$SNAP_MOUNT" || die "Failed to unmount snap image after subvolume creation"
 mkdir -p "$SNAP_MOUNT"
-mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT"
+mount -o subvol="$SNAP_SUBVOL",compress-force=zstd:19 "$LOOP_DEVICE" "$SNAP_MOUNT" \
+    || die "Failed to mount snap subvolume"
 
 # ---------------------------------------------------------
 # Copy snapd into btrfs image using tar
 # ---------------------------------------------------------
 log "Copying /var/lib/snapd → btrfs snapd_subvol using tar"
 
-tar -C /var/lib/snapd -cf - . | tar -C "$SNAP_MOUNT" -xf -
+tar -C /var/lib/snapd -cf - . | tar -C "$SNAP_MOUNT" -xf - \
+    || die "Failed to copy snapd data into Btrfs subvolume"
 
 chmod 755 "$SNAP_MOUNT"
 
@@ -232,18 +273,21 @@ log "✓ Seed verified in btrfs"
 # ---------------------------------------------------------
 # Create RO snapshot and export
 # ---------------------------------------------------------
-btrfs property set -ts "$SNAP_MOUNT" ro true || true
+btrfs property set -f -ts "$SNAP_MOUNT" ro true \
+    || die "Failed to set snap subvolume read-only"
 
 log "Sending snapshot to ${OUTPUT_FILE}"
 btrfs_send_snapshot "$SNAP_MOUNT" "$OUTPUT_FILE"
 
-btrfs property set -ts "$SNAP_MOUNT" ro false || true
+btrfs property set -f -ts "$SNAP_MOUNT" ro false \
+    || die "Failed to reset snap subvolume to writable"
 
+# Detach cleanly; clear LOOP_DEVICE so the EXIT trap skips the detach.
 detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE"
+LOOP_DEVICE=""
 
 log "==========================================="
 log "Snap image created successfully!"
 log "Output: ${OUTPUT_FILE}"
 log "Contains: ${#snaps[@]} snaps with assertions"
 log "==========================================="
-exit 0

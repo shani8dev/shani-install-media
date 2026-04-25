@@ -34,10 +34,38 @@ check_gpg_key
 # Set up Btrfs image for base system (10G)
 # ---------------------------------------------------------------------------
 BASE_IMG="${BUILD_DIR}/base.img"
-setup_btrfs_image "$BASE_IMG" "10G"
-# LOOP_DEVICE is set by setup_btrfs_image
+LOOP_DEVICE=$(setup_btrfs_image "$BASE_IMG" "10G")
+SUBVOL_MOUNT="${BUILD_DIR}/${BASE_SUBVOL}"
 
+# ---------------------------------------------------------------------------
+# Cleanup trap — runs on any exit (success, error, or signal).
+# Ensures mounts are released and the loop device is detached so the host
+# never leaks kernel resources when the script exits unexpectedly.
+# ---------------------------------------------------------------------------
+_cleanup() {
+    local rc=$?
+    # Unmount the subvolume mount if still active
+    if mountpoint -q "${SUBVOL_MOUNT}" 2>/dev/null; then
+        log "Cleanup: unmounting ${SUBVOL_MOUNT}"
+        umount -R "${SUBVOL_MOUNT}" 2>/dev/null || warn "Cleanup: umount ${SUBVOL_MOUNT} failed"
+    fi
+    # Unmount the root loop mount if still active
+    if mountpoint -q "${BUILD_DIR}" 2>/dev/null; then
+        log "Cleanup: unmounting ${BUILD_DIR}"
+        umount "${BUILD_DIR}" 2>/dev/null || warn "Cleanup: umount ${BUILD_DIR} failed"
+    fi
+    # Detach loop device
+    if [[ -n "${LOOP_DEVICE:-}" ]] && losetup "${LOOP_DEVICE}" &>/dev/null; then
+        log "Cleanup: detaching ${LOOP_DEVICE}"
+        losetup -d "${LOOP_DEVICE}" 2>/dev/null || warn "Cleanup: losetup -d ${LOOP_DEVICE} failed"
+    fi
+    exit "$rc"
+}
+trap '_cleanup' EXIT
+
+# ---------------------------------------------------------------------------
 # Mount image, create subvolume, remount the subvolume
+# ---------------------------------------------------------------------------
 mkdir -p "${BUILD_DIR}"
 mount -t btrfs -o compress-force=zstd:19 "$LOOP_DEVICE" "${BUILD_DIR}" \
     || die "Mounting base image failed"
@@ -53,20 +81,20 @@ btrfs subvolume create "${BUILD_DIR}/${BASE_SUBVOL}" || die "Subvolume creation 
 sync
 umount "${BUILD_DIR}" || die "Failed to unmount build directory"
 
-mkdir -p "${BUILD_DIR}/${BASE_SUBVOL}"
-mount -o subvol="${BASE_SUBVOL}",compress-force=zstd:19 "$LOOP_DEVICE" "${BUILD_DIR}/${BASE_SUBVOL}" \
+mkdir -p "${SUBVOL_MOUNT}"
+mount -o subvol="${BASE_SUBVOL}",compress-force=zstd:19 "$LOOP_DEVICE" "${SUBVOL_MOUNT}" \
     || die "Mounting subvolume failed"
-mountpoint "${BUILD_DIR}/${BASE_SUBVOL}" || die "Subvolume mount verification failed"
+mountpoint "${SUBVOL_MOUNT}" || die "Subvolume mount verification failed"
 
 # ---------------------------------------------------------------------------
 # Install keys into the image
 # ---------------------------------------------------------------------------
-gpg_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/shani-keys/"
+gpg_target="${SUBVOL_MOUNT}/etc/shani-keys/"
 mkdir -p "$gpg_target"
 install -m 644 "${GPG_DIR}/gpg-public.asc" "$gpg_target/signing.asc" \
     || die "Failed to install signing.asc"
 
-secureboot_target="${BUILD_DIR}/${BASE_SUBVOL}/etc/secureboot/keys"
+secureboot_target="${SUBVOL_MOUNT}/etc/secureboot/keys"
 mkdir -p "$secureboot_target"
 install -m 600 "${MOK_DIR}/MOK.key" "$secureboot_target/MOK.key" || die "Failed to install MOK.key"
 install -m 644 "${MOK_DIR}/MOK.crt" "$secureboot_target/MOK.crt" || die "Failed to install MOK.crt"
@@ -78,25 +106,38 @@ install -m 644 "${MOK_DIR}/MOK.der" "$secureboot_target/MOK.der" || die "Failed 
 log "Installing base system..."
 package_list="${IMAGE_PROFILES_DIR}/${PROFILE}/package-list.txt"
 [[ -f "$package_list" ]] || die "Package list not found for profile ${PROFILE}"
-pacstrap -cC "$PACMAN_CONFIG" "${BUILD_DIR}/${BASE_SUBVOL}" $(<"$package_list") \
+
+# Read packages into an array, stripping blank lines and comments,
+# and trimming carriage returns (Windows line endings).
+mapfile -t _packages < <(
+    grep -v '^\s*#' "$package_list" \
+    | tr -d '\r' \
+    | grep -v '^\s*$'
+)
+[[ ${#_packages[@]} -gt 0 ]] || die "Package list is empty for profile ${PROFILE}"
+
+pacstrap -cC "$PACMAN_CONFIG" "${SUBVOL_MOUNT}" "${_packages[@]}" \
     || die "pacstrap failed"
 
 if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" ]]; then
     log "Applying overlay files..."
-    cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${BUILD_DIR}/${BASE_SUBVOL}/" \
+    cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${SUBVOL_MOUNT}/" \
         || die "Overlay copy failed"
 fi
 
 if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" ]]; then
     log "Applying customizations..."
-    bash "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" "${BUILD_DIR}/${BASE_SUBVOL}" \
+    bash "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" "${SUBVOL_MOUNT}" \
         || die "Customizations failed"
 fi
 
 # ---------------------------------------------------------------------------
 # chroot configuration
 # ---------------------------------------------------------------------------
-arch-chroot "${BUILD_DIR}/${BASE_SUBVOL}" /bin/bash <<EOF
+# Validate GPG_KEY_ID is non-empty before interpolating it into the heredoc.
+[[ -n "${GPG_KEY_ID:-}" ]] || die "GPG_KEY_ID is not set — cannot set ownertrust inside chroot."
+
+arch-chroot "${SUBVOL_MOUNT}" /bin/bash <<EOF
 set -euo pipefail
 
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
@@ -163,25 +204,33 @@ EOF
 # ---------------------------------------------------------------------------
 # Snapshot and sign
 # ---------------------------------------------------------------------------
-btrfs property set -f -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro true \
+btrfs property set -f -ts "${SUBVOL_MOUNT}" ro true \
     || die "Failed to set subvolume read-only"
 
-btrfs_send_snapshot "${BUILD_DIR}/${BASE_SUBVOL}" "${IMAGE_FILE}"
+btrfs_send_snapshot "${SUBVOL_MOUNT}" "${IMAGE_FILE}"
 
-btrfs property set -ts "${BUILD_DIR}/${BASE_SUBVOL}" ro false \
+btrfs property set -f -ts "${SUBVOL_MOUNT}" ro false \
     || die "Failed to reset subvolume to writable"
 
-detach_btrfs_image "${BUILD_DIR}/${BASE_SUBVOL}" "$LOOP_DEVICE"
+# detach_btrfs_image handles unmounting and loop detachment.
+# The EXIT trap is still registered but detach_btrfs_image calls umount and
+# losetup -d first; the trap's mountpoint / losetup checks will find them
+# already gone and skip gracefully.
+detach_btrfs_image "${SUBVOL_MOUNT}" "$LOOP_DEVICE"
+# Clear so the EXIT trap doesn't attempt a second detach.
+LOOP_DEVICE=""
 
 # ---------------------------------------------------------------------------
-# Sign and checksum
+# Checksum and sign
 # ---------------------------------------------------------------------------
 gpg_prepare_keyring
+
+pushd "${OUTPUT_SUBDIR}" > /dev/null
+sha256sum "${IMAGE_NAME}" > "${IMAGE_NAME}.sha256" \
+    || die "Checksum generation failed"
+popd > /dev/null
+
 gpg_sign_file "${IMAGE_FILE}"
 
-cd "$(dirname "${IMAGE_FILE}")"
-sha256sum "$(basename "${IMAGE_FILE}")" > "$(basename "${IMAGE_FILE}").sha256" \
-    || die "Checksum generation failed"
-
-echo "$(basename "${IMAGE_FILE}")" > "${OUTPUT_SUBDIR}/latest.txt"
+echo "${IMAGE_NAME}" > "${OUTPUT_SUBDIR}/latest.txt"
 log "Base image build completed successfully!"
