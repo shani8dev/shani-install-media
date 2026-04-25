@@ -2,7 +2,6 @@
 # build-flatpak-image.sh — Build the Flatpak image (container-only)
 
 set -Eeuo pipefail
-set -Eeuo pipefail
 
 # Ensure machine-id exists for DBUS
 if [ ! -f /etc/machine-id ]; then
@@ -361,26 +360,29 @@ done
 log "Gaming app permissions configured"
 
 # ---------------------------------------------------------------------------
-# Pre-flight: verify host Flatpak data fits in the target image size (14 G).
+# Pre-flight: verify host Flatpak data fits in the target image size (15 G).
 # A 10 % headroom is reserved for Btrfs metadata overhead.
 # ---------------------------------------------------------------------------
-FLATPAK_IMG_SIZE_BYTES=$(( 14 * 1024 * 1024 * 1024 ))
+FLATPAK_IMG_SIZE_BYTES=$(( 15 * 1024 * 1024 * 1024 ))
 FLATPAK_HEADROOM=90  # percent of image usable
 FLATPAK_DATA_BYTES=$(du -sb /var/lib/flatpak 2>/dev/null | awk '{print $1}')
 FLATPAK_USABLE=$(( FLATPAK_IMG_SIZE_BYTES * FLATPAK_HEADROOM / 100 ))
 if (( FLATPAK_DATA_BYTES > FLATPAK_USABLE )); then
     die "Flatpak data ($(( FLATPAK_DATA_BYTES / 1024 / 1024 )) MiB) exceeds 90% of the" \
-        "14 GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Increase the image" \
+        "15 GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Increase the image" \
         "size in build-flatpak-image.sh or reduce the package set."
 fi
 
-# Prepare Btrfs image for Flatpak data (14G)
+# Prepare Btrfs image for Flatpak data (15G)
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
 FLATPAK_MOUNT="${BUILD_DIR}/flatpak_mount"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
-LOOP_DEVICE=$(setup_btrfs_image "$FLATPAK_IMG" "14G")
+
+# This function is assumed to set up a loop device and create a Btrfs image.
+setup_btrfs_image "$FLATPAK_IMG" "15G"  # Make sure this function is defined
+# LOOP_DEVICE is set by setup_btrfs_image reuse dont specify here
 
 # ---------------------------------------------------------------------------
 # Cleanup trap — releases mount and loop device on any exit

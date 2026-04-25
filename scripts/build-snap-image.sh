@@ -216,8 +216,8 @@ OUTPUT_FILE="${OUTPUT_SUBDIR}/snapfs.zst"
 
 log "Creating btrfs image ${SNAP_IMG}"
 
-LOOP_DEVICE=$(setup_btrfs_image "$SNAP_IMG" "10G")
-
+setup_btrfs_image "$SNAP_IMG" "10G"
+# LOOP_DEVICE is set by setup_btrfs_image reuse dont specify here
 # ---------------------------------------------------------------------------
 # Cleanup trap — releases mount and loop device on any exit
 # ---------------------------------------------------------------------------
@@ -293,3 +293,4 @@ log "Snap image created successfully!"
 log "Output: ${OUTPUT_FILE}"
 log "Contains: ${#snaps[@]} snaps with assertions"
 log "==========================================="
+exit 0

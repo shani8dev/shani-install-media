@@ -34,7 +34,8 @@ check_gpg_key
 # Set up Btrfs image for base system (10G)
 # ---------------------------------------------------------------------------
 BASE_IMG="${BUILD_DIR}/base.img"
-LOOP_DEVICE=$(setup_btrfs_image "$BASE_IMG" "10G")
+setup_btrfs_image "$BASE_IMG" "10G"
+# LOOP_DEVICE is set by setup_btrfs_image reuse dont specify here
 SUBVOL_MOUNT="${BUILD_DIR}/${BASE_SUBVOL}"
 
 # ---------------------------------------------------------------------------

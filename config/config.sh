@@ -245,6 +245,7 @@ setup_btrfs_image() {
     log "Formatting $loop_device as Btrfs..."
     mkfs.btrfs -f "$loop_device" || die "Failed to format $img_path as Btrfs"
 
+    LOOP_DEVICE="$loop_device" #imp do not remove
     # Print the loop device path — this is the function's return value.
     echo "$loop_device"
 }
