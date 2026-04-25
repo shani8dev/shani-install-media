@@ -259,5 +259,9 @@ log "SUCCESS: Promoted latest to stable!"
 log "========================================="
 log "Release: ${LATEST_RELEASE}"
 log "Profile: ${PROFILE}"
-[[ "${NO_SF}" == "true" ]] && log "Note: SourceForge was skipped (--no-sf)"
-[[ "${NO_R2}" == "true" ]] && log "Note: Cloudflare R2 was skipped (--no-r2)"
+# Use if/then instead of [[ ]] && log — when the condition is false the [[ ]]
+# returns exit 1, and if it is the last statement it becomes the script exit
+# code, making CI report failure despite a successful promotion.
+if [[ "${NO_SF}" == "true" ]]; then log "Note: SourceForge was skipped (--no-sf)"; fi
+if [[ "${NO_R2}" == "true" ]]; then log "Note: Cloudflare R2 was skipped (--no-r2)"; fi
+exit 0
