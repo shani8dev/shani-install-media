@@ -109,17 +109,21 @@ NETWORK_TIMEOUT=30
 _fetch_from_r2() {
   if [[ -n "${R2_BUCKET:-}" ]]; then
     log "Step 1: Fetching latest.txt from R2 (rclone)..."
-    rclone copy "r2:${R2_BUCKET}/${PROFILE}/latest.txt" "${PROFILE_DIR}" 2>/dev/null \
-      && [[ -s "${LATEST_TXT}" ]] && return 0
+    if rclone copy "r2:${R2_BUCKET}/${PROFILE}/latest.txt" "${PROFILE_DIR}" 2>/dev/null \
+        && [[ -s "${LATEST_TXT}" ]]; then
+      return 0
+    fi
   fi
   if [[ -n "${R2_BASE_URL:-}" ]]; then
     log "Step 1: Fetching latest.txt from R2 (HTTP)..."
-    curl -fsSL \
-      --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-      --max-time "$NETWORK_TIMEOUT" --connect-timeout 10 \
-      --output "${LATEST_TXT}" \
-      "${R2_BASE_URL}/${PROFILE}/latest.txt" 2>/dev/null \
-      && [[ -s "${LATEST_TXT}" ]] && return 0
+    if curl -fsSL \
+        --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+        --max-time "$NETWORK_TIMEOUT" --connect-timeout 10 \
+        --output "${LATEST_TXT}" \
+        "${R2_BASE_URL}/${PROFILE}/latest.txt" 2>/dev/null \
+        && [[ -s "${LATEST_TXT}" ]]; then
+      return 0
+    fi
   fi
   return 1
 }

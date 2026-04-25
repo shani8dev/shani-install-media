@@ -216,7 +216,7 @@ OUTPUT_FILE="${OUTPUT_SUBDIR}/snapfs.zst"
 
 log "Creating btrfs image ${SNAP_IMG}"
 
-setup_btrfs_image "$SNAP_IMG" "10G"
+LOOP_DEVICE=$(setup_btrfs_image "$SNAP_IMG" "10G")
 
 # ---------------------------------------------------------------------------
 # Cleanup trap — releases mount and loop device on any exit
@@ -282,13 +282,14 @@ btrfs_send_snapshot "$SNAP_MOUNT" "$OUTPUT_FILE"
 btrfs property set -f -ts "$SNAP_MOUNT" ro false \
     || die "Failed to reset snap subvolume to writable"
 
-# Detach cleanly; clear LOOP_DEVICE so the EXIT trap skips the detach.
-detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE"
+# Detach cleanly; clear LOOP_DEVICE BEFORE calling detach so the EXIT trap
+# never attempts a second detach if detach_btrfs_image fails partway through.
+LOOP_DEVICE_TMP="$LOOP_DEVICE"
 LOOP_DEVICE=""
+detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE_TMP"
 
 log "==========================================="
 log "Snap image created successfully!"
 log "Output: ${OUTPUT_FILE}"
 log "Contains: ${#snaps[@]} snaps with assertions"
 log "==========================================="
-exit 0

@@ -208,6 +208,10 @@ if [[ "$FROM_R2" == "true" ]]; then
     r2_download "${R2_DATED_URL}/${r2_base_image}" "${OUTPUT_SUBDIR}/${r2_base_image}" true
   fi
 
+  # Prepare GPG trust before verifying — ensures the key has ultimate trust
+  # in BUILDER_GNUPGHOME so the signature check doesn't fail or warn.
+  gpg_prepare_keyring
+
   # Sidecar files (.sha256 and .asc) are mandatory — refuse to build from an unverified image.
   if [[ ! -f "${OUTPUT_SUBDIR}/${r2_base_image}.sha256" ]]; then
     r2_download "${R2_DATED_URL}/${r2_base_image}.sha256" \
@@ -217,10 +221,6 @@ if [[ "$FROM_R2" == "true" ]]; then
     r2_download "${R2_DATED_URL}/${r2_base_image}.asc" \
                 "${OUTPUT_SUBDIR}/${r2_base_image}.asc" true
   fi
-
-  # Prepare GPG trust before verifying — ensures the key has ultimate trust
-  # in BUILDER_GNUPGHOME so the signature check doesn't fail or warn.
-  gpg_prepare_keyring
 
   # Verify integrity and authenticity — dies on any mismatch.
   verify_base_image "${OUTPUT_SUBDIR}/${r2_base_image}"
@@ -293,6 +293,8 @@ AIROOTFS_ETC="${ISO_PROFILES_DIR}/${PROFILE}/airootfs/etc"
 PROFILE_MARKER="${AIROOTFS_ETC}/shani-build-profile"
 mkdir -p "$AIROOTFS_ETC"
 echo "${PROFILE}" > "${PROFILE_MARKER}"
+# Use a compound trap so the profile marker is cleaned up on exit without
+# clobbering any EXIT trap already set by the caller or future additions.
 trap 'rm -f "${PROFILE_MARKER}"' EXIT
 
 log "Running mkarchiso..."

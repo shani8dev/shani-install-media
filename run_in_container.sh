@@ -43,6 +43,17 @@ CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CONTAINER_SNAPD_DATA="/var/lib/snapd"
 CONTAINER_SNAPD_SEED="/tmp/snap-seed"
 
+# ---------------------------------------------------------------------------
+# Detect container runtime: prefer docker, fall back to podman
+# ---------------------------------------------------------------------------
+if docker version &>/dev/null 2>&1; then
+    CONTAINER_RUNTIME="docker"
+elif podman version &>/dev/null 2>&1; then
+    CONTAINER_RUNTIME="podman"
+else
+    echo "[ERROR] Neither docker nor podman is available." >&2
+    exit 1
+fi
 DOCKER_IMAGE="${DOCKER_IMAGE:-docker.io/shrinivasvkumbhar/shani-builder}"
 CUSTOM_MIRROR="${CUSTOM_MIRROR:-https://mirror.albony.in/archlinux/\$repo/os/\$arch}"
 
@@ -74,7 +85,7 @@ USER_CMD=$(printf '%q ' "$CMD" "$@")
 IMPORT_KEYS_CMD=""
 
 # Podman's gpg-agent socket handling is broken for pacman — disable sig checks
-if podman version &>/dev/null 2>&1; then
+if [[ "${CONTAINER_RUNTIME}" == "podman" ]]; then
     IMPORT_KEYS_CMD="sed -i 's/^SigLevel[[:space:]]*.*/SigLevel = Never/' /etc/pacman.conf && "
 fi
 
@@ -118,12 +129,12 @@ FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 # ---------------------------------------------------------------------------
 # Pull latest builder image (non-fatal — uses cached image if offline)
 # ---------------------------------------------------------------------------
-docker pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} — using cached image"
+"${CONTAINER_RUNTIME}" pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} — using cached image"
 
 # ---------------------------------------------------------------------------
 # Run the container
 # ---------------------------------------------------------------------------
-docker run --rm ${TTY_FLAGS} --privileged \
+"${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
     --tmpfs /tmp \
     --tmpfs /run/lock \
     --tmpfs /run \

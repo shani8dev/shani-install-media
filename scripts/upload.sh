@@ -44,7 +44,11 @@ r2_cleanup() {
   stable_content=$(rclone cat "r2:${R2_BUCKET}/${PROFILE}/stable.txt" 2>/dev/null || true)
   if [[ -n "$stable_content" ]]; then
     stable_date=$(echo "$stable_content" | grep -oE '[0-9]{8}' | head -n1 || true)
-    [[ -n "$stable_date" ]] && log "R2: stable build pinned to: ${stable_date}"
+    if [[ -n "$stable_date" ]]; then
+      log "R2: stable build pinned to: ${stable_date}"
+    else
+      log "R2: stable.txt exists but contains no 8-digit date — stable pin skipped."
+    fi
   fi
 
   local all_dates=()
@@ -61,14 +65,14 @@ r2_cleanup() {
   local keep=()
   [[ ${#all_dates[@]} -gt 0 ]] && keep+=("${all_dates[0]}")
   [[ ${#all_dates[@]} -gt 1 ]] && keep+=("${all_dates[1]}")
-  if [[ -n "$stable_date" && ! " ${keep[*]} " =~ " ${stable_date} " ]]; then
+  if [[ -n "$stable_date" && ! " ${keep[*]} " =~ (^|[[:space:]])"${stable_date}"([[:space:]]|$) ]]; then
     keep+=("$stable_date")
   fi
 
   log "R2: keeping folders: ${keep[*]}"
 
   for d in "${all_dates[@]}"; do
-    if [[ ! " ${keep[*]} " =~ " ${d} " ]]; then
+    if [[ ! " ${keep[*]} " =~ (^|[[:space:]])"${d}"([[:space:]]|$) ]]; then
       log "R2: deleting old build folder ${PROFILE}/${d}/"
       rclone purge "r2:${R2_BUCKET}/${PROFILE}/${d}" \
         || log "Warning: R2 cleanup failed for ${PROFILE}/${d} (non-fatal)"
@@ -273,8 +277,11 @@ r2_cleanup
 # ---------------------------------------------------------------------------
 if [[ "${NO_SF}" == "false" && "${VERIFY_ONLY}" != "true" && "$MODE" != "iso" ]]; then
   log "Verifying uploaded base image artifact on SourceForge..."
-  BASE_ZST=$(ls "${OUTPUT_SUBDIR}"/*.zst 2>/dev/null \
-    | grep -v flatpakfs | grep -v snapfs | head -1 || true)
+  BASE_ZST=""
+  for _f in "${OUTPUT_SUBDIR}"/*.zst; do
+    [[ "$_f" == *flatpakfs.zst || "$_f" == *snapfs.zst ]] && continue
+    [[ -f "$_f" ]] && { BASE_ZST="$_f"; break; }
+  done
 
   if [[ -n "$BASE_ZST" ]]; then
     REMOTE_SHA256_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${RESOLVED_DATE}/$(basename "${BASE_ZST}").sha256"

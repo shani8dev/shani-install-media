@@ -128,7 +128,7 @@ shift
 _get_profile() {
   local _prev="" _profile=""
   for _arg in "$@"; do
-    [[ "${_prev}" == "-p" ]] && _profile="$_arg"
+    [[ "${_prev}" == "-p" ]] && { _profile="$_arg"; _prev="$_arg"; continue; }
     _prev="$_arg"
   done
   echo "$_profile"
@@ -156,7 +156,8 @@ _split_args() {
 # this value instead of re-evaluating `date`, so a midnight boundary
 # during a long compound build never splits artifacts across two folders.
 # ---------------------------------------------------------------------------
-export BUILD_DATE="$(date +%Y%m%d)"
+BUILD_DATE="$(date +%Y%m%d)"
+export BUILD_DATE
 
 # ---------------------------------------------------------------------------
 # Dispatch
@@ -198,9 +199,9 @@ case "$COMMAND" in
     _ALL_PROFILE="$(_get_profile "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}")"
     [[ -z "$_ALL_PROFILE" ]] && die "Profile (-p) is required for the 'all' command."
 
-    ./scripts/build-base-image.sh "${_BUILD_ARGS[@]}"
-    ./scripts/release.sh          "${_BUILD_ARGS[@]}" latest
-    ./scripts/upload.sh           "${_BUILD_ARGS[@]}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" image
+    ./scripts/build-base-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+    ./scripts/release.sh          "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" latest
+    ./scripts/upload.sh           "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" image
     ;;
 
   # -------------------------------------------------------------------------
@@ -211,26 +212,26 @@ case "$COMMAND" in
     _FULL_PROFILE="$(_get_profile "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}")"
     [[ -z "$_FULL_PROFILE" ]] && die "Profile (-p) is required for the 'full' command."
 
-    ./scripts/build-base-image.sh "${_BUILD_ARGS[@]}"
+    ./scripts/build-base-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
 
     if [[ -f "${IMAGE_PROFILES_DIR}/${_FULL_PROFILE}/flatpak-packages.txt" ]]; then
       log "flatpak-packages.txt found — building Flatpak image..."
-      ./scripts/build-flatpak-image.sh "${_BUILD_ARGS[@]}"
+      ./scripts/build-flatpak-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
       log "No flatpak-packages.txt for profile '${_FULL_PROFILE}' — skipping Flatpak build."
     fi
 
     if [[ -f "${IMAGE_PROFILES_DIR}/${_FULL_PROFILE}/snap-packages.txt" ]]; then
       log "snap-packages.txt found — building Snap image..."
-      ./scripts/build-snap-image.sh "${_BUILD_ARGS[@]}"
+      ./scripts/build-snap-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
       log "No snap-packages.txt for profile '${_FULL_PROFILE}' — skipping Snap build."
     fi
 
-    ./scripts/build-iso.sh    "${_BUILD_ARGS[@]}"
-    ./scripts/repack-iso.sh   "${_BUILD_ARGS[@]}"
-    ./scripts/release.sh      "${_BUILD_ARGS[@]}" latest
-    ./scripts/upload.sh       "${_BUILD_ARGS[@]}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" all
+    ./scripts/build-iso.sh    "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+    ./scripts/repack-iso.sh   "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+    ./scripts/release.sh      "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" latest
+    ./scripts/upload.sh       "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" all
     ;;
 
   # -------------------------------------------------------------------------
@@ -253,14 +254,14 @@ case "$COMMAND" in
       log "Signed ISO already exists in ${_ISO_OUTDIR} — skipping build and repack, proceeding to upload."
     elif find "${_ISO_OUTDIR}" -maxdepth 1 -name '*.iso' ! -name 'signed_*.iso' 2>/dev/null | grep -q .; then
       log "Unsigned ISO found in ${_ISO_OUTDIR} — skipping build-iso, running repack then upload."
-      ./scripts/repack-iso.sh "${_BUILD_ARGS[@]}"
+      ./scripts/repack-iso.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
       log "No ISO found in ${_ISO_OUTDIR} — running full iso-only pipeline."
-      ./scripts/build-iso.sh  "${_BUILD_ARGS[@]}" --from-r2
-      ./scripts/repack-iso.sh "${_BUILD_ARGS[@]}"
+      ./scripts/build-iso.sh  "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" --from-r2
+      ./scripts/repack-iso.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     fi
 
-    ./scripts/upload.sh "${_BUILD_ARGS[@]}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" iso
+    ./scripts/upload.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" iso
     ;;
 
   # -------------------------------------------------------------------------

@@ -191,7 +191,8 @@ resolve_build_date() {
 
     local latest
     latest=$(find "${OUTPUT_DIR}/${profile}" -maxdepth 1 -type d -name '[0-9]*' 2>/dev/null \
-        | sort -r | head -n1 | xargs basename 2>/dev/null || true)
+        | sort -r | head -n1)
+    latest="${latest##*/}"  # basename without xargs
 
     if [[ -z "${latest}" ]]; then
         die "No build directory found under ${OUTPUT_DIR}/${profile}"
@@ -228,10 +229,10 @@ setup_btrfs_image() {
         local existing_loop
         existing_loop=$(losetup -j "$img_path" | cut -d: -f1)
         losetup -d "$existing_loop" \
-            || warn "Failed to detach existing loop device: $existing_loop" >&2
+            || warn "Failed to detach existing loop device: $existing_loop"
     fi
 
-    log "Removing existing image file (if any): $img_path" >&2
+    log "Removing existing image file (if any): $img_path"
     rm -f "$img_path"
 
     fallocate -l "$size" "$img_path" || die "Failed to allocate image file: $img_path"
@@ -239,13 +240,11 @@ setup_btrfs_image() {
     local loop_device
     loop_device=$(losetup --find --show "$img_path") \
         || die "Failed to setup loop device for $img_path"
-    log "Loop device assigned: $loop_device" >&2
+    log "Loop device assigned: $loop_device"
 
-    log "Formatting $loop_device as Btrfs..." >&2
+    log "Formatting $loop_device as Btrfs..."
     mkfs.btrfs -f "$loop_device" || die "Failed to format $img_path as Btrfs"
 
-
-    LOOP_DEVICE="$loop_device"
     # Print the loop device path — this is the function's return value.
     echo "$loop_device"
 }

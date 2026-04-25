@@ -2,6 +2,7 @@
 # build-flatpak-image.sh — Build the Flatpak image (container-only)
 
 set -Eeuo pipefail
+set -Eeuo pipefail
 
 # Ensure machine-id exists for DBUS
 if [ ! -f /etc/machine-id ]; then
@@ -217,32 +218,32 @@ fi
 
 while IFS= read -r pkg || [[ -n "$pkg" ]]; do
     keep=0
-	# Always remove "runtime/" prefix (if present) and extract the base name.
-	pkg_base="${pkg#runtime/}"
-	pkg_base="${pkg_base%%/*}"   # e.g., "org.gnome.Loupe.HEIC" or "org.gnome.Boxes.Extension.OsinfoDb"
+    # Always remove "runtime/" prefix (if present) and extract the base name.
+    pkg_base="${pkg#runtime/}"
+    pkg_base="${pkg_base%%/*}"   # e.g., "org.gnome.Loupe.HEIC" or "org.gnome.Boxes.Extension.OsinfoDb"
 
-	# Derive a secondary "base app" name:
-	if [[ "$pkg_base" == *".Extension."* ]]; then
-		# For extension packages, remove the extension part.
-		base_app="${pkg_base%%.Extension.*}"   # e.g., from "org.gnome.Boxes.Extension.OsinfoDb" derive "org.gnome.Boxes"
-	else
-		# For non-extension packages, remove the last dot-separated token.
-		base_app="${pkg_base%.*}"              # e.g., from "org.gnome.Loupe.HEIC" derive "org.gnome.Loupe"
-	fi
+    # Derive a secondary "base app" name:
+    if [[ "$pkg_base" == *".Extension."* ]]; then
+        # For extension packages, remove the extension part.
+        base_app="${pkg_base%%.Extension.*}"   # e.g., from "org.gnome.Boxes.Extension.OsinfoDb" derive "org.gnome.Boxes"
+    else
+        # For non-extension packages, remove the last dot-separated token.
+        base_app="${pkg_base%.*}"              # e.g., from "org.gnome.Loupe.HEIC" derive "org.gnome.Loupe"
+    fi
 
-	if printf '%s\n' "${packages[@]}" | grep -Fxq "$pkg_base" || \
-	   printf '%s\n' "${packages[@]}" | grep -Fxq "$base_app"; then
-		log "Keeping runtime $pkg because required package ($pkg_base or $base_app) is in the package list"
-		keep=1
-	fi
+    if printf '%s\n' "${packages[@]}" | grep -Fxq "$pkg_base" || \
+       printf '%s\n' "${packages[@]}" | grep -Fxq "$base_app"; then
+        log "Keeping runtime $pkg because required package ($pkg_base or $base_app) is in the package list"
+        keep=1
+    fi
 
-	# Special case: Keep Wine extensions if Bottles is installed
-	if printf '%s\n' "${packages[@]}" | grep -q "bottles"; then
-		if [[ "$pkg_base" == org.winehq.Wine.* ]]; then
-			log "Keeping Wine extension $pkg (Bottles is installed)"
-			keep=1
-		fi
-	fi
+    # Special case: Keep Wine extensions if Bottles is installed
+    if printf '%s\n' "${packages[@]}" | grep -q "bottles"; then
+        if [[ "$pkg_base" == org.winehq.Wine.* ]]; then
+            log "Keeping Wine extension $pkg (Bottles is installed)"
+            keep=1
+        fi
+    fi
 
     # Check if pkg is required as a runtime
     if [[ $keep -eq 0 ]]; then
@@ -332,11 +333,11 @@ fi
 log "Configuring gaming application permissions..."
 
 declare -A gaming_apps=(
-    ["com.valvesoftware.Steam"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
-    ["com.heroicgameslauncher.hgl"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
-    ["net.lutris.Lutris"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
-    ["org.libretro.RetroArch"]="~/Games:create,xdg-download,/mnt,/media,/run/media"
-    ["com.usebottles.bottles"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["com.valvesoftware.Steam"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["com.heroicgameslauncher.hgl"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["net.lutris.Lutris"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["org.libretro.RetroArch"]="$HOME/Games:create,xdg-download,/mnt,/media,/run/media"
+    ["com.usebottles.bottles"]="$HOME/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)
@@ -363,13 +364,13 @@ log "Gaming app permissions configured"
 # Pre-flight: verify host Flatpak data fits in the target image size (14 G).
 # A 10 % headroom is reserved for Btrfs metadata overhead.
 # ---------------------------------------------------------------------------
-FLATPAK_IMG_SIZE_BYTES=$(( 15 * 1024 * 1024 * 1024 ))
+FLATPAK_IMG_SIZE_BYTES=$(( 14 * 1024 * 1024 * 1024 ))
 FLATPAK_HEADROOM=90  # percent of image usable
 FLATPAK_DATA_BYTES=$(du -sb /var/lib/flatpak 2>/dev/null | awk '{print $1}')
 FLATPAK_USABLE=$(( FLATPAK_IMG_SIZE_BYTES * FLATPAK_HEADROOM / 100 ))
 if (( FLATPAK_DATA_BYTES > FLATPAK_USABLE )); then
     die "Flatpak data ($(( FLATPAK_DATA_BYTES / 1024 / 1024 )) MiB) exceeds 90% of the" \
-        "15 GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Increase the image" \
+        "14 GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Increase the image" \
         "size in build-flatpak-image.sh or reduce the package set."
 fi
 
@@ -379,10 +380,7 @@ FLATPAK_SUBVOL="flatpak_subvol"
 FLATPAK_MOUNT="${BUILD_DIR}/flatpak_mount"
 OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
-
-# This function is assumed to set up a loop device and create a Btrfs image.
-setup_btrfs_image "$FLATPAK_IMG" "15G"  # Make sure this function is defined
-# LOOP_DEVICE is set by setup_btrfs_image
+LOOP_DEVICE=$(setup_btrfs_image "$FLATPAK_IMG" "14G")
 
 # ---------------------------------------------------------------------------
 # Cleanup trap — releases mount and loop device on any exit
@@ -442,8 +440,10 @@ btrfs_send_snapshot "$FLATPAK_MOUNT" "${OUTPUT_FILE}"
 btrfs property set -f -ts "$FLATPAK_MOUNT" ro false \
     || die "Failed to reset subvolume properties"
 
-# Detach the Btrfs image; clear LOOP_DEVICE so the EXIT trap skips the detach.
-detach_btrfs_image "$FLATPAK_MOUNT" "$LOOP_DEVICE"
+# Detach the Btrfs image; clear LOOP_DEVICE BEFORE calling detach so the
+# EXIT trap never attempts a second detach if detach_btrfs_image fails.
+LOOP_DEVICE_TMP="$LOOP_DEVICE"
 LOOP_DEVICE=""
+detach_btrfs_image "$FLATPAK_MOUNT" "$LOOP_DEVICE_TMP"
 
 log "Flatpak image created successfully at ${OUTPUT_FILE}"

@@ -34,8 +34,7 @@ check_gpg_key
 # Set up Btrfs image for base system (10G)
 # ---------------------------------------------------------------------------
 BASE_IMG="${BUILD_DIR}/base.img"
-setup_btrfs_image "$BASE_IMG" "10G"
-# LOOP_DEVICE is set by setup_btrfs_image
+LOOP_DEVICE=$(setup_btrfs_image "$BASE_IMG" "10G")
 SUBVOL_MOUNT="${BUILD_DIR}/${BASE_SUBVOL}"
 
 # ---------------------------------------------------------------------------
@@ -187,7 +186,6 @@ getent group nixbld     &>/dev/null || groupadd -r nixbld
 getent group lxd        &>/dev/null || groupadd -r lxd
 getent group libvirt    &>/dev/null || groupadd -r libvirt
 getent group sambashare &>/dev/null || groupadd -r sambashare
-
 # subuid/subgid for root — required for rootless podman, lxc, lxd
 usermod -v 1000000-1000999999 -w 1000000-1000999999 root
 
@@ -214,12 +212,11 @@ btrfs property set -f -ts "${SUBVOL_MOUNT}" ro false \
     || die "Failed to reset subvolume to writable"
 
 # detach_btrfs_image handles unmounting and loop detachment.
-# The EXIT trap is still registered but detach_btrfs_image calls umount and
-# losetup -d first; the trap's mountpoint / losetup checks will find them
-# already gone and skip gracefully.
-detach_btrfs_image "${SUBVOL_MOUNT}" "$LOOP_DEVICE"
-# Clear so the EXIT trap doesn't attempt a second detach.
+# Clear LOOP_DEVICE BEFORE calling detach so the EXIT trap never attempts
+# a second detach if detach_btrfs_image itself fails partway through.
+LOOP_DEVICE_TMP="$LOOP_DEVICE"
 LOOP_DEVICE=""
+detach_btrfs_image "${SUBVOL_MOUNT}" "$LOOP_DEVICE_TMP"
 
 # ---------------------------------------------------------------------------
 # Checksum and sign

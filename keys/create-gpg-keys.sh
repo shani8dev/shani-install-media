@@ -121,18 +121,18 @@ fi
 
 # ── Read fingerprint from existing private key (skip-generation path) ─────────
 if [[ -z "${FINGERPRINT:-}" ]]; then
-    TMPGNUPG="$(mktemp -d)"
-    chmod 700 "$TMPGNUPG"
-    trap 'rm -rf "$TMPGNUPG"' EXIT
+    TMPGNUPG_READFP="$(mktemp -d)"
+    chmod 700 "$TMPGNUPG_READFP"
+    trap 'rm -rf "$TMPGNUPG_READFP"' EXIT
 
-    gpg --homedir "$TMPGNUPG" \
+    gpg --homedir "$TMPGNUPG_READFP" \
         --batch --yes \
         --pinentry-mode loopback \
         --passphrase "$GPG_PASSPHRASE" \
         --import "$PRIVATE_KEY_FILE" >/dev/null 2>&1 \
         || { echo "ERROR: could not import $PRIVATE_KEY_FILE (wrong passphrase?)" >&2; exit 1; }
 
-    FINGERPRINT=$(gpg --homedir "$TMPGNUPG" --list-keys --with-colons \
+    FINGERPRINT=$(gpg --homedir "$TMPGNUPG_READFP" --list-keys --with-colons \
         | awk -F: '/^fpr/{print $10; exit}')
 
     [[ -n "$FINGERPRINT" ]] || { echo "ERROR: could not read fingerprint" >&2; exit 1; }
@@ -191,35 +191,36 @@ if [[ "$UPLOAD_KEY" == true ]]; then
     # Import into a temp keyring so we can send-keys without touching the user's keyring
     TMPGNUPG_UPLOAD="$(mktemp -d)"
     chmod 700 "$TMPGNUPG_UPLOAD"
-    trap 'rm -rf "$TMPGNUPG_UPLOAD"' EXIT
+    # Use a subshell for cleanup so this trap doesn't overwrite the outer one
+    ( trap 'rm -rf "$TMPGNUPG_UPLOAD"' EXIT
+      gpg --homedir "$TMPGNUPG_UPLOAD" \
+          --batch --import "$PUBLIC_KEY_FILE" >/dev/null 2>&1
 
-    gpg --homedir "$TMPGNUPG_UPLOAD" \
-        --batch --import "$PUBLIC_KEY_FILE" >/dev/null 2>&1
+      UPLOAD_OK=0
+      UPLOAD_FAIL=0
+      for KS in "${KEYSERVERS[@]}"; do
+          printf "   %-40s " "$KS"
+          if gpg --homedir "$TMPGNUPG_UPLOAD" \
+                 --batch \
+                 --keyserver "$KS" \
+                 --send-keys "$FINGERPRINT" 2>/dev/null; then
+              echo "✅"
+              (( UPLOAD_OK++ )) || true
+          else
+              echo "❌ (failed or unreachable)"
+              (( UPLOAD_FAIL++ )) || true
+          fi
+      done
 
-    UPLOAD_OK=0
-    UPLOAD_FAIL=0
-    for KS in "${KEYSERVERS[@]}"; do
-        printf "   %-40s " "$KS"
-        if gpg --homedir "$TMPGNUPG_UPLOAD" \
-               --batch \
-               --keyserver "$KS" \
-               --send-keys "$FINGERPRINT" 2>/dev/null; then
-            echo "✅"
-            (( UPLOAD_OK++ )) || true
-        else
-            echo "❌ (failed or unreachable)"
-            (( UPLOAD_FAIL++ )) || true
-        fi
-    done
-
-    echo ""
-    if [[ $UPLOAD_OK -gt 0 ]]; then
-        echo "✅ Key uploaded to ${UPLOAD_OK}/${#KEYSERVERS[@]} keyserver(s)."
-        echo "   Note: keyserver propagation can take a few hours."
-        echo "   Verify with:"
-        echo "     gpg --keyserver hkps://keys.openpgp.org --recv-keys ${FINGERPRINT}"
-    else
-        echo "⚠️  Upload failed on all keyservers. Check your network and try again."
-        echo "   Manual upload: gpg --keyserver hkps://keys.openpgp.org --send-keys ${FINGERPRINT}"
-    fi
+      echo ""
+      if [[ $UPLOAD_OK -gt 0 ]]; then
+          echo "✅ Key uploaded to ${UPLOAD_OK}/${#KEYSERVERS[@]} keyserver(s)."
+          echo "   Note: keyserver propagation can take a few hours."
+          echo "   Verify with:"
+          echo "     gpg --keyserver hkps://keys.openpgp.org --recv-keys ${FINGERPRINT}"
+      else
+          echo "⚠️  Upload failed on all keyservers. Check your network and try again."
+          echo "   Manual upload: gpg --keyserver hkps://keys.openpgp.org --send-keys ${FINGERPRINT}"
+      fi
+    )
 fi
