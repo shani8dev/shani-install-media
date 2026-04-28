@@ -1,0 +1,129 @@
+name: Build ShaniOS AMI
+
+on:
+  # Build on every push to main that changes packer files or base image scripts
+  push:
+    branches: [main]
+    paths:
+      - "packer/**"
+      - "scripts/**"
+      - "config/config.sh"
+  # Allow manual trigger with profile selection
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Image profile to build"
+        required: true
+        default: "gnome"
+        type: choice
+        options: [gnome, plasma, cosmic]
+      promote_stable:
+        description: "Promote to stable after a successful build"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PACKER_VERSION: "1.11.0"
+  # Default profile for push-triggered builds (override via workflow_dispatch)
+  SHANIOS_PROFILE: ${{ github.event.inputs.profile || 'gnome' }}
+
+jobs:
+  build-ami:
+    name: "Build AMI (${{ github.event.inputs.profile || 'gnome' }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    permissions:
+      id-token: write   # OIDC token for AssumeRoleWithWebIdentity
+      contents: read
+
+    steps:
+      # ── Source ────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── AWS credentials via OIDC (no long-lived keys) ─────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PACKER_ROLE_ARN }}
+          aws-region:     ${{ secrets.AWS_REGION }}
+
+      # ── Packer ────────────────────────────────────────────────────────────
+      - name: Install Packer ${{ env.PACKER_VERSION }}
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Packer init (download plugins)
+        working-directory: packer/templates
+        run: packer init .
+
+      - name: Packer validate
+        working-directory: packer
+        env:
+          PKR_VAR_aws_region:         ${{ secrets.AWS_REGION }}
+          PKR_VAR_shanios_profile:    ${{ env.SHANIOS_PROFILE }}
+          PKR_VAR_r2_base_url:        ${{ secrets.R2_BASE_URL }}
+          PKR_VAR_gpg_key_id:         ${{ secrets.GPG_KEY_ID }}
+          # gpg_public_key intentionally omitted for validate (blank = skip GPG)
+        run: packer validate templates/
+
+      - name: Packer build
+        id: packer_build
+        working-directory: packer
+        env:
+          PACKER_LOG:      1
+          PACKER_LOG_PATH: /tmp/packer-build.log
+          PKR_VAR_aws_region:         ${{ secrets.AWS_REGION }}
+          PKR_VAR_instance_type:      ${{ vars.PACKER_INSTANCE_TYPE || 't3.xlarge' }}
+          PKR_VAR_shanios_profile:    ${{ env.SHANIOS_PROFILE }}
+          PKR_VAR_r2_base_url:        ${{ secrets.R2_BASE_URL }}
+          PKR_VAR_gpg_key_id:         ${{ secrets.GPG_KEY_ID }}
+          PKR_VAR_gpg_public_key:     ${{ secrets.GPG_PUBLIC_KEY }}
+          PKR_VAR_root_volume_size_gb: ${{ vars.ROOT_VOLUME_SIZE_GB || '30' }}
+          PKR_VAR_tags: |
+            {
+              OS         = "ShaniOS"
+              ManagedBy  = "Packer"
+              GitSHA     = "${{ github.sha }}"
+              GitRef     = "${{ github.ref_name }}"
+              Profile    = "${{ env.SHANIOS_PROFILE }}"
+            }
+        run: |
+          packer build \
+            -timestamp-ui \
+            -var "shanios_profile=${SHANIOS_PROFILE}" \
+            templates/
+
+      # ── Extract AMI ID from manifest ──────────────────────────────────────
+      - name: Read AMI ID from manifest
+        id: ami
+        if: success()
+        run: |
+          AMI_ID=$(jq -r '.builds[-1].artifact_id' packer/packer-manifest.json | cut -d: -f2)
+          echo "ami_id=${AMI_ID}" >> "$GITHUB_OUTPUT"
+          echo "Built AMI: ${AMI_ID}"
+
+      # ── Upload Packer log on failure ──────────────────────────────────────
+      - name: Upload Packer log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-build-log
+          path: /tmp/packer-build.log
+          retention-days: 7
+
+      # ── Summary ───────────────────────────────────────────────────────────
+      - name: Job summary
+        if: success()
+        run: |
+          echo "## ShaniOS AMI Build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Profile | ${{ env.SHANIOS_PROFILE }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| AMI ID  | ${{ steps.ami.outputs.ami_id }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Region  | ${{ secrets.AWS_REGION }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Git SHA | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
