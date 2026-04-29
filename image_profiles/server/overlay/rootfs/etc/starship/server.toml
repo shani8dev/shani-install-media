@@ -1,0 +1,152 @@
+# /etc/starship/server.toml — ShaniOS server profile starship prompt config
+#
+# Design goals for server use:
+#   - Show host clearly (critical when SSHd into many machines)
+#   - Show exit code on failure
+#   - Show git status (useful for IaC/GitOps repos)
+#   - Show container context (podman/distrobox)
+#   - NO language version segments (no nodejs, python, rust, go — irrelevant for ops)
+#   - NO battery, bluetooth, or desktop environment info
+#   - Keep it fast — no slow external calls in prompt
+
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$container\
+$jobs\
+$status\
+$line_break\
+$character"""
+
+# ── Username ─────────────────────────────────────────────────────────────────
+[username]
+show_always = true
+style_user  = "bold green"
+style_root  = "bold red"
+format      = "[$user]($style)"
+
+# ── Hostname ─────────────────────────────────────────────────────────────────
+# Always show on server — you need to know which machine you're on
+[hostname]
+ssh_only  = false
+format    = "@[$hostname](bold yellow) "
+style     = "bold yellow"
+disabled  = false
+
+# ── Directory ────────────────────────────────────────────────────────────────
+[directory]
+truncation_length   = 4
+truncate_to_repo    = false
+style               = "bold cyan"
+format              = "[$path]($style)[$read_only]($read_only_style) "
+read_only           = " 🔒"
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+[git_branch]
+format = "[$symbol$branch]($style) "
+symbol = " "
+style  = "bold purple"
+
+[git_status]
+format      = '([\[$all_status$ahead_behind\]]($style) )'
+style       = "bold red"
+conflicted  = "⚠"
+ahead       = "⬆${count}"
+behind      = "⬇${count}"
+diverged    = "⬆${ahead_count}⬇${behind_count}"
+modified    = "!${count}"
+untracked   = "?${count}"
+staged      = "+${count}"
+deleted     = "✘${count}"
+
+# ── Container ─────────────────────────────────────────────────────────────────
+[container]
+format = "[$symbol \\[$name\\]]($style) "
+symbol = "⬡"
+style  = "bold blue"
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+[jobs]
+symbol    = "⚙"
+threshold = 1
+format    = "[$symbol $number]($style) "
+style     = "bold blue"
+
+# ── Exit status ───────────────────────────────────────────────────────────────
+[status]
+disabled        = false
+format          = "[$symbol $status]($style) "
+symbol          = "✗"
+success_symbol  = ""
+style           = "bold red"
+
+# ── Prompt character ─────────────────────────────────────────────────────────
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol   = "[❯](bold red)"
+vimcmd_symbol  = "[❮](bold green)"
+
+# ── Explicitly disabled — keep prompt fast on servers ─────────────────────────
+[aws]
+disabled = true
+[gcloud]
+disabled = true
+[azure]
+disabled = true
+[terraform]
+disabled = false   # show workspace — useful for infra servers
+[nodejs]
+disabled = true
+[python]
+disabled = true
+[rust]
+disabled = true
+[golang]
+disabled = true
+[java]
+disabled = true
+[ruby]
+disabled = true
+[php]
+disabled = true
+[dotnet]
+disabled = true
+[kotlin]
+disabled = true
+[lua]
+disabled = true
+[perl]
+disabled = true
+[swift]
+disabled = true
+[julia]
+disabled = true
+[crystal]
+disabled = true
+[elixir]
+disabled = true
+[elm]
+disabled = true
+[erlang]
+disabled = true
+[haskell]
+disabled = true
+[ocaml]
+disabled = true
+[scala]
+disabled = true
+[zig]
+disabled = true
+[nix_shell]
+disabled = true
+[conda]
+disabled = true
+[battery]
+disabled = true
+[time]
+disabled = false
+format   = "[$time]($style) "
+style    = "bold dimmed white"

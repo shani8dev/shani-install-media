@@ -1,0 +1,22 @@
+# /etc/audit/rules.d/10-server.rules
+-D
+-b 8192
+-f 1
+
+-w /etc/pam.d/ -p wa -k pam_changes
+-w /etc/security/ -p wa -k security_changes
+-w /var/log/faillog -p wa -k login_failures
+-w /var/log/lastlog -p wa -k logins
+-w /etc/passwd -p wa -k user_changes
+-w /etc/shadow -p wa -k user_changes
+-w /etc/group -p wa -k group_changes
+-w /etc/sudoers -p wa -k sudoers_changes
+-w /etc/sudoers.d/ -p wa -k sudoers_changes
+-w /etc/ssh/sshd_config -p wa -k sshd_config
+-w /etc/ssh/sshd_config.d/ -p wa -k sshd_config
+-a always,exit -F arch=b64 -S setuid -S setgid -S setreuid -S setregid -k priv_escalation
+-a always,exit -F arch=b64 -S execve -k exec
+-w /sbin/insmod -p x -k module_load
+-w /sbin/rmmod -p x -k module_load
+-w /sbin/modprobe -p x -k module_load
+-a always,exit -F arch=b64 -S init_module -S delete_module -k module_load

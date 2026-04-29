@@ -1,0 +1,18 @@
+# /etc/systemd/network/20-cloud-dhcp.network
+# Matches all Ethernet interfaces — covers ens5, eth0, enp*s* on AWS Nitro
+[Match]
+Type = ether
+Name = !lo
+
+[Network]
+DHCP = yes
+IPv6AcceptRA = yes
+MulticastDNS = no
+LLDP = no
+EmitLLDP = no
+
+[DHCP]
+UseDNS = yes
+UseNTP = yes
+UseMTU = yes
+RouteMetric = 100

@@ -1,0 +1,1 @@
+quiet console=tty1 console=ttyS0,115200n8 apparmor=1 security=apparmor audit=1 loglevel=3

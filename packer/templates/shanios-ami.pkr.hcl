@@ -9,20 +9,18 @@ packer {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Why amazon-ebssurrogate (not amazon-ebs)?
+# Why amazon-ebssurrogate?
 #
-# amazon-ebs can ONLY snapshot and register the instance's root EBS device as
-# the AMI root. ShaniOS requires a from-scratch GPT partition table with a
-# FAT32 EFI partition + Btrfs root — we cannot write that layout on top of the
-# running AL2023 root device that Packer is SSH'd into.
+# amazon-ebs can only snapshot the builder instance's root device.
+# That root device is already running Amazon Linux 2023 (ext4).
+# ShaniOS requires a from-scratch GPT layout: FAT32 EFI + Btrfs root.
 #
 # amazon-ebssurrogate solves this:
-#   1. Launches a builder instance (AL2023) with a secondary EBS volume (/dev/xvdf)
-#   2. Provisioners write ShaniOS onto /dev/xvdf (partitioning, Btrfs, blue/green)
-#   3. On build completion, Packer stops the instance, snapshots /dev/xvdf,
-#      and registers that snapshot as the AMI root device (/dev/xvda)
+#   1. Launches a builder (AL2023) with a secondary EBS volume (/dev/xvdf)
+#   2. Provisioners write ShaniOS onto /dev/xvdf
+#   3. Packer stops the instance, snapshots /dev/xvdf, registers it as AMI root
 #
-# The builder's own root volume (AL2023) is destroyed; /dev/xvdf becomes the AMI.
+# The builder's AL2023 root is discarded. /dev/xvdf becomes the AMI.
 # ─────────────────────────────────────────────────────────────────────────────
 
 source "amazon-ebssurrogate" "shanios" {
@@ -35,7 +33,6 @@ source "amazon-ebssurrogate" "shanios" {
   associate_public_ip_address = var.associate_public_ip
 
   # ── Builder host AMI: latest Amazon Linux 2023 x86_64 ────────────────────
-  # AL2023 ships with a kernel that has Btrfs support, plus dnf and partprobe.
   source_ami_filter {
     filters = {
       name                = "al2023-ami-*-x86_64"
@@ -50,8 +47,8 @@ source "amazon-ebssurrogate" "shanios" {
   ssh_timeout  = var.ssh_timeout
 
   # ── Builder root volume ───────────────────────────────────────────────────
-  # Needs to hold: AL2023 OS (~3 GiB) + the downloaded ShaniOS .zst (~4 GiB)
-  # + build tools. 20 GiB is ample. This volume is DELETED after the build.
+  # AL2023 OS (~3 GiB) + downloaded ShaniOS .zst (~2–4 GiB) + tools.
+  # 20 GiB is ample. Deleted after build.
   root_block_device {
     volume_type           = "gp3"
     volume_size           = 20
@@ -62,26 +59,23 @@ source "amazon-ebssurrogate" "shanios" {
   }
 
   # ── ShaniOS target volume ─────────────────────────────────────────────────
-  # Attached as /dev/xvdf. The bootstrap script partitions this disk, writes
-  # Btrfs subvolumes, and receives the ShaniOS base image into it.
-  # ebssurrogate snapshots this volume and registers it as the AMI root.
+  # Attached as /dev/xvdf. Bootstrap writes ShaniOS here.
+  # ebssurrogate snapshots this and registers it as the AMI root.
   launch_block_device_mappings {
     device_name           = "/dev/xvdf"
     volume_type           = "gp3"
     volume_size           = var.root_volume_size_gb
     iops                  = 3000
-    throughput            = 500   # fast I/O for the large btrfs receive
-    delete_on_termination = true  # ebssurrogate snapshots before termination
+    throughput            = 500
+    delete_on_termination = true
     encrypted             = false
     no_device             = false
   }
 
   # ── AMI root device registration ──────────────────────────────────────────
-  # ebssurrogate reads this block to know which secondary volume to snapshot
-  # and what device name to give it in the finished AMI.
   ami_root_device {
-    source_device_name    = "/dev/xvdf"  # the volume we wrote ShaniOS onto
-    device_name           = "/dev/xvda"  # device name in the registered AMI
+    source_device_name    = "/dev/xvdf"
+    device_name           = "/dev/xvda"
     volume_type           = "gp3"
     volume_size           = var.root_volume_size_gb
     iops                  = 3000
@@ -98,36 +92,25 @@ source "amazon-ebssurrogate" "shanios" {
   ami_ena_support         = true
   ami_sriov_net_support   = true
 
-  # ShaniOS uses systemd-boot with a UEFI EFI System Partition.
-  # "uefi-preferred" allows instances without UEFI support to fall back to BIOS
-  # (systemd-boot won't work there, but the instance will at least start).
-  # Use "uefi" if you only target Nitro-based instance types.
+  # uefi-preferred: works on Nitro (UEFI) and legacy instances (BIOS fallback)
+  # Use "uefi" if you target only Nitro (t3, m5, c5, r5 and newer)
   boot_mode = "uefi-preferred"
 
-  # GPT is required for the EFI System Partition. Inform the ebssurrogate
-  # source so it registers the AMI with the correct partition table type.
   ami_gpt_root_device_start_offset = 2048
 
   tags          = local.common_tags
   snapshot_tags = local.common_tags
 
-  # ── IAM (optional) ────────────────────────────────────────────────────────
-  # Uncomment if the builder instance needs to pull the image from a private S3
-  # bucket or write build artifacts to S3.
+  # Uncomment to grant the builder S3 access for private artifact buckets:
   # iam_instance_profile = "packer-shanios-builder"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Build
 # ─────────────────────────────────────────────────────────────────────────────
 build {
   name    = "shanios-ami"
   sources = ["source.amazon-ebssurrogate.shanios"]
 
-  # ── Stage 1: Bootstrap ────────────────────────────────────────────────────
-  # Downloads the base image, partitions /dev/xvdf (EFI + Btrfs),
-  # creates all subvolumes, receives the btrfs send-stream, creates @blue/@green,
-  # and writes /tmp/shanios-env.sh for subsequent stages.
+  # ── Stage 1: Partition /dev/xvdf, receive ShaniOS, create @blue/@green ────
   provisioner "shell" {
     script = "${path.root}/../scripts/00-bootstrap-shanios.sh"
 
@@ -140,29 +123,26 @@ build {
       "EFI_SIZE_MB=${var.efi_volume_size_mb}",
     ]
 
+    # Large image download + btrfs receive; allow generous time.
     timeout     = "45m"
     max_retries = 2
   }
 
-  # ── Stage 2: AWS configuration ────────────────────────────────────────────
-  # Sources /tmp/shanios-env.sh; writes fstab (by UUID), configures cloud-init,
-  # SSH hardening, systemd-boot entries for @blue and @green, and swapfile.
+  # ── Stage 2: AWS-specific system configuration ────────────────────────────
   provisioner "shell" {
     script  = "${path.root}/../scripts/01-configure-aws.sh"
     timeout = "20m"
   }
 
   # ── Stage 3: Verify ───────────────────────────────────────────────────────
-  # Runs as a separate script so it can source /tmp/shanios-env.sh at runtime.
-  # (Inline provisioners are interpolated by HCL at parse time, so
-  #  ${SHANIOS_BTRFS_MOUNT} would be treated as a Packer variable, not a
-  #  shell variable — a subtle but hard-to-debug failure mode.)
+  # Separate script so runtime shell vars (sourced from /tmp/shanios-env.sh)
+  # are expanded by bash at execution time, not by HCL at parse time.
   provisioner "shell" {
     script  = "${path.root}/../scripts/02-verify.sh"
     timeout = "5m"
   }
 
-  # ── Post-processor: build manifest ────────────────────────────────────────
+  # ── Manifest ──────────────────────────────────────────────────────────────
   post-processor "manifest" {
     output     = "${path.root}/../packer-manifest.json"
     strip_path = true
