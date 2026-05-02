@@ -1,5 +1,5 @@
-# /etc/systemd/network/20-cloud-dhcp.network
-# Matches all Ethernet interfaces — covers ens5, eth0, enp*s* on AWS Nitro
+# Matches all Ethernet interfaces — covers ens5, eth0, enp*s* on AWS Nitro.
+# Name=!lo excludes the loopback interface.
 [Match]
 Type = ether
 Name = !lo

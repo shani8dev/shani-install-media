@@ -1,22 +1,14 @@
 # image_profiles/server/package-list.txt
 # ShaniOS Server / AMI profile — headless, cloud-ready
 #
-# Design:
-#   - No desktop, display server, audio, GUI tools, or wireless stack
-#   - Networking via systemd-networkd (not NetworkManager)
-#   - Full container runtime: podman, buildah, distrobox
-#   - Security: apparmor, audit, fail2ban, firewalld
-#   - Cloud: cloud-init, amazon-ssm-agent, amazon-ec2-utils
-#   - Excellent terminal UX: zsh + starship + fzf + mcfly
-#
 # Meta-package policy:
-#   shani-tools-network  ✓  (>90% server-relevant; wireless_tools/usbutils masked)
-#   shani-core           ✗  (pulls waydroid, snapd, nix, lxd, shim — not for server)
-#   shani-network        ✗  (NM, ModemManager, wpa_supplicant, GUI tools — desktop only)
-#   shani-tools-extra    ✗  (pulls android-tools, vulkan-tools, clinfo — not for server)
-#   shani-desktop-*      ✗  (obviously)
+#   shani-tools-network  ✓  used directly (>90% server-relevant)
+#   shani-core           ✗  pulls waydroid/snapd/nix/lxd/shim — not for server
+#   shani-network        ✗  NM/ModemManager/wpa_supplicant/GUI — desktop only
+#   shani-tools-extra    ✗  pulls android-tools/vulkan-tools/clinfo
+#   shani-desktop-*      ✗  obviously
 
-# ── ShaniOS keyring (must be first — unlocks the shani repo) ─────────────────
+# ── ShaniOS keyring (must be first) ──────────────────────────────────────────
 shani-keyring
 
 # ── Base system ───────────────────────────────────────────────────────────────
@@ -34,8 +26,7 @@ dracut
 cpio
 
 # ── Secure Boot signing (needed by shani-deploy for UKI updates) ──────────────
-# Note: shim-signed and edk2-shell are intentionally omitted — AWS manages
-# its own boot chain and does not use MOK/shim.
+# shim-signed and edk2-shell intentionally omitted — AWS manages its own boot chain
 efibootmgr
 efitools
 sbctl
@@ -52,9 +43,7 @@ tpm2-tools
 tpm2-tss
 fwupd
 
-# ── Networking (systemd-networkd stack — no NetworkManager) ───────────────────
-# Selected from shani-network, excluding: NM, ModemManager, wpa_supplicant,
-# wireless-regdb, nm-connection-editor, modem-manager-gui, firewall-config
+# ── Networking (systemd-networkd — no NetworkManager) ─────────────────────────
 openssh
 wireguard-tools
 firewalld
@@ -66,11 +55,11 @@ nss-mdns
 openldap
 openfortivpn
 
-# ── Network tools (shani-tools-network) ───────────────────────────────────────
-# All tools from shani-tools-network are server-appropriate.
-# wireless_tools and usbutils are excluded — no Wi-Fi or USB on EC2.
-# We list the package directly so future updates to shani-tools-network
-# are pulled in automatically.
+# ── Network tools (shani-tools-network meta-package) ─────────────────────────
+# Covers: iftop bandwhich ethtool net-tools nmap traceroute whois tcpdump
+# vnstat arpwatch inetutils bind openbsd-netcat curl wget aria2 nbd rsync
+# zsync iperf3 mtr socat ngrep nethogs rclone restic tailscale cloudflared caddy
+# Note: wireless_tools and usbutils are transitive deps — harmless on EC2
 shani-tools-network
 
 # ── Cloud integration ─────────────────────────────────────────────────────────
@@ -128,12 +117,11 @@ vim
 nano
 micro
 tmux
-bc
+jq
 pv
-gettext
+bc
 
 # ── Shell: zsh + plugins ──────────────────────────────────────────────────────
-# Provides the .zshrc shell experience (starship prompt, fzf, mcfly, etc.)
 zsh
 zsh-syntax-highlighting
 zsh-autosuggestions
@@ -142,9 +130,8 @@ fzf
 mcfly
 starship
 
-# ── Monitoring & diagnostics ──────────────────────────────────────────────────
-# From shani-tools-extra, server-relevant subset only.
-# Excluded: android-tools, vulkan-tools, mesa-utils, clinfo (GPU/Android only)
+# ── Monitoring & diagnostics (server-relevant subset of shani-tools-extra) ────
+# Excluded: android-tools, vulkan-tools, mesa-utils, clinfo
 inxi
 htop
 btop
@@ -158,7 +145,6 @@ sysstat
 smartmontools
 expect
 dialog
-jq
 
 # ── Scheduling & logging ──────────────────────────────────────────────────────
 cronie
@@ -174,13 +160,11 @@ lrzip
 lzop
 elfutils
 
-# ── Version control (useful for server automation / GitOps) ───────────────────
+# ── Version control ───────────────────────────────────────────────────────────
 subversion
 mercurial
 
-# ── ShaniOS deployment system ─────────────────────────────────────────────────
-# shani-deploy deps include: btrfs-progs zstd sbsigntools efitools dracut
-# jq zsync wget flatpak yad duperemove compsize bees
-# yad is a GTK dialog — server-customization.sh masks shani-deploy-notify.service
-# so yad never tries to open a display.
+# ── ShaniOS deployment ────────────────────────────────────────────────────────
+# yad (GTK dialog) is a dep of shani-deploy — server-customization.sh masks
+# shani-deploy-notify.service so yad never tries to open a display
 shani-deploy

@@ -1,1 +1,3 @@
-Defaults secure_path="/usr/abin:/usr/local/sbin:/usr/local/bin:/usr/bin"
+# ShaniOS — extend sudo's secure_path to include /usr/abin (ShaniOS wrapper scripts)
+# This file is chmod 0440 by build-base-image.sh after the customization script runs.
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/abin"

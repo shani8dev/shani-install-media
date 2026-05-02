@@ -1,4 +1,3 @@
-# /etc/logrotate.d/server-base
 /var/log/*.log {
     weekly
     rotate 4

@@ -1,39 +1,17 @@
 #!/usr/bin/env bash
 # 01-configure-aws.sh — Stage 2: configure ShaniOS for AWS
 #
-# Sources /tmp/shanios-env.sh (written by Stage 1), then chroots into @blue to:
-#   - Write /etc/fstab (all Btrfs subvolumes, by UUID)
+# Sources /tmp/shanios-env.sh written by Stage 1, then chroots into @blue to:
+#   - Write /etc/fstab (all Btrfs subvolumes by UUID)
 #   - Reset machine-id (cloud-init regenerates on first boot)
 #   - Write /etc/hostname and /etc/hosts
 #   - Harden SSH for AWS key-pair access
 #   - Disable Secure Boot / MOK components (not applicable on AWS)
 #   - Configure cloud-init (Ec2 datasource)
-#   - Enable AWS SSM Agent (if present in the image)
-#   - Create swapfile on @swap
-#   - Install systemd-boot onto the EFI partition
-#   - Generate a dracut UKI (.efi) for each slot — matching configure.sh exactly
-#
-# ── UKI vs separate initrd ────────────────────────────────────────────────────
-# ShaniOS's configure.sh uses:
-#   dracut --force --uefi --kver <ver> --kernel-cmdline "<cmdline>" \
-#       /boot/efi/EFI/shanios/shanios-<slot>.efi
-#
-# --uefi tells dracut to produce a PE/COFF Unified Kernel Image that bundles:
-#   kernel + initramfs + cmdline + os-release + (optionally) splash
-# into a single self-contained EFI binary. systemd-boot loads it via an
-# "efi ..." entry (no "linux" / "initrd" lines needed).
-#
-# We do the same here. AWS does NOT require Secure Boot signing — the
-# Nitro hypervisor enforces its own boot chain — so we skip sbsign.
-#
-# ── efivarfs availability ─────────────────────────────────────────────────────
-# The Packer builder instance runs on the Nitro hypervisor, which does not
-# expose efivarfs in the builder's /sys/firmware/efi. This means:
-#   - bootctl install works (writes files to the ESP, does not need efivarfs)
-#   - dracut --uefi works (embeds cmdline into the PE binary, does not need efivarfs)
-#   - mokutil / efibootmgr do NOT work — we skip both entirely
-# The EFI boot entry is created by the AMI boot process itself (via the ESP's
-# fallback path /EFI/BOOT/BOOTX64.EFI which bootctl --with-fallback writes).
+#   - Install / enable AWS SSM Agent (if available in the image's pacman repos)
+#   - Create the swapfile on @swap
+#   - Install systemd-boot and write loader entries for @blue and @green
+#   - Generate initrd via dracut inside the chroot (with foreign-chroot flags)
 
 set -Eeuo pipefail
 
@@ -47,25 +25,25 @@ die()  { echo "[CONFIG-AWS][ERROR] $*" >&2; exit 1; }
 # shellcheck source=/dev/null
 source /tmp/shanios-env.sh
 
-CHROOT="${SHANIOS_MOUNT}"       # /mnt/shanios-target/@blue-root
+CHROOT="${SHANIOS_MOUNT}"      # /mnt/shanios-target/@blue-root
 ROOT_PART="${SHANIOS_ROOT_PART}"
 EFI_PART="${SHANIOS_EFI_PART}"
 BTRFS_MOUNT="${SHANIOS_BTRFS_MOUNT}"
 BTRFS_OPTS="${SHANIOS_BTRFS_OPTS}"
-OS_NAME="shanios"
 
-[[ -d "${CHROOT}" ]]    || die "Chroot target not found: ${CHROOT}"
+[[ -d "${CHROOT}" ]]     || die "Chroot target not found: ${CHROOT}"
 [[ -b "${ROOT_PART}" ]] || die "Root partition device not found: ${ROOT_PART}"
-[[ -b "${EFI_PART}" ]]  || die "EFI partition device not found: ${EFI_PART}"
+[[ -b "${EFI_PART}"  ]] || die "EFI partition device not found: ${EFI_PART}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: run a command inside the ShaniOS chroot
 # ─────────────────────────────────────────────────────────────────────────────
-run_chroot() { chroot "${CHROOT}" /bin/bash -c "$1"; }
+run_chroot() {
+    chroot "${CHROOT}" /bin/bash -c "$1"
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bind-mount pseudo-filesystems
-# dracut needs /proc, /sys, /dev; systemctl needs /run
+# Bind-mount pseudo-filesystems for chroot tools (dracut, systemctl, etc.)
 # ─────────────────────────────────────────────────────────────────────────────
 log "Bind-mounting pseudo-filesystems..."
 for fs in proc sys dev run; do
@@ -76,6 +54,7 @@ for fs in proc sys dev run; do
     fi
 done
 
+# Cleanup trap — always unmount pseudo-filesystems and the EFI partition
 _cleanup() {
     local rc=$?
     log "Cleanup: unmounting chroot..."
@@ -90,7 +69,7 @@ _cleanup() {
 trap '_cleanup' EXIT
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Partition UUIDs
+# Resolve partition UUIDs (needed for fstab and kernel cmdline)
 # ─────────────────────────────────────────────────────────────────────────────
 ROOT_UUID=$(blkid -s UUID -o value "${ROOT_PART}" 2>/dev/null)
 EFI_UUID=$(blkid  -s UUID -o value "${EFI_PART}"  2>/dev/null)
@@ -100,12 +79,13 @@ log "Root UUID: ${ROOT_UUID}"
 log "EFI UUID : ${EFI_UUID}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# /etc/fstab — mirrors configure.sh mount_additional_subvols exactly
-# Note: / is @blue (declared in rootflags, not here)
-#       /root is @root (root user home, not the filesystem root)
+# /etc/fstab
+# Mirrors configure.sh mount_additional_subvols layout.
+# Note: @root mounts at /root (root user home directory), not at /.
+#       The system root (/) is @blue, declared as the subvol= in rootflags.
 # ─────────────────────────────────────────────────────────────────────────────
 log "Writing /etc/fstab..."
-cat > "${CHROOT}/etc/fstab" <<FSTAB
+cat > "${CHROOT}/etc/fstab" << FSTAB
 # /etc/fstab — generated by Packer AMI build
 # <file system>    <mount point>        <type>  <options>                                           <dump> <pass>
 UUID=${EFI_UUID}   /boot/efi            vfat    defaults,umask=0077                                 0      2
@@ -131,21 +111,21 @@ FSTAB
 log "/etc/fstab written"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Machine ID — blank so systemd allocates a unique one on first boot
-# Standard practice for AMI golden images
+# Machine ID — blank so systemd allocates a unique ID on first boot
+# (standard practice for AMI golden images)
 # ─────────────────────────────────────────────────────────────────────────────
 log "Resetting machine-id..."
 : > "${CHROOT}/etc/machine-id"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Hostname — cloud-init overwrites on first boot from EC2 instance metadata
+# Hostname — cloud-init overwrites this on first boot from EC2 instance metadata
 # ─────────────────────────────────────────────────────────────────────────────
 log "Writing default hostname..."
-echo "${OS_NAME}" > "${CHROOT}/etc/hostname"
-cat > "${CHROOT}/etc/hosts" <<HOSTS
+echo "shanios" > "${CHROOT}/etc/hostname"
+cat > "${CHROOT}/etc/hosts" << HOSTS
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   ${OS_NAME}
+127.0.1.1   shanios
 HOSTS
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +133,7 @@ HOSTS
 # ─────────────────────────────────────────────────────────────────────────────
 log "Writing SSH hardening config..."
 mkdir -p "${CHROOT}/etc/ssh/sshd_config.d"
-cat > "${CHROOT}/etc/ssh/sshd_config.d/10-aws.conf" <<SSHCONF
+cat > "${CHROOT}/etc/ssh/sshd_config.d/10-aws.conf" << SSHCONF
 # AWS AMI — managed by Packer build, do not edit manually
 PermitRootLogin without-password
 PasswordAuthentication no
@@ -163,36 +143,40 @@ PrintLastLog yes
 AcceptEnv LANG LC_*
 Subsystem sftp /usr/lib/openssh/sftp-server
 SSHCONF
+
+# Enable sshd — try both common unit names (Arch: sshd, Debian: ssh)
 run_chroot "systemctl enable sshd.service 2>/dev/null || systemctl enable ssh.service 2>/dev/null || true"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Disable Secure Boot / Shim components — not applicable on AWS
-# AWS Nitro uses its own verified boot chain; MOK/shim are dead weight in an AMI
+# Disable Secure Boot / Shim — not applicable on AWS (no MOK enrollment)
 # ─────────────────────────────────────────────────────────────────────────────
-log "Disabling Secure Boot components (not applicable on AWS)..."
+log "Disabling Secure Boot components..."
 for unit in shim-boot.service mok-setup.service; do
     run_chroot "systemctl disable ${unit} 2>/dev/null || true"
 done
-# Remove MOK keys from EFI — prevents MokManager from appearing on first boot
+# Remove MOK key from EFI — AWS boots via its own hypervisor chain
 rm -f "${CHROOT}/boot/efi/EFI/BOOT/MOK.der" 2>/dev/null || true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# cloud-init — Ec2 datasource
+# cloud-init — Ec2 datasource configuration
 #
-# Must be present in the image (add to package-list.txt). We do NOT attempt
-# pacman inside the chroot because it requires keyring init + network access,
-# both unreliable in the Packer build environment.
+# ShaniOS is Arch-based. cloud-init may or may not be pre-installed in the
+# image profile. We do NOT attempt a pacman install here because:
+#   - pacman inside a foreign chroot requires keyring initialization + network
+#   - Both are unreliable in the Packer build environment
+# If cloud-init is absent, log a clear warning and continue. Users who need
+# it should add cloud-init to their image_profiles/<profile>/package-list.txt.
 # ─────────────────────────────────────────────────────────────────────────────
 log "Configuring cloud-init..."
 if run_chroot "command -v cloud-init" &>/dev/null; then
     mkdir -p "${CHROOT}/etc/cloud/cloud.cfg.d"
-    cat > "${CHROOT}/etc/cloud/cloud.cfg.d/10-shanios-aws.cfg" <<CLOUDINIT
+    cat > "${CHROOT}/etc/cloud/cloud.cfg.d/10-shanios-aws.cfg" << CLOUDINIT
 # ShaniOS AWS cloud-init — generated by Packer build
 datasource_list: [Ec2, None]
 
 system_info:
   default_user:
-    name: ${OS_NAME}
+    name: shanios
     shell: /bin/zsh
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
     groups: [wheel, sys, video, input, kvm, lxd, libvirt, sambashare]
@@ -207,6 +191,7 @@ cloud_final_modules:
   - [ssh-authkey-fingerprints, always]
   - [final-message, always]
 CLOUDINIT
+
     run_chroot "systemctl enable \
         cloud-init-local.service \
         cloud-init.service \
@@ -214,17 +199,21 @@ CLOUDINIT
         cloud-final.service 2>/dev/null || true"
     log "cloud-init configured"
 else
-    warn "cloud-init not found — add 'cloud-init' to image_profiles/<profile>/package-list.txt"
+    warn "cloud-init not found in the ShaniOS image."
+    warn "Add 'cloud-init' to image_profiles/<profile>/package-list.txt and rebuild the base image."
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AWS SSM Agent
+# AWS SSM Agent — same caveat as cloud-init above
 # ─────────────────────────────────────────────────────────────────────────────
+log "Checking for AWS SSM Agent..."
 if run_chroot "command -v amazon-ssm-agent" &>/dev/null; then
     run_chroot "systemctl enable amazon-ssm-agent 2>/dev/null || true"
     log "SSM Agent enabled"
 else
-    warn "amazon-ssm-agent not found — add it via AUR in package-list.txt"
+    warn "amazon-ssm-agent not found in the ShaniOS image."
+    warn "Add 'amazon-ssm-agent' to image_profiles/<profile>/package-list.txt (available via AUR)"
+    warn "or use AWS Systems Manager Session Manager via EC2 Instance Connect instead."
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,50 +221,47 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 log "Creating swapfile on @swap subvolume..."
 SWAP_SUBVOL="${BTRFS_MOUNT}/@swap"
+
 if [[ -d "${SWAP_SUBVOL}" ]]; then
+    # Cap at 4 GiB — suitable for the builder instance RAM
     SWAP_MB=$(free -m | awk '/^Mem:/{m=$2; print (m>4096) ? 4096 : m}')
+    log "Swapfile size: ${SWAP_MB} MiB"
+
     SWAPFILE="${SWAP_SUBVOL}/swapfile"
+    # Prefer btrfs mkswapfile (kernel ≥ 6.1 + btrfs-progs ≥ 6.1)
     if btrfs filesystem mkswapfile --size "${SWAP_MB}M" "${SWAPFILE}" 2>/dev/null; then
-        log "Swapfile created via btrfs mkswapfile (${SWAP_MB} MiB)"
+        log "Swapfile created via btrfs mkswapfile"
     else
         warn "btrfs mkswapfile unavailable — using dd fallback"
         dd if=/dev/zero of="${SWAPFILE}" bs=1M count="${SWAP_MB}" status=progress
         chmod 600 "${SWAPFILE}"
+        # Ensure no-COW on the file itself (chattr on the directory may not propagate)
         chattr +C "${SWAPFILE}" 2>/dev/null || true
         mkswap "${SWAPFILE}"
-        log "Swapfile created via dd (${SWAP_MB} MiB)"
     fi
+    log "Swapfile ready: ${SWAPFILE}"
 else
-    warn "@swap subvolume not found at ${SWAP_SUBVOL} — skipping"
+    warn "@swap subvolume not found at ${SWAP_SUBVOL} — skipping swapfile creation"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# systemd-boot — install bootloader onto the EFI partition
-#
-# bootctl install:
-#   - Copies the EFI stub to /boot/efi/EFI/systemd/systemd-bootx64.efi
-#   - Also writes /boot/efi/EFI/BOOT/BOOTX64.EFI (the UEFI fallback path)
-#   - Does NOT need efivarfs (no variable writes in --no-variables mode)
-#
-# We use --no-variables because efivarfs is not available in the Packer
-# builder instance's /sys/firmware/efi. AWS handles the boot order itself
-# via the fallback path BOOTX64.EFI, which bootctl writes automatically.
+# systemd-boot: install bootloader onto the EFI partition
 # ─────────────────────────────────────────────────────────────────────────────
 log "Installing systemd-boot..."
 if run_chroot "command -v bootctl" &>/dev/null; then
-    run_chroot "bootctl install --esp-path=/boot/efi --no-variables 2>&1" \
-        || warn "bootctl install failed — check systemd version supports --no-variables"
-    log "systemd-boot installed"
+    # bootctl install needs /boot/efi mounted — it is (from Stage 1)
+    run_chroot "bootctl install --esp-path=/boot/efi 2>&1" \
+        || warn "bootctl install failed — EFI partition may need manual bootloader setup"
 else
-    warn "bootctl not found — add 'systemd' (which provides bootctl) to package-list.txt"
+    warn "bootctl not found in the ShaniOS image — skipping bootloader install"
 fi
 
-# loader.conf — glob default so it matches across tries-counter decrements
-# (shanios-blue+3-0.conf → +2-1 → +1-2 → +0-3 on successive boots)
 mkdir -p "${CHROOT}/boot/efi/loader"
-cat > "${CHROOT}/boot/efi/loader/loader.conf" <<LOADER
+cat > "${CHROOT}/boot/efi/loader/loader.conf" << LOADER
 # systemd-boot loader config — generated by Packer build
-default ${OS_NAME}-blue*.conf
+# The default entry uses a glob so it matches regardless of the tries counter
+# (shanios-blue+3-0.conf → shanios-blue+2-1.conf → ... after each successful boot)
+default shanios-blue*.conf
 timeout 3
 console-mode max
 editor  0
@@ -293,106 +279,87 @@ KERNEL_VER=$(
     | tail -1 \
     || true
 )
-[[ -n "${KERNEL_VER}" ]] \
-    || { warn "No kernel found in /usr/lib/modules/ — AMI will not boot without manual setup"; exit 0; }
-log "Kernel: ${KERNEL_VER}"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dracut UKI generation — matches configure.sh generate_uki_entry() exactly
-#
-# configure.sh:
-#   dracut --force --uefi --kver ${kernel_version} \
-#       --kernel-cmdline "${cmdline}" \
-#       /boot/efi/EFI/${OS_NAME}/${OS_NAME}-${slot}.efi
-#
-# The UKI is a PE/COFF binary containing:
-#   kernel + initramfs + cmdline + /etc/os-release
-# systemd-boot loads it via an "efi ..." entry (no linux/initrd lines).
-#
-# AWS differences from the physical installer (configure.sh):
-#   - No LUKS/encryption params (rd.luks.*, rd.luks.options)
-#   - No TPM2 params
-#   - No resume/hibernation params (EC2 does not support hibernate via swapfile)
-#   - No rd.vconsole.keymap (set by cloud-init or irrelevant on EC2)
-#   - lsm= kept — AppArmor and BPF LSM are still valid on EC2
-#   - systemd.volatile=state kept — /var is tmpfs overlay at runtime (same as physical)
-#
-# Foreign-chroot dracut flags:
-#   --no-kernel        do not look for kernel modules in the host's /lib/modules
-#   --hostonly=no      build a generic (non-host-specific) initramfs
-#   --add-drivers      explicitly include btrfs and overlay (not auto-detected in
-#                      foreign chroot because /sys/bus/platform is the host's)
-#   --reproducible     strip timestamps for deterministic output
-# ─────────────────────────────────────────────────────────────────────────────
-if ! run_chroot "command -v dracut" &>/dev/null; then
-    warn "dracut not found — add 'dracut' to package-list.txt; AMI will not boot"
+if [[ -z "${KERNEL_VER}" ]]; then
+    warn "No kernel found in ${CHROOT}/usr/lib/modules/ — skipping initrd generation and boot entries."
+    warn "The AMI will boot but will need a manual bootloader setup."
     exit 0
 fi
+log "Kernel version: ${KERNEL_VER}"
 
-# Write per-slot cmdline files (mirrors configure.sh CMDLINE_FILE_CURRENT / _CANDIDATE)
-mkdir -p "${CHROOT}/etc/kernel"
-
-# Base cmdline — AWS-specific, matching configure.sh structure minus physical-only params
-# systemd.volatile=state: /var is a tmpfs overlay at runtime (ShaniOS architecture)
-# lsm=: matches configure.sh exactly; all listed LSMs are available on EC2 kernels
-BASE_CMDLINE="quiet splash systemd.volatile=state ro \
-lsm=landlock,lockdown,yama,integrity,apparmor,bpf \
-rootfstype=btrfs"
+# ─────────────────────────────────────────────────────────────────────────────
+# Kernel command line for each slot
+# AWS Nitro does not require 'ro'; the ShaniOS root is read-only by design
+# (systemd.volatile=state provides a tmpfs /var overlay at runtime).
+# ─────────────────────────────────────────────────────────────────────────────
+COMMON_OPTS="quiet splash systemd.volatile=state"
 
 for slot in blue green; do
-    CMDLINE="${BASE_CMDLINE} \
-rootflags=subvol=@${slot},${BTRFS_OPTS} \
-root=UUID=${ROOT_UUID}"
+    CMDLINE="root=UUID=${ROOT_UUID} rootfstype=btrfs rootflags=subvol=@${slot},${BTRFS_OPTS} ro ${COMMON_OPTS}"
+    log "Kernel cmdline for @${slot}: ${CMDLINE}"
 
-    # Trim extra whitespace introduced by the line continuations above
-    CMDLINE=$(echo "${CMDLINE}" | tr -s ' ' | sed 's/^ //; s/ $//')
-
-    log "Cmdline for @${slot}: ${CMDLINE}"
+    # Write the cmdline file that dracut and gen-efi.sh read
+    mkdir -p "${CHROOT}/etc/kernel"
     echo "${CMDLINE}" > "${CHROOT}/etc/kernel/install_cmdline_${slot}"
-
-    # UKI output path — identical to configure.sh
-    UKI_DIR="/boot/efi/EFI/${OS_NAME}"
-    UKI_PATH="${UKI_DIR}/${OS_NAME}-${slot}.efi"
-
-    run_chroot "mkdir -p '${UKI_DIR}'"
-
-    log "Generating UKI for @${slot}: ${UKI_PATH}"
-    run_chroot "
-        dracut \
-            --force \
-            --uefi \
-            --no-kernel \
-            --kver '${KERNEL_VER}' \
-            --kernel-cmdline '${CMDLINE}' \
-            --add-drivers 'btrfs overlay' \
-            --hostonly=no \
-            --reproducible \
-            '${UKI_PATH}'
-    " || { warn "dracut UKI generation failed for @${slot}"; continue; }
-
-    log "UKI created: ${UKI_PATH}"
-
-    # systemd-boot loader entry — UKI format uses "efi" not "linux"+"initrd"
-    # Active slot (@blue) gets +3-0 tries suffix so systemd-boot auto-falls-back
-    # on boot failure (matching configure.sh generate_uki_entry logic)
-    mkdir -p "${CHROOT}/boot/efi/loader/entries"
-    if [[ "${slot}" == "blue" ]]; then
-        ENTRY_FILE="${CHROOT}/boot/efi/loader/entries/${OS_NAME}-${slot}+3-0.conf"
-        SLOT_SUFFIX=" (Active)"
-    else
-        ENTRY_FILE="${CHROOT}/boot/efi/loader/entries/${OS_NAME}-${slot}.conf"
-        SLOT_SUFFIX=" (Candidate)"
-    fi
-
-    # Remove stale entries for this slot before writing (mirrors configure.sh cleanup)
-    rm -f "${CHROOT}/boot/efi/loader/entries/${OS_NAME}-${slot}"+*.conf \
-          "${CHROOT}/boot/efi/loader/entries/${OS_NAME}-${slot}.conf" 2>/dev/null || true
-
-    cat > "${ENTRY_FILE}" <<ENTRY
-title   ${OS_NAME}-${slot}${SLOT_SUFFIX}
-efi     /EFI/${OS_NAME}/${OS_NAME}-${slot}.efi
-ENTRY
-    log "Boot entry written: $(basename "${ENTRY_FILE}")"
 done
+
+# ─────────────────────────────────────────────────────────────────────────────
+# dracut — generate initrd inside the chroot
+#
+# Foreign-chroot flags:
+#   --no-kernel     skip host kernel module tree (we use the image's modules)
+#   --kver          explicit kernel version (no detection against running kernel)
+#   --hostonly=no   generic initrd (we do not know the target hardware at AMI build time)
+#   --add-drivers   include btrfs explicitly (not always auto-detected in foreign chroot)
+#   --omit          remove modules that require the live host (e.g. lvm2 is fine but
+#                   some dracut modules probe /sys which is rbind-mounted — guard with care)
+# ─────────────────────────────────────────────────────────────────────────────
+if run_chroot "command -v dracut" &>/dev/null; then
+    EFI_SHANIOS_DIR="/boot/efi/EFI/shanios"
+
+    for slot in blue green; do
+        CMDLINE=$(cat "${CHROOT}/etc/kernel/install_cmdline_${slot}")
+        INITRD_PATH="${EFI_SHANIOS_DIR}/${KERNEL_VER}/initrd-${slot}.img"
+        VMLINUZ_DEST="${EFI_SHANIOS_DIR}/${KERNEL_VER}/linux"
+
+        log "Generating initrd for @${slot}..."
+        run_chroot "
+            set -e
+            mkdir -p '${EFI_SHANIOS_DIR}/${KERNEL_VER}'
+            dracut \
+                --force \
+                --no-kernel \
+                --kver '${KERNEL_VER}' \
+                --kernel-cmdline '${CMDLINE}' \
+                --add-drivers 'btrfs overlay' \
+                --hostonly=no \
+                --reproducible \
+                '${INITRD_PATH}'
+        " || warn "dracut failed for @${slot} — initrd may be missing"
+
+        # Copy vmlinuz to EFI partition (only need it once, but idempotent)
+        if [[ -f "${CHROOT}/usr/lib/modules/${KERNEL_VER}/vmlinuz" ]]; then
+            cp "${CHROOT}/usr/lib/modules/${KERNEL_VER}/vmlinuz" \
+               "${CHROOT}${VMLINUZ_DEST}" 2>/dev/null \
+               || warn "vmlinuz copy failed for @${slot}"
+        else
+            warn "vmlinuz not found at ${CHROOT}/usr/lib/modules/${KERNEL_VER}/vmlinuz"
+        fi
+
+        # systemd-boot loader entry (plain — no tries counter; gen-efi.sh adds +3-0)
+        mkdir -p "${CHROOT}/boot/efi/loader/entries"
+        cat > "${CHROOT}/boot/efi/loader/entries/shanios-${slot}.conf" << ENTRY
+title   ShaniOS (${slot})
+linux   /EFI/shanios/${KERNEL_VER}/linux
+initrd  /EFI/shanios/${KERNEL_VER}/initrd-${slot}.img
+options ${CMDLINE}
+ENTRY
+        log "Boot entry written: shanios-${slot}.conf"
+    done
+else
+    warn "dracut not found in the ShaniOS image."
+    warn "Add 'dracut' to image_profiles/<profile>/package-list.txt and rebuild the base image."
+    warn "The AMI will not boot without an initrd."
+fi
 
 log "AWS configuration complete"

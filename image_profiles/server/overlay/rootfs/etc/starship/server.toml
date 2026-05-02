@@ -1,13 +1,6 @@
-# /etc/starship/server.toml — ShaniOS server profile starship prompt config
-#
-# Design goals for server use:
-#   - Show host clearly (critical when SSHd into many machines)
-#   - Show exit code on failure
-#   - Show git status (useful for IaC/GitOps repos)
-#   - Show container context (podman/distrobox)
-#   - NO language version segments (no nodejs, python, rust, go — irrelevant for ops)
-#   - NO battery, bluetooth, or desktop environment info
-#   - Keep it fast — no slow external calls in prompt
+# /etc/starship/server.toml — ShaniOS server profile starship prompt
+# Always shows user@host — critical when SSH'd into many machines.
+# No language version segments — keeps prompt fast and relevant for ops.
 
 format = """
 $username\
@@ -16,88 +9,88 @@ $directory\
 $git_branch\
 $git_status\
 $container\
+$terraform\
 $jobs\
 $status\
 $line_break\
 $character"""
 
-# ── Username ─────────────────────────────────────────────────────────────────
 [username]
 show_always = true
 style_user  = "bold green"
 style_root  = "bold red"
 format      = "[$user]($style)"
 
-# ── Hostname ─────────────────────────────────────────────────────────────────
-# Always show on server — you need to know which machine you're on
 [hostname]
-ssh_only  = false
-format    = "@[$hostname](bold yellow) "
-style     = "bold yellow"
-disabled  = false
+ssh_only = false
+format   = "@[$hostname](bold yellow) "
+disabled = false
 
-# ── Directory ────────────────────────────────────────────────────────────────
 [directory]
-truncation_length   = 4
-truncate_to_repo    = false
-style               = "bold cyan"
-format              = "[$path]($style)[$read_only]($read_only_style) "
-read_only           = " 🔒"
+truncation_length = 4
+truncate_to_repo  = false
+style             = "bold cyan"
+format            = "[$path]($style)[$read_only]($read_only_style) "
+read_only         = " 🔒"
 
-# ── Git ───────────────────────────────────────────────────────────────────────
 [git_branch]
 format = "[$symbol$branch]($style) "
 symbol = " "
 style  = "bold purple"
 
 [git_status]
-format      = '([\[$all_status$ahead_behind\]]($style) )'
-style       = "bold red"
-conflicted  = "⚠"
-ahead       = "⬆${count}"
-behind      = "⬇${count}"
-diverged    = "⬆${ahead_count}⬇${behind_count}"
-modified    = "!${count}"
-untracked   = "?${count}"
-staged      = "+${count}"
-deleted     = "✘${count}"
+format     = '([\[$all_status$ahead_behind\]]($style) )'
+style      = "bold red"
+conflicted = "⚠"
+ahead      = "⬆${count}"
+behind     = "⬇${count}"
+diverged   = "⬆${ahead_count}⬇${behind_count}"
+modified   = "!${count}"
+untracked  = "?${count}"
+staged     = "+${count}"
+deleted    = "✘${count}"
 
-# ── Container ─────────────────────────────────────────────────────────────────
 [container]
 format = "[$symbol \\[$name\\]]($style) "
 symbol = "⬡"
 style  = "bold blue"
 
-# ── Jobs ──────────────────────────────────────────────────────────────────────
+[terraform]
+format   = "[$symbol$workspace]($style) "
+symbol   = "💠 "
+style    = "bold 105"
+disabled = false
+
 [jobs]
 symbol    = "⚙"
 threshold = 1
 format    = "[$symbol $number]($style) "
 style     = "bold blue"
 
-# ── Exit status ───────────────────────────────────────────────────────────────
 [status]
-disabled        = false
-format          = "[$symbol $status]($style) "
-symbol          = "✗"
-success_symbol  = ""
-style           = "bold red"
+disabled       = false
+format         = "[$symbol $status]($style) "
+symbol         = "✗"
+success_symbol = ""
+style          = "bold red"
 
-# ── Prompt character ─────────────────────────────────────────────────────────
+[time]
+disabled = false
+format   = "[$time]($style) "
+style    = "bold dimmed white"
+
 [character]
 success_symbol = "[❯](bold green)"
 error_symbol   = "[❯](bold red)"
 vimcmd_symbol  = "[❮](bold green)"
 
-# ── Explicitly disabled — keep prompt fast on servers ─────────────────────────
+# ── Disabled: language runtimes (irrelevant for ops, slow prompt) ─────────────
 [aws]
 disabled = true
 [gcloud]
 disabled = true
 [azure]
 disabled = true
-[terraform]
-disabled = false   # show workspace — useful for infra servers
 [nodejs]
 disabled = true
 [python]
@@ -146,7 +139,3 @@ disabled = true
 disabled = true
 [battery]
 disabled = true
-[time]
-disabled = false
-format   = "[$time]($style) "
-style    = "bold dimmed white"

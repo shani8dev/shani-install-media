@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- firewalld public zone for ShaniOS server profile -->
+<!-- Compared to: RHEL9/Rocky9 default public zone -->
+<zone>
+  <short>Public</short>
+  <description>ShaniOS server — public zone. SSH allowed, everything else rejected.</description>
+  <!-- SSH: always open (cloud-init injects key, no password auth) -->
+  <service name="ssh"/>
+  <!-- DHCPv6 client: required for IPv6 on EC2 -->
+  <service name="dhcpv6-client"/>
+  <!-- Reject all other inbound traffic -->
+</zone>

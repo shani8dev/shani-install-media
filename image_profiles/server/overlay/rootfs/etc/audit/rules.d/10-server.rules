@@ -1,8 +1,9 @@
-# /etc/audit/rules.d/10-server.rules
+# ShaniOS server audit rules
 -D
 -b 8192
 -f 1
 
+# ── Authentication & user management ─────────────────────────────────────────
 -w /etc/pam.d/ -p wa -k pam_changes
 -w /etc/security/ -p wa -k security_changes
 -w /var/log/faillog -p wa -k login_failures
@@ -12,10 +13,16 @@
 -w /etc/group -p wa -k group_changes
 -w /etc/sudoers -p wa -k sudoers_changes
 -w /etc/sudoers.d/ -p wa -k sudoers_changes
+
+# ── SSH ───────────────────────────────────────────────────────────────────────
 -w /etc/ssh/sshd_config -p wa -k sshd_config
 -w /etc/ssh/sshd_config.d/ -p wa -k sshd_config
+
+# ── Privilege escalation ──────────────────────────────────────────────────────
 -a always,exit -F arch=b64 -S setuid -S setgid -S setreuid -S setregid -k priv_escalation
 -a always,exit -F arch=b64 -S execve -k exec
+
+# ── Kernel module loading ─────────────────────────────────────────────────────
 -w /sbin/insmod -p x -k module_load
 -w /sbin/rmmod -p x -k module_load
 -w /sbin/modprobe -p x -k module_load
