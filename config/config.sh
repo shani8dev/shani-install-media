@@ -179,6 +179,20 @@ gpg_sign_file() {
 # Dies if no dated folder can be found at all.
 resolve_build_date() {
     local profile="$1"
+
+    # If BUILD_DATE was exported by build.sh (to pin the date across a midnight
+    # boundary during a compound command), honour it unconditionally — but only
+    # when the corresponding folder actually exists to guard against stale values.
+    if [[ -n "${BUILD_DATE:-}" ]]; then
+        local pinned_dir="${OUTPUT_DIR}/${profile}/${BUILD_DATE}"
+        if [[ -d "${pinned_dir}" ]]; then
+            log "Using exported BUILD_DATE folder: ${BUILD_DATE}"
+            echo "${BUILD_DATE}"
+            return 0
+        fi
+        log "Warning: exported BUILD_DATE=${BUILD_DATE} folder not found — falling back to date discovery."
+    fi
+
     local today
     today="$(date +%Y%m%d)"
     local expected_dir="${OUTPUT_DIR}/${profile}/${today}"

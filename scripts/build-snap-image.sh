@@ -22,6 +22,7 @@ shift $((OPTIND - 1))
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
+check_dependencies
 log "Building Snap image for profile: ${PROFILE}"
 
 # ---------------------------------------------------------

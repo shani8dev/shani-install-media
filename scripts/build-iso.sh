@@ -41,7 +41,7 @@ done
 
 [[ -z "$PROFILE" ]] && die "Profile (-p) is required."
 
-OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
+check_dependencies_iso="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
 # ---------------------------------------------------------------------------

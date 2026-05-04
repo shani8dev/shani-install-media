@@ -16,7 +16,9 @@ done
 # Use resolve_build_date so standalone re-runs find the correct dated folder
 # even when invoked on a different day than the original build.
 RESOLVED_DATE="$(resolve_build_date "$PROFILE")"
-OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${RESOLVED_DATE}"
+
+check_dependencies_iso
+check_mok_keys="${OUTPUT_DIR}/${PROFILE}/${RESOLVED_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
 # Find the unsigned ISO produced by build-iso.sh

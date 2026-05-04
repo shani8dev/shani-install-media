@@ -32,24 +32,36 @@ r2_upload() {
     || log "Warning: R2 mirror failed for ${src} (SourceForge upload unaffected)"
 }
 
-# Prune old dated R2 folders, keeping the 2 most recent and the stable-pinned folder.
+# Prune old dated R2 folders, keeping the 2 most recent and any folder
+# pinned by latest.txt, stable.txt, or containing a signed ISO.
 r2_cleanup() {
   [[ "${NO_R2}" == "true" ]] && { log "R2: skipping cleanup (--no-r2)"; return 0; }
   [[ -z "${R2_BUCKET:-}" ]]  && return 0
 
-  log "R2: cleaning up old build folders under ${PROFILE}/ (keeping 2 latest + stable)..."
+  log "R2: cleaning up old build folders under ${PROFILE}/ (keeping 2 latest + pinned by latest/stable + ISO folders)..."
 
-  local stable_date=""
-  local stable_content
-  stable_content=$(rclone cat "r2:${R2_BUCKET}/${PROFILE}/stable.txt" 2>/dev/null || true)
-  if [[ -n "$stable_content" ]]; then
-    stable_date=$(echo "$stable_content" | grep -oE '[0-9]{8}' | head -n1 || true)
-    if [[ -n "$stable_date" ]]; then
-      log "R2: stable build pinned to: ${stable_date}"
-    else
-      log "R2: stable.txt exists but contains no 8-digit date — stable pin skipped."
+  # Helper: extract 8-digit build date from a pointer file on R2
+  _pin_from_pointer() {
+    local file="$1"
+    local content
+    content=$(rclone cat "r2:${R2_BUCKET}/${PROFILE}/${file}" 2>/dev/null || true)
+    if [[ -n "$content" ]]; then
+      local date
+      date=$(echo "$content" | grep -oE '[0-9]{8}' | head -n1 || true)
+      if [[ -n "$date" ]]; then
+        log "R2: ${file} pins build date: ${date}"
+        echo "$date"
+      else
+        log "R2: ${file} exists but contains no 8-digit date — pin skipped."
+      fi
     fi
-  fi
+  }
+
+  local stable_date latest_date iso_date iso_stable_date
+  stable_date="$(_pin_from_pointer stable.txt)"
+  latest_date="$(_pin_from_pointer latest.txt)"
+  iso_date="$(_pin_from_pointer iso-latest.txt)"
+  iso_stable_date="$(_pin_from_pointer iso-stable.txt)"
 
   local all_dates=()
   while IFS= read -r folder; do
@@ -62,17 +74,29 @@ r2_cleanup() {
     return 0
   fi
 
+  # Deduplicating keep-list helper
   local keep=()
-  [[ ${#all_dates[@]} -gt 0 ]] && keep+=("${all_dates[0]}")
-  [[ ${#all_dates[@]} -gt 1 ]] && keep+=("${all_dates[1]}")
-  if [[ -n "$stable_date" && ! " ${keep[*]} " =~ (^|[[:space:]])"${stable_date}"([[:space:]]|$) ]]; then
-    keep+=("$stable_date")
-  fi
+  _add_keep() {
+    local d="$1"
+    [[ -z "$d" ]] && return
+    [[ " ${keep[*]:-} " =~ (^|[[:space:]])"${d}"([[:space:]]|$) ]] && return
+    keep+=("$d")
+  }
 
-  log "R2: keeping folders: ${keep[*]}"
+  # Always keep the 2 most recent dated folders
+  _add_keep "${all_dates[0]:-}"
+  _add_keep "${all_dates[1]:-}"
+
+  # Pin folders referenced by pointer files
+  _add_keep "$stable_date"
+  _add_keep "$latest_date"
+  _add_keep "$iso_date"
+  _add_keep "$iso_stable_date"
+
+  log "R2: keeping folders: ${keep[*]:-}"
 
   for d in "${all_dates[@]}"; do
-    if [[ ! " ${keep[*]} " =~ (^|[[:space:]])"${d}"([[:space:]]|$) ]]; then
+    if [[ ! " ${keep[*]:-} " =~ (^|[[:space:]])"${d}"([[:space:]]|$) ]]; then
       log "R2: deleting old build folder ${PROFILE}/${d}/"
       rclone purge "r2:${R2_BUCKET}/${PROFILE}/${d}" \
         || log "Warning: R2 cleanup failed for ${PROFILE}/${d} (non-fatal)"
@@ -141,7 +165,7 @@ if [[ "$MODE" != "image" && "$MODE" != "iso" && "$MODE" != "all" ]]; then
   die "Invalid mode: '$MODE'. Must be 'image', 'iso', or 'all'."
 fi
 
-# ---------------------------------------------------------------------------
+check_dependencies_upload
 # Resolve build date via shared helper
 # ---------------------------------------------------------------------------
 RESOLVED_DATE="$(resolve_build_date "$PROFILE")"
@@ -263,6 +287,15 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
     else
       log "Warning: No signed_*.iso.torrent files found in ${OUTPUT_SUBDIR}"
     fi
+
+    # Write iso-latest.txt so r2_cleanup can pin this dated folder even when
+    # it differs from the base-image latest.txt (e.g. built via iso-only).
+    ISO_LATEST_TXT="${OUTPUT_DIR}/${PROFILE}/iso-latest.txt"
+    echo "${RESOLVED_DATE}" > "${ISO_LATEST_TXT}" \
+      || log "Warning: Failed to write iso-latest.txt (R2 cleanup may not pin ISO folder)"
+    log "Uploading iso-latest.txt (points to ${RESOLVED_DATE})..."
+    sf_upload "iso-latest.txt" "${ISO_LATEST_TXT}" "${REMOTE_PATH}"
+    r2_upload "${ISO_LATEST_TXT}" "${R2_PATH}"
   fi
 
 fi  # end uploads

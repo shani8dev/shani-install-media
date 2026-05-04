@@ -40,9 +40,10 @@ usage() {
   echo "This script will:"
   echo "  1. Download the current latest.txt from SourceForge (skipped with --no-sf)"
   echo "  2. Create stable.txt with the same content locally"
+  echo "  2b. Promote iso-latest.txt → iso-stable.txt (if available)"
   echo "  3. Verify artifact + signature exist before promoting"
-  echo "  4. Upload stable.txt to SourceForge (skipped with --no-sf)"
-  echo "  5. Mirror stable.txt to Cloudflare R2 (skipped with --no-r2)"
+  echo "  4. Upload stable.txt (and iso-stable.txt if present) to SourceForge (skipped with --no-sf)"
+  echo "  5. Mirror stable.txt (and iso-stable.txt if present) to Cloudflare R2 (skipped with --no-r2)"
   exit 1
 }
 
@@ -82,6 +83,8 @@ fi
 PROJECT_NAME="shanios"
 PROFILE_DIR="${OUTPUT_DIR}/${PROFILE}"
 LATEST_TXT="${PROFILE_DIR}/latest.txt"
+
+check_dependencies_upload
 STABLE_TXT="${PROFILE_DIR}/stable.txt"
 REMOTE_PATH="librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFILE}/"
 
@@ -102,9 +105,8 @@ mkdir -p "${PROFILE_DIR}"
 #   --no-sf --no-r2 → use local file
 #   (neither)      → fetch from R2; fall back to SourceForge on failure
 # ---------------------------------------------------------------------------
-CURL_RETRIES=3
-CURL_RETRY_DELAY=2
-NETWORK_TIMEOUT=30
+# CURL_RETRIES, CURL_RETRY_DELAY, NETWORK_TIMEOUT, NETWORK_CONNECT_TIMEOUT
+# are sourced from config.sh — do not redefine here.
 
 _fetch_from_r2() {
   if [[ -n "${R2_BUCKET:-}" ]]; then
@@ -239,6 +241,42 @@ log "Step 3: Creating stable.txt locally..."
 cp "${LATEST_TXT}" "${STABLE_TXT}" || die "Failed to create stable.txt"
 log "Created stable.txt with content: $(cat "${STABLE_TXT}")"
 
+# Also promote iso-latest.txt → iso-stable.txt if it exists.
+# iso-latest.txt may point to a different dated folder than latest.txt
+# (e.g. when the ISO was built separately via iso-only on a different day).
+ISO_LATEST_TXT="${PROFILE_DIR}/iso-latest.txt"
+ISO_STABLE_TXT="${PROFILE_DIR}/iso-stable.txt"
+if [[ -s "${ISO_LATEST_TXT}" ]]; then
+  log "Step 3: Also promoting iso-latest.txt → iso-stable.txt..."
+  cp "${ISO_LATEST_TXT}" "${ISO_STABLE_TXT}" || die "Failed to create iso-stable.txt"
+  log "Created iso-stable.txt with content: $(cat "${ISO_STABLE_TXT}")"
+else
+  log "Step 3: No iso-latest.txt found locally — fetching from remotes..."
+  _fetched_iso=false
+  if [[ "${NO_R2}" == "false" ]] && [[ -n "${R2_BUCKET:-}" ]]; then
+    if rclone copy "r2:${R2_BUCKET}/${PROFILE}/iso-latest.txt" "${PROFILE_DIR}" 2>/dev/null \
+        && [[ -s "${ISO_LATEST_TXT}" ]]; then
+      _fetched_iso=true
+    fi
+  fi
+  if [[ "${_fetched_iso}" == "false" && "${NO_SF}" == "false" ]]; then
+    curl -fsSL \
+      --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+      --max-time "$NETWORK_TIMEOUT" --connect-timeout "$NETWORK_CONNECT_TIMEOUT" \
+      --user-agent "shanios-promote/1.0" \
+      --output "${ISO_LATEST_TXT}" \
+      "https://sourceforge.net/projects/${PROJECT_NAME}/files/${PROFILE}/iso-latest.txt/download" \
+      2>/dev/null && [[ -s "${ISO_LATEST_TXT}" ]] && _fetched_iso=true || true
+  fi
+  if [[ "${_fetched_iso}" == "true" ]]; then
+    cp "${ISO_LATEST_TXT}" "${ISO_STABLE_TXT}" || die "Failed to create iso-stable.txt"
+    log "Created iso-stable.txt with content: $(cat "${ISO_STABLE_TXT}")"
+  else
+    log "Warning: iso-latest.txt not found on any remote — iso-stable.txt not promoted."
+    log "         Run 'build.sh iso-only' and upload before promoting stable if you want ISO pinning."
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # Step 4: Upload stable.txt to SourceForge
 # ---------------------------------------------------------------------------
@@ -247,6 +285,10 @@ if [[ "${NO_SF}" == "false" ]]; then
   log "Uploading to: ${REMOTE_PATH}"
   rsync -e ssh -avz --progress "${STABLE_TXT}" "${REMOTE_PATH}" \
     || die "Upload of stable.txt failed"
+  if [[ -s "${ISO_STABLE_TXT}" ]]; then
+    rsync -e ssh -avz --progress "${ISO_STABLE_TXT}" "${REMOTE_PATH}" \
+      || die "Upload of iso-stable.txt failed"
+  fi
 else
   log "Step 4: Skipping SourceForge upload (--no-sf)."
 fi
@@ -256,6 +298,9 @@ fi
 # ---------------------------------------------------------------------------
 log "Step 5: Mirroring stable.txt to Cloudflare R2..."
 r2_upload "${STABLE_TXT}" "${PROFILE}"
+if [[ -s "${ISO_STABLE_TXT}" ]]; then
+  r2_upload "${ISO_STABLE_TXT}" "${PROFILE}"
+fi
 
 log ""
 log "========================================="
