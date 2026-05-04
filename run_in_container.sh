@@ -102,7 +102,7 @@ fi
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     IMPORT_KEYS_CMD+="mkdir -p \"${CONTAINER_GNUPGHOME}\" && chmod 700 \"${CONTAINER_GNUPGHOME}\" && \
 echo \"\$GPG_PRIVATE_KEY\" > /tmp/gpg_private.key && \
-gpg --batch --passphrase \"\$GPG_PASSPHRASE\" --homedir \"${CONTAINER_GNUPGHOME}\" --import /tmp/gpg_private.key && \
+gpg --batch --yes --pinentry-mode loopback --passphrase \"\$GPG_PASSPHRASE\" --homedir \"${CONTAINER_GNUPGHOME}\" --import /tmp/gpg_private.key && \
 rm -f /tmp/gpg_private.key && \
 gpg --homedir \"${CONTAINER_GNUPGHOME}\" --list-secret-keys && "
 fi
@@ -161,6 +161,6 @@ FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
     -e R2_BUCKET="${R2_BUCKET:-}" \
     -e NO_SF="${NO_SF:-false}" \
     -e NO_R2="${NO_R2:-false}" \
-    -e BUILD_DATE="${BUILD_DATE:-}" \
+    ${BUILD_DATE:+-e BUILD_DATE="${BUILD_DATE}"} \
     -w "${CONTAINER_WORK_DIR}" \
     "${DOCKER_IMAGE}" bash -c "${FINAL_CMD}"

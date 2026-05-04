@@ -41,7 +41,7 @@ done
 
 [[ -z "$PROFILE" ]] && die "Profile (-p) is required."
 
-check_dependencies_iso="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
+OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
 # ---------------------------------------------------------------------------
@@ -293,9 +293,14 @@ AIROOTFS_ETC="${ISO_PROFILES_DIR}/${PROFILE}/airootfs/etc"
 PROFILE_MARKER="${AIROOTFS_ETC}/shani-build-profile"
 mkdir -p "$AIROOTFS_ETC"
 echo "${PROFILE}" > "${PROFILE_MARKER}"
-# Use a compound trap so the profile marker is cleaned up on exit without
-# clobbering any EXIT trap already set by the caller or future additions.
-trap 'rm -f "${PROFILE_MARKER}"' EXIT
+# Append profile-marker cleanup to whatever EXIT trap is already set,
+# so we never clobber a handler registered earlier in this script.
+_prev_trap="$(trap -p EXIT | sed "s/^trap -- '//;s/' EXIT$//")"
+if [[ -n "$_prev_trap" ]]; then
+  trap "${_prev_trap}"$'\n''rm -f "${PROFILE_MARKER}"' EXIT
+else
+  trap 'rm -f "${PROFILE_MARKER}"' EXIT
+fi
 
 log "Running mkarchiso..."
 mkarchiso -v -w "${TEMP_DIR}/${PROFILE}" -o "${OUTPUT_SUBDIR}" "${ISO_PROFILES_DIR}/${PROFILE}" \

@@ -59,10 +59,10 @@
 #   └─ upload.sh -p <profile> all
 #
 # promote-stable  (standalone, run after iso-only is live)
-#   └─ downloads latest.txt from SF
-#   └─ verifies artifact + .asc exist on SF
-#   └─ writes stable.txt locally
-#   └─ uploads stable.txt → SF + R2
+#   └─ downloads latest.txt from SF/R2
+#   └─ verifies artifact + .asc exist on SF/R2
+#   └─ writes stable.txt locally, promotes iso-latest.txt → iso-stable.txt
+#   └─ uploads stable.txt + iso-stable.txt → SF + R2
 #
 # verify    (standalone)
 #   └─ upload.sh -p <profile> --verify-only
@@ -248,7 +248,26 @@ case "$COMMAND" in
     _ISO_PROFILE="$(_get_profile "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}")"
     [[ -z "$_ISO_PROFILE" ]] && die "Profile (-p) is required for the 'iso-only' command."
 
-    _ISO_OUTDIR="${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}"
+    # Search all dated folders for an existing ISO so a retry after a midnight
+    # boundary or a prior-day partial build resumes correctly instead of rebuilding.
+    # Prefer today's BUILD_DATE folder first; fall back to the most recent dated folder.
+    _ISO_OUTDIR=""
+    for _candidate in \
+        "${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}" \
+        $(find "${OUTPUT_DIR}/${_ISO_PROFILE}" -maxdepth 1 -type d -name '[0-9]*' 2>/dev/null | sort -r)
+    do
+      if [[ -d "$_candidate" ]] && \
+         { ls "${_candidate}"/signed_*.iso 1>/dev/null 2>&1 || \
+           find "${_candidate}" -maxdepth 1 -name '*.iso' ! -name 'signed_*.iso' 2>/dev/null | grep -q .; }; then
+        _ISO_OUTDIR="$_candidate"
+        break
+      fi
+    done
+
+    if [[ -z "$_ISO_OUTDIR" ]]; then
+      # No ISO found anywhere — use today's folder for the fresh build
+      _ISO_OUTDIR="${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}"
+    fi
 
     if ls "${_ISO_OUTDIR}"/signed_*.iso 1>/dev/null 2>&1; then
       log "Signed ISO already exists in ${_ISO_OUTDIR} — skipping build and repack, proceeding to upload."
@@ -256,7 +275,7 @@ case "$COMMAND" in
       log "Unsigned ISO found in ${_ISO_OUTDIR} — skipping build-iso, running repack then upload."
       ./scripts/repack-iso.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
-      log "No ISO found in ${_ISO_OUTDIR} — running full iso-only pipeline."
+      log "No ISO found — running full iso-only pipeline."
       ./scripts/build-iso.sh  "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" --from-r2
       ./scripts/repack-iso.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     fi

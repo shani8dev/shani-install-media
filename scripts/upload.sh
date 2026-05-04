@@ -301,9 +301,11 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
 fi  # end uploads
 
 # ---------------------------------------------------------------------------
-# R2 cleanup (always runs unless --no-r2, even in verify-only mode)
+# R2 cleanup (skipped in verify-only mode — that mode must be read-only)
 # ---------------------------------------------------------------------------
-r2_cleanup
+if [[ "${VERIFY_ONLY}" != "true" ]]; then
+  r2_cleanup
+fi
 
 # ---------------------------------------------------------------------------
 # Post-upload SourceForge verification (base image modes only)

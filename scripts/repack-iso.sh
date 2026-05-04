@@ -12,13 +12,12 @@ while getopts ":p:" opt; do
     \?) die "Invalid option: -$OPTARG" ;;
   esac
 done
+shift $((OPTIND - 1))
 
 # Use resolve_build_date so standalone re-runs find the correct dated folder
 # even when invoked on a different day than the original build.
 RESOLVED_DATE="$(resolve_build_date "$PROFILE")"
-
-check_dependencies_iso
-check_mok_keys="${OUTPUT_DIR}/${PROFILE}/${RESOLVED_DATE}"
+OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${RESOLVED_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
 # Find the unsigned ISO produced by build-iso.sh
@@ -56,7 +55,13 @@ done
 mount_dir="${REPACK_DIR}/mnt/eltorito"
 mkdir -p "$mount_dir"
 mount -o loop "$eltorito_img" "$mount_dir" || die "Mounting eltorito image failed"
-trap 'mountpoint -q "$mount_dir" && umount "$mount_dir" 2>/dev/null || true' EXIT
+# Single EXIT trap: unmount eltorito mount AND remove any partial tmp_iso.
+# This covers normal exit, die(), and signals (SIGINT, SIGTERM).
+# tmp_iso is only defined after the xorriso block — guard with [[ -n ]] + -f.
+trap '
+  mountpoint -q "$mount_dir" && umount "$mount_dir" 2>/dev/null || true
+  [[ -n "${tmp_iso:-}" && -f "${tmp_iso}" ]] && rm -f "$tmp_iso"
+' EXIT
 
 cp "${mount_dir}/${OS_NAME}/boot/x86_64/vmlinuz-linux" "${REPACK_DIR}/vmlinuz-linux" \
     || die "Copy vmlinuz-linux failed"
