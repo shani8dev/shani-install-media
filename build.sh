@@ -99,6 +99,7 @@ Options:
   --from-r2       Download base image from R2 instead of building locally (iso)
   --no-sf         Skip SourceForge uploads (for compound commands)
   --no-r2         Skip Cloudflare R2 uploads (for compound commands)
+  --fresh         Force a new build today, ignoring any cached ISOs from previous dates (iso-only)
 
 Examples:
   $(basename "$0") image -p gnome
@@ -135,16 +136,19 @@ _get_profile() {
 }
 
 # ---------------------------------------------------------------------------
-# Helper: split "$@" into build args and upload flags (--no-sf / --no-r2).
-# Sets _BUILD_ARGS and _UPLOAD_FLAGS in the caller's scope.
+# Helper: split "$@" into build args, upload flags (--no-sf / --no-r2),
+# and the --fresh flag (iso-only: ignore existing ISOs, always build today).
+# Sets _BUILD_ARGS, _UPLOAD_FLAGS, and _FRESH in the caller's scope.
 # Usage: _split_args "$@"
 # ---------------------------------------------------------------------------
 _split_args() {
   _BUILD_ARGS=()
   _UPLOAD_FLAGS=()
+  _FRESH=false
   for _arg in "$@"; do
     case "$_arg" in
       --no-sf|--no-r2) _UPLOAD_FLAGS+=("$_arg") ;;
+      --fresh)         _FRESH=true ;;
       *)               _BUILD_ARGS+=("$_arg") ;;
     esac
   done
@@ -242,32 +246,51 @@ case "$COMMAND" in
   #   - signed ISO exists → skip build-iso and repack, go straight to upload
   #   - unsigned ISO exists → skip build-iso, run repack then upload
   #   - nothing exists → full run: build-iso → repack → upload
+  #
+  # Pass --fresh to ignore any cached ISOs from previous dates and always
+  # run a clean build under today's BUILD_DATE folder.
   # -------------------------------------------------------------------------
   iso-only)
     _split_args "$@"
     _ISO_PROFILE="$(_get_profile "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}")"
     [[ -z "$_ISO_PROFILE" ]] && die "Profile (-p) is required for the 'iso-only' command."
 
-    # Search all dated folders for an existing ISO so a retry after a midnight
-    # boundary or a prior-day partial build resumes correctly instead of rebuilding.
-    # Prefer today's BUILD_DATE folder first; fall back to the most recent dated folder.
-    _ISO_OUTDIR=""
-    for _candidate in \
-        "${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}" \
-        $(find "${OUTPUT_DIR}/${_ISO_PROFILE}" -maxdepth 1 -type d -name '[0-9]*' 2>/dev/null | sort -r)
-    do
-      if [[ -d "$_candidate" ]] && \
-         { ls "${_candidate}"/signed_*.iso 1>/dev/null 2>&1 || \
-           find "${_candidate}" -maxdepth 1 -name '*.iso' ! -name 'signed_*.iso' 2>/dev/null | grep -q .; }; then
-        _ISO_OUTDIR="$_candidate"
-        break
-      fi
-    done
-
-    if [[ -z "$_ISO_OUTDIR" ]]; then
-      # No ISO found anywhere — use today's folder for the fresh build
+    # --fresh: skip cache discovery entirely and build fresh under today's date.
+    if [[ "${_FRESH}" == "true" ]]; then
+      log "iso-only: --fresh flag set — ignoring any cached ISOs, building fresh for ${BUILD_DATE}."
       _ISO_OUTDIR="${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}"
+    else
+      # Search all dated folders for an existing ISO so a retry after a midnight
+      # boundary or a prior-day partial build resumes correctly instead of rebuilding.
+      # Prefer today's BUILD_DATE folder first; fall back to the most recent dated folder.
+      _ISO_OUTDIR=""
+      for _candidate in \
+          "${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}" \
+          $(find "${OUTPUT_DIR}/${_ISO_PROFILE}" -maxdepth 1 -type d -name '[0-9]*' 2>/dev/null | sort -r)
+      do
+        if [[ -d "$_candidate" ]] && \
+           { ls "${_candidate}"/signed_*.iso 1>/dev/null 2>&1 || \
+             find "${_candidate}" -maxdepth 1 -name '*.iso' ! -name 'signed_*.iso' 2>/dev/null | grep -q .; }; then
+          _ISO_OUTDIR="$_candidate"
+          break
+        fi
+      done
+
+      if [[ -z "$_ISO_OUTDIR" ]]; then
+        # No ISO found anywhere — use today's folder for the fresh build
+        _ISO_OUTDIR="${OUTPUT_DIR}/${_ISO_PROFILE}/${BUILD_DATE}"
+      fi
     fi
+
+    # Re-export BUILD_DATE to match the folder where the ISO was found (or will
+    # be built). With --fresh this always stays as today's date. Without it,
+    # resolve_build_date() in upload.sh and repack-iso.sh would honour the
+    # original BUILD_DATE export and operate on a different — possibly empty —
+    # dated folder, causing "No signed_*.iso files found" warnings and a
+    # no-op upload even though a valid ISO exists in an older dated folder.
+    BUILD_DATE="$(basename "${_ISO_OUTDIR}")"
+    export BUILD_DATE
+    log "iso-only: using build folder ${_ISO_OUTDIR} (BUILD_DATE=${BUILD_DATE})"
 
     if ls "${_ISO_OUTDIR}"/signed_*.iso 1>/dev/null 2>&1; then
       log "Signed ISO already exists in ${_ISO_OUTDIR} — skipping build and repack, proceeding to upload."
