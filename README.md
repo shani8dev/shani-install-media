@@ -551,6 +551,7 @@ Equivalent to running `release` then `upload` in sequence.
 | `release` | `release.sh` | Write `latest.txt` or `stable.txt` |
 | `upload` | `upload.sh` | Push artifacts to SourceForge and/or R2. Modes: `image` (default), `iso`, `all`. Never uploads flatpakfs/snapfs |
 | `promote-stable` | `promote-stable.sh` | Fetch `latest.txt` from SF, verify artifact exists, publish as `stable.txt` |
+| `test` | `test-env/test.sh` | Install/boot/update/rollback a built image on loop-mounted disks — see [`test-env/README.md`](test-env/README.md) |
 | `publish` | — | `release` + `upload` |
 | `all` | — | image → release latest → upload image (base image only, no ISO) |
 | `full` | — | Full pipeline: image → flatpak? → snap? → iso → repack → release latest → upload all |
@@ -582,6 +583,23 @@ Central release pointers at `cache/output/<profile>/`:
 |------|-------------|
 | `latest.txt` | Points to the most recent build's `.zst` filename |
 | `stable.txt` | Points to the promoted stable build's `.zst` filename |
+
+---
+
+## Testing a Built Image
+
+`./build.sh test <command>` installs, boots, updates, and rolls back a real
+`.zst` from `cache/output/` on loop-mounted disks — the real, unmodified
+`shani-deploy`/`shani-update` packaged binaries, a real Btrfs receive, and a
+genuine UEFI boot via QEMU/OVMF. Uses the same `run_in_container.sh` and
+builder image as every other `build.sh` command — see
+[`test-env/README.md`](test-env/README.md) for the full command list.
+
+```bash
+./build.sh image -p plasma
+./build.sh release -p plasma latest
+./run_in_container.sh build.sh test cycle -p plasma
+```
 
 ---
 
@@ -673,7 +691,7 @@ R2 secrets are optional — if unset, all uploads go to SourceForge only.
 │   └── config.sh                   # Global vars, log/warn/die helpers,
 │                                   # setup_btrfs_image, detach_btrfs_image,
 │                                   # btrfs_send_snapshot, check_mok_keys,
-│                                   # check_dependencies
+│                                   # check_dependencies*, check_dependencies_test
 ├── scripts/
 │   ├── build-base-image.sh
 │   ├── build-flatpak-image.sh
@@ -683,6 +701,10 @@ R2 secrets are optional — if unset, all uploads go to SourceForge only.
 │   ├── release.sh
 │   ├── promote-stable.sh
 │   └── upload.sh
+├── test-env/                       # `./build.sh test <command>` — see test-env/README.md
+│   ├── test.sh                     # Dispatcher (mirrors build.sh's own case table)
+│   ├── scripts/                    # 00-create-disk.sh ... 07-boot-qemu.sh
+│   └── disk/                       # Generated loop images, CA — gitignored except .gitkeep
 ├── image_profiles/
 │   ├── gnome/
 │   │   ├── package-list.txt        # pacstrap package list (required)

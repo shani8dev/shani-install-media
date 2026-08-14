@@ -133,6 +133,11 @@ FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
 
 # ---------------------------------------------------------------------------
 # Run the container
+#
+# --add-host resolves downloads.shani.dev to the container's own loopback —
+# only meaningful for `build.sh test serve` / `test cycle` (see
+# test-env/README.md); a harmless no-op for every other command here, since
+# nothing else in this repo talks to that domain.
 # ---------------------------------------------------------------------------
 "${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
     --tmpfs /tmp \
@@ -144,6 +149,7 @@ FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
     --security-opt seccomp:unconfined \
     -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
     -v /lib/modules:/lib/modules:ro \
+    --add-host="downloads.shani.dev:127.0.0.1" \
     -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
     -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
     -v "${HOST_FLATPAK_DATA}:${CONTAINER_FLATPAK_DATA}" \

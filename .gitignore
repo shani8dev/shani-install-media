@@ -4,3 +4,7 @@ keys/mok/MOK*
 keys/gpg/gpg*
 keys/ssh/ssh*
 keys/*/github*
+
+# shanios-test-env: loop disk images and generated CA/keys are large/local-only
+test-env/disk/*
+!test-env/disk/.gitkeep

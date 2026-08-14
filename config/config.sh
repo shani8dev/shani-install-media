@@ -118,6 +118,23 @@ check_gpg_key() {
     log "GPG public key exported from keyring."
 }
 
+# Check for tools required by test-env/ (installing/booting/updating a
+# built image on loop-mounted disks — see test-env/README.md).
+check_dependencies_test() {
+    # cmd:pacman-package — matches shani-builder/docker/Dockerfile's own
+    # package list where possible (see 00-create-disk.sh for the one
+    # plausible gap, dosfstools, which self-heals before this runs).
+    local deps=(
+        "btrfs:btrfs-progs" "mkfs.btrfs:btrfs-progs" "mkfs.fat:dosfstools"
+        "losetup:util-linux" "mount:util-linux" "umount:util-linux" "blkid:util-linux"
+        "zstd:zstd" "systemd-nspawn:systemd" "openssl:openssl" "chroot:coreutils"
+    )
+    for entry in "${deps[@]}"; do
+        local cmd="${entry%%:*}" pkg="${entry##*:}"
+        command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed (pacman -S ${pkg})."
+    done
+}
+
 # ---------------------------------------------------------------------------
 # GPG signing
 # ---------------------------------------------------------------------------
