@@ -1,0 +1,82 @@
+#!/bin/bash
+# ShaniOS adduser wrapper — merges ShaniOS extra groups into every adduser call.
+# Reads extra groups from /etc/shani-extra-groups (shared with useradd wrapper
+# and shani-user-setup). Falls back gracefully if file is missing.
+#
+# Install: /usr/local/bin/adduser  (shadows /usr/bin/useradd via PATH)
+
+EXTRA_GROUPS_FILE="/etc/shani-extra-groups"
+REAL_BIN="/usr/bin/useradd"
+
+if [[ ! -x "$REAL_BIN" ]]; then
+    echo "shani adduser wrapper: $REAL_BIN not found or not executable" >&2
+    exit 127
+fi
+
+DEFAULT_EXTRA_GROUPS=""
+if [[ -f "$EXTRA_GROUPS_FILE" ]]; then
+    DEFAULT_EXTRA_GROUPS=$(head -n1 "$EXTRA_GROUPS_FILE" 2>/dev/null | tr -d '[:space:]')
+fi
+
+# Nothing to merge — pass through unmodified
+if [[ -z "$DEFAULT_EXTRA_GROUPS" ]]; then
+    echo "shani adduser wrapper: WARNING: '$EXTRA_GROUPS_FILE' is missing or empty — passing through unmodified" >&2
+    exec "$REAL_BIN" "$@"
+fi
+
+# Keep only groups that exist on this system
+EXISTING_GROUPS=""
+IFS=',' read -ra _groups <<< "$DEFAULT_EXTRA_GROUPS"
+for g in "${_groups[@]}"; do
+    getent group "$g" >/dev/null 2>&1 || continue
+    EXISTING_GROUPS+="${EXISTING_GROUPS:+,}$g"
+done
+
+if [[ -z "$EXISTING_GROUPS" ]]; then
+    echo "shani adduser wrapper: WARNING: no groups from '$EXTRA_GROUPS_FILE' exist on this system — passing through unmodified" >&2
+    exec "$REAL_BIN" "$@"
+fi
+
+new_args=()
+provided_G=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --)
+            # End of options — pass remainder through as-is
+            new_args+=("$@")
+            break
+            ;;
+        -G)
+            provided_G=1
+            shift
+            if [[ $# -eq 0 ]]; then
+                echo "shani adduser wrapper: -G requires an argument" >&2
+                exit 1
+            fi
+            provided_groups="$1"
+            merged=$(printf '%s\n' ${provided_groups:+${provided_groups},}${EXISTING_GROUPS} \
+                | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+            new_args+=("-G" "$merged")
+            shift
+            ;;
+        -G*)
+            provided_G=1
+            provided_groups="${1:2}"
+            merged=$(printf '%s\n' ${provided_groups:+${provided_groups},}${EXISTING_GROUPS} \
+                | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+            new_args+=("-G" "$merged")
+            shift
+            ;;
+        *)
+            new_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ $provided_G -eq 0 ]]; then
+    new_args+=("-G" "$EXISTING_GROUPS")
+fi
+
+exec "$REAL_BIN" "${new_args[@]}"

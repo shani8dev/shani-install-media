@@ -27,7 +27,7 @@ source "amazon-ebssurrogate" "shanios" {
 
   # ── AWS placement ──────────────────────────────────────────────────────────
   region        = var.aws_region
-  profile       = var.aws_profile
+  profile       = var.aws_profile != "" ? var.aws_profile : null
   instance_type = var.instance_type
   subnet_id     = var.builder_subnet_id != "" ? var.builder_subnet_id : null
   associate_public_ip_address = var.associate_public_ip
@@ -96,7 +96,11 @@ source "amazon-ebssurrogate" "shanios" {
   # Use "uefi" if you target only Nitro (t3, m5, c5, r5 and newer)
   boot_mode = "uefi-preferred"
 
-  ami_gpt_root_device_start_offset = 2048
+  # GPT partition alignment (1MiB start offset) is handled by `parted` in
+  # 00-bootstrap-shanios.sh's mkpart calls — amazon-ebssurrogate has no
+  # config field for this (there is no ami_gpt_root_device_start_offset;
+  # an earlier version of this template had one and it would fail
+  # `packer validate` with "An argument named ... is not expected here").
 
   tags          = local.common_tags
   snapshot_tags = local.common_tags
@@ -110,9 +114,15 @@ build {
   name    = "shanios-ami"
   sources = ["source.amazon-ebssurrogate.shanios"]
 
+  # All three stages partition disks, run mkfs/mount/chroot, or read a
+  # root-owned mount — none of that works as the default `ec2-user` login,
+  # and none of the scripts self-elevate with sudo. AL2023's ec2-user has
+  # passwordless sudo by default, so root it via execute_command instead of
+  # peppering every command in every script with `sudo`.
   # ── Stage 1: Partition /dev/xvdf, receive ShaniOS, create @blue/@green ────
   provisioner "shell" {
-    script = "${path.root}/../scripts/00-bootstrap-shanios.sh"
+    script          = "${path.root}/../scripts/00-bootstrap-shanios.sh"
+    execute_command = "sudo -E -S sh -c '{{ .Vars }} {{ .Path }}'"
 
     environment_vars = [
       "ARTIFACT_BASE=${local.artifact_base}",
@@ -130,16 +140,18 @@ build {
 
   # ── Stage 2: AWS-specific system configuration ────────────────────────────
   provisioner "shell" {
-    script  = "${path.root}/../scripts/01-configure-aws.sh"
-    timeout = "20m"
+    script          = "${path.root}/../scripts/01-configure-aws.sh"
+    execute_command = "sudo -E -S sh -c '{{ .Vars }} {{ .Path }}'"
+    timeout         = "20m"
   }
 
   # ── Stage 3: Verify ───────────────────────────────────────────────────────
   # Separate script so runtime shell vars (sourced from /tmp/shanios-env.sh)
   # are expanded by bash at execution time, not by HCL at parse time.
   provisioner "shell" {
-    script  = "${path.root}/../scripts/02-verify.sh"
-    timeout = "5m"
+    script          = "${path.root}/../scripts/02-verify.sh"
+    execute_command = "sudo -E -S sh -c '{{ .Vars }} {{ .Path }}'"
+    timeout         = "5m"
   }
 
   # ── Manifest ──────────────────────────────────────────────────────────────

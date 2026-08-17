@@ -702,8 +702,7 @@ R2 secrets are optional — if unset, all uploads go to SourceForge only.
 │   ├── promote-stable.sh
 │   └── upload.sh
 ├── test-env/                       # `./build.sh test <command>` — see test-env/README.md
-│   ├── test.sh                     # Dispatcher (mirrors build.sh's own case table)
-│   ├── scripts/                    # 00-create-disk.sh ... 07-boot-qemu.sh
+│   ├── test.sh                     # Everything: disk/ca/bootstrap/serve/enter/upgrade/reboot/rollback/cycle/qemu
 │   └── disk/                       # Generated loop images, CA — gitignored except .gitkeep
 ├── image_profiles/
 │   ├── gnome/
