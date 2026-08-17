@@ -122,8 +122,8 @@ check_gpg_key() {
 # built image on loop-mounted disks — see test-env/README.md).
 check_dependencies_test() {
     # cmd:pacman-package — matches shani-builder/docker/Dockerfile's own
-    # package list where possible (see test-env/test.sh's cmd_disk for the
-    # one plausible gap, dosfstools, which self-heals before this runs).
+    # package list where possible (see 00-create-disk.sh for the one
+    # plausible gap, dosfstools, which self-heals before this runs).
     local deps=(
         "btrfs:btrfs-progs" "mkfs.btrfs:btrfs-progs" "mkfs.fat:dosfstools"
         "losetup:util-linux" "mount:util-linux" "umount:util-linux" "blkid:util-linux"

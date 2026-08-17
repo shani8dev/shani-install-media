@@ -39,41 +39,19 @@ vendors or patches `shani-deploy`/`shani-update`/`gen-efi`.
 ## What it does
 
 `build.sh test <command>` (its dispatch table just execs `test-env/test.sh`,
-same as every other `build.sh` subcommand execs a script under `scripts/`).
-The entire rig is this one file — every command is a function called
-directly by the dispatcher at the bottom:
+same as every other `build.sh` subcommand execs a script under `scripts/`)
+drives the numbered scripts below:
 
-| `build.sh test` command | Implemented by | What it does |
+| `build.sh test` command | Script | What it does |
 |---|---|---|
-| `disk` | `test.sh`'s `cmd_disk` | Creates two sparse loop-backed images standing in for the real GPT disk (`esp.img` FAT32, `root.img` Btrfs — see `os-installer-config/bits/part.sfdisk`). Auto-installs `dosfstools` first if `mkfs.fat` is missing from the builder image — see "Requirements" below |
-| `ca` | `test.sh`'s `cmd_ca` | Generates a throwaway CA + `downloads.shani.dev` server cert, used only inside this rig (see "The local mirror" below) |
-| `bootstrap -p <profile> [-d latest\|stable\|<date>]` | `test.sh`'s `cmd_bootstrap` | Resolves and `btrfs receive`s a real `.zst` **directly from `OUTPUT_DIR`** (config.sh's `./cache/output`), snapshots it to `@blue`/`@green`, and trust-anchors the test CA into each slot |
-| `serve [port]` | `test.sh`'s `cmd_serve` | Serves `OUTPUT_DIR` as-is over real HTTPS as a stand-in for `downloads.shani.dev` |
-| `enter <blue\|green> [--boot]` | `test.sh`'s `cmd_enter` | Enters a slot via `systemd-nspawn`, looking exactly like a booted ShaniOS system to `shani-deploy`/`shani-update` |
-| `upgrade` / `reboot` / `rollback` | `test.sh`'s `cmd_upgrade`/`cmd_reboot`/`cmd_rollback` | Drive the real update → reboot → rollback cycle (each just resolves the current slot and calls `cmd_enter`) |
-| `cycle -p <profile>` | `test.sh`'s inline `cycle` case | `disk` → `ca` → `bootstrap` → `serve` (background) → `upgrade` → `reboot` in one go |
-| `qemu` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test` |
-
-### One file, no sibling scripts
-
-Everything that used to be a numbered script (`00`–`07`) or a separate
-bind-mounted stub is now inside `test.sh` — one file to read top to bottom:
-
-- `cmd_disk`, `cmd_ca`, `cmd_bootstrap`, `cmd_serve`, `cmd_enter`,
-  `cmd_upgrade`, `cmd_reboot`, `cmd_rollback` are plain functions, called
-  directly by the dispatcher `case` at the bottom.
-- `cmd_qemu` (was `07-boot-qemu.sh`) is a function too. It runs on the
-  **host**, outside `run_in_container.sh` entirely, so it guards itself with
-  `_in_container()` and refuses to boot (with a pointer to the right
-  invocation) if you accidentally run it through `build.sh test qemu` inside
-  the builder container instead of `test-env/test.sh qemu` directly.
-- The `systemd-inhibit` stub — needed because `shani-deploy.sh` calls
-  `systemd-inhibit` and there's no logind session inside `nspawn` — used to
-  be a standalone file only because it's bind-mounted **by path**
-  (`--bind=".../stub:/usr/bin/systemd-inhibit"`). `cmd_enter` now calls
-  `_ensure_inhibit_stub`, which writes that file out once to
-  `disk/.systemd-inhibit-stub.sh` the first time it's needed, so there's
-  still a real file to bind-mount without keeping it checked into the repo.
+| `disk` | `00-create-disk.sh` | Creates two sparse loop-backed images standing in for the real GPT disk (`esp.img` FAT32, `root.img` Btrfs — see `os-installer-config/bits/part.sfdisk`). Auto-installs `dosfstools` first if `mkfs.fat` is missing from the builder image — see "Requirements" below |
+| `ca` | `00b-generate-test-ca.sh` | Generates a throwaway CA + `downloads.shani.dev` server cert, used only inside this rig (see "The local mirror" below) |
+| `bootstrap -p <profile> [-d latest\|stable\|<date>]` | `01-bootstrap-rootfs.sh` | Resolves and `btrfs receive`s a real `.zst` **directly from `OUTPUT_DIR`** (config.sh's `./cache/output`), snapshots it to `@blue`/`@green`, and trust-anchors the test CA into each slot |
+| `serve [port]` | `02-serve-update.sh` | Serves `OUTPUT_DIR` as-is over real HTTPS as a stand-in for `downloads.shani.dev` |
+| `enter <blue\|green> [--boot]` | `03-enter-slot.sh` | Enters a slot via `systemd-nspawn`, looking exactly like a booted ShaniOS system to `shani-deploy`/`shani-update` |
+| `upgrade` / `reboot` / `rollback` | `04/05/06-simulate-*.sh` | Drive the real update → reboot → rollback cycle |
+| `cycle -p <profile>` | (all of the above) | `disk` → `ca` → `bootstrap` → `serve` (background) → `upgrade` → `reboot` in one go |
+| `qemu` | `07-boot-qemu.sh` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run directly, not through `build.sh test` |
 
 ## The local mirror
 
@@ -84,22 +62,22 @@ would mean testing a modified binary, not what actually ships). Instead:
 - `../run_in_container.sh` passes `--add-host=downloads.shani.dev:127.0.0.1`
   on every invocation (a no-op for every command except this one), so the
   domain resolves to the container's own loopback
-- `cmd_ca` mints a CA + leaf cert for that exact CN
-- `cmd_bootstrap` trust-anchors the CA **inside `@blue`/`@green`**
+- `00b-generate-test-ca.sh` mints a CA + leaf cert for that exact CN
+- `01-bootstrap-rootfs.sh` trust-anchors the CA **inside `@blue`/`@green`**
   (Arch/p11-kit: `trust anchor` + `trust extract-compat`) at receive time
-- `cmd_enter` bind-mounts the host's `/etc/hosts` into the slot so DNS
-  resolution matches, and swaps in the `systemd-inhibit` stub script (there's
-  no logind session in a one-shot `nspawn` invocation)
+- `03-enter-slot.sh` bind-mounts the host's `/etc/hosts` into the slot so DNS
+  resolution matches, and swaps in a `systemd-inhibit` stub (there's no
+  logind session in a one-shot `nspawn` invocation)
 
 Net effect: the real, unmodified `shani-update`/`shani-deploy` binaries
 already inside the received image hit `https://downloads.shani.dev` exactly
-as they would in production, and land on `cmd_serve` instead — real
+as they would in production, and land on `02-serve-update.sh` instead — real
 HTTPS, real cert validation, zero code changes anywhere.
 
 The on-disk layout of `OUTPUT_DIR` and the real R2/SourceForge remote are
 **identical** (compare `scripts/upload.sh`'s `R2_SUBPATH="${PROFILE}/${RESOLVED_DATE}"`
 against `shani-deploy.sh`'s `r2_image_path="${REMOTE_PROFILE}/${REMOTE_VERSION}/${IMAGE_NAME}"`),
-so `cmd_serve` serves `OUTPUT_DIR` completely as-is — nothing is
+so `02-serve-update.sh` serves `OUTPUT_DIR` completely as-is — nothing is
 staged, copied, or reshaped.
 
 **Important:** none of this ever touches the original `.zst` or any repo
@@ -134,12 +112,12 @@ is the one deliberate, documented on-disk change made to a received image;
 ./run_in_container.sh build.sh test cycle -p plasma
 
 # on the HOST, not through run_in_container.sh:
-test-env/test.sh qemu
+test-env/scripts/07-boot-qemu.sh
 ```
 
 ## What this does NOT simulate
 
-- Real UEFI firmware for the deploy/update steps (only `cmd_qemu`,
+- Real UEFI firmware for the deploy/update steps (only `07-boot-qemu.sh`,
   which runs on the host via OVMF, is a genuine UEFI boot)
 - `/etc` and `/var` as overlayfs mounts (real ShaniOS overlays them from
   `@data`; this harness leaves them as plain parts of the slot subvolume —
@@ -147,7 +125,7 @@ test-env/test.sh qemu
 - GPG signature verification is only as good as whatever `.asc` file sits
   next to your build output — `./build.sh` should already produce one
 - The real install flow (`os-installer-config/scripts/install.sh`) itself —
-  `cmd_bootstrap` mirrors its subvolume layout but doesn't invoke it
+  `01-bootstrap-rootfs.sh` mirrors its subvolume layout but doesn't invoke it
 
 ## Requirements
 
@@ -162,5 +140,5 @@ builder image (built for image/ISO assembly, not this harness) is
 same persistent pacman cache `../run_in_container.sh` already bind-mounts, so
 it's only a real download on the very first run.
 
-Host, for `test-env/test.sh qemu` only: `qemu-system-x86` + OVMF
+Host, for `test-env/scripts/07-boot-qemu.sh` only: `qemu-system-x86` + OVMF
 (`apt install qemu-system-x86 ovmf` / `pacman -S qemu-full edk2-ovmf`).

@@ -32,11 +32,10 @@ make init
 # 3. Validate the template
 make validate
 
-# 4. Build (default profile: server)
+# 4. Build (default profile: gnome)
 make build
 
 # Build a different profile
-make build PROFILE=gnome
 make build PROFILE=plasma
 make build PROFILE=cosmic
 ```
@@ -101,13 +100,6 @@ Builder instance (AL2023)          Target volume /dev/xvdf
 
 Stages share context via `/tmp/shanios-env.sh` written at the end of Stage 1.
 
-All three run as root — none of these scripts prefix their own commands with
-`sudo`, and the default `ssh_username` (`ec2-user` on AL2023) isn't root, so
-each `provisioner "shell"` block sets `execute_command = "sudo -E -S sh -c
-'{{ .Vars }} {{ .Path }}'"` in [`shanios-ami.pkr.hcl`](templates/shanios-ami.pkr.hcl)
-to elevate. AL2023's `ec2-user` has passwordless sudo by default, so no
-password needs to be piped in.
-
 ---
 
 ## Variables Reference
@@ -115,7 +107,7 @@ password needs to be piped in.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `aws_region` | `us-east-1` | Build region |
-| `instance_type` | `c6a.xlarge` | Builder instance (≥4 vCPU / 8 GiB recommended) |
+| `instance_type` | `t3.xlarge` | Builder instance (≥4 vCPU / 8 GiB recommended) |
 | `r2_base_url` | — | CDN base URL for the base image (e.g. `https://downloads.shani.dev`) |
 | `s3_base_url` | — | S3 base URL (fallback if r2 not set) |
 | `shanios_profile` | `gnome` | Profile: `gnome` \| `plasma` \| `cosmic` |

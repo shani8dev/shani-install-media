@@ -13,10 +13,6 @@
 
 # ── AWS ──────────────────────────────────────────────────────────────────────
 aws_region          = "us-east-1"
-# Named profile for local builds. Leave "" (or delete this line) for CI /
-# OIDC / EC2-instance-role builds — an explicit profile name here makes
-# Packer look it up in ~/.aws/credentials specifically, which doesn't exist
-# on a fresh GitHub Actions runner and would fail the build.
 aws_profile         = "default"
 
 # c6a.xlarge: 4 vCPU / 8 GiB / AMD — fast zstd decompress, good value
