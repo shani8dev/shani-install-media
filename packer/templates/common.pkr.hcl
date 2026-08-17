@@ -10,8 +10,8 @@ variable "aws_region" {
 
 variable "aws_profile" {
   type        = string
-  default     = "default"
-  description = "AWS CLI named profile. Alternatively set AWS_PROFILE, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY in environment."
+  default     = ""
+  description = "AWS CLI named profile. Leave blank to use the standard SDK credential chain (env vars, OIDC/IAM role, EC2 instance role) — required for CI, since GitHub Actions OIDC via configure-aws-credentials only exports environment variables and creates no ~/.aws/credentials file. Set explicitly for local builds against a named profile."
 }
 
 variable "instance_type" {
