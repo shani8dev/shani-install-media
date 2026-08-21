@@ -89,10 +89,13 @@ if [[ "${CONTAINER_RUNTIME}" == "podman" ]]; then
     IMPORT_KEYS_CMD="sed -i 's/^SigLevel[[:space:]]*.*/SigLevel = Never/' /etc/pacman.conf && "
 fi
 
-# SSH key — needed for SourceForge rsync uploads
+# SSH key — needed for SourceForge rsync uploads. Passed into the container
+# base64-encoded via --env-file (see ENV_FILE below), never as a plain -e
+# argument — docker run -e VAR=value lands in the process's argv, which
+# /proc/<pid>/cmdline exposes to every local user via `ps aux`, not just root.
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
     IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && \
-echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
+echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
 ssh-keyscan -H github.com sourceforge.net >> ~/.ssh/known_hosts 2>/dev/null && \
 chmod 644 ~/.ssh/known_hosts && \
 printf "Host *\n    StrictHostKeyChecking no\n    BatchMode yes\n" > ~/.ssh/config && '
@@ -107,7 +110,7 @@ fi
 # actually lands in the keyring.
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     IMPORT_KEYS_CMD+="mkdir -p \"${CONTAINER_GNUPGHOME}\" && chmod 700 \"${CONTAINER_GNUPGHOME}\" && \
-echo \"\$GPG_PRIVATE_KEY\" > /tmp/gpg_private.key && \
+echo \"\$GPG_PRIVATE_KEY_B64\" | base64 -d > /tmp/gpg_private.key && \
 _gpg_ok=0 && \
 for _i in 1 2 3; do \
   gpg --batch --yes --pinentry-mode loopback --passphrase \"\$GPG_PASSPHRASE\" --homedir \"${CONTAINER_GNUPGHOME}\" --import /tmp/gpg_private.key; \
@@ -123,14 +126,22 @@ fi
 # rclone config for Cloudflare R2 (S3-compatible)
 # R2_ACCOUNT_ID: 32-char hex Cloudflare account ID from the R2 dashboard
 # no_check_bucket: skips BucketExists call which R2 does not support
+#
+# The heredoc terminator below is deliberately UNQUOTED (<<RCLONE_EOF, not
+# <<'RCLONE_EOF') and the three R2 vars are backslash-escaped (\$R2_...) so
+# the host's bash does NOT substitute their values while building this
+# string — that would bake the literal secret into FINAL_CMD, which is
+# itself passed as the `bash -c "..."` argument to `docker run`, exposing it
+# via /proc/<pid>/cmdline just like a plain `-e VAR=secret` would. Expansion
+# is deferred to the container's own bash, reading from --env-file instead.
 if [[ -n "${R2_ACCESS_KEY_ID:-}" && -n "${R2_SECRET_ACCESS_KEY:-}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
-    IMPORT_KEYS_CMD+="mkdir -p ~/.config/rclone && cat > ~/.config/rclone/rclone.conf << 'RCLONE_EOF'
+    IMPORT_KEYS_CMD+="mkdir -p ~/.config/rclone && cat > ~/.config/rclone/rclone.conf << RCLONE_EOF
 [r2]
 type = s3
 provider = Cloudflare
-access_key_id = ${R2_ACCESS_KEY_ID}
-secret_access_key = ${R2_SECRET_ACCESS_KEY}
-endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+access_key_id = \$R2_ACCESS_KEY_ID
+secret_access_key = \$R2_SECRET_ACCESS_KEY
+endpoint = https://\${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
 acl = private
 no_check_bucket = true
 RCLONE_EOF
@@ -138,6 +149,27 @@ echo 'rclone config written for Cloudflare R2' && "
 fi
 
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
+
+# ---------------------------------------------------------------------------
+# Secrets env-file (never `-e VAR=value` on the docker CLI) — `docker run -e`
+# arguments land in the process's argv, and /proc/<pid>/cmdline (hence `ps aux`)
+# is readable by every local user by default, not just the owner. A 600-perm
+# temp file read via --env-file never appears on the command line at all.
+# SSH_PRIVATE_KEY/GPG_PRIVATE_KEY are base64-encoded to survive the env-file's
+# one-value-per-line format (their real content is multi-line PEM/PGP blocks);
+# the import commands above decode them back inside the container.
+# ---------------------------------------------------------------------------
+SECRETS_ENV_FILE="$(mktemp)"
+chmod 600 "${SECRETS_ENV_FILE}"
+trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
+{
+    echo "GPG_PASSPHRASE=${GPG_PASSPHRASE:-}"
+    echo "R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}"
+    echo "R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}"
+    echo "R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}"
+    [[ -n "${SSH_PRIVATE_KEY:-}" ]] && echo "SSH_PRIVATE_KEY_B64=$(printf '%s' "${SSH_PRIVATE_KEY}" | base64 -w0)"
+    [[ -n "${GPG_PRIVATE_KEY:-}" ]] && echo "GPG_PRIVATE_KEY_B64=$(printf '%s' "${GPG_PRIVATE_KEY}" | base64 -w0)"
+} > "${SECRETS_ENV_FILE}"
 
 # ---------------------------------------------------------------------------
 # Pull latest builder image (non-fatal — uses cached image if offline)
@@ -169,14 +201,9 @@ FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
     -v "${HOST_SNAPD_DATA}:${CONTAINER_SNAPD_DATA}" \
     -v "${HOST_SNAPD_SEED}:${CONTAINER_SNAPD_SEED}" \
     -e CUSTOM_MIRROR="${CUSTOM_MIRROR}" \
-    -e SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}" \
-    -e GPG_PRIVATE_KEY="${GPG_PRIVATE_KEY:-}" \
-    -e GPG_PASSPHRASE="${GPG_PASSPHRASE:-}" \
+    --env-file "${SECRETS_ENV_FILE}" \
     -e GPG_KEY_ID="${GPG_KEY_ID:-}" \
     -e GNUPGHOME="${CONTAINER_GNUPGHOME}" \
-    -e R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
-    -e R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \
-    -e R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" \
     -e R2_BUCKET="${R2_BUCKET:-}" \
     -e NO_SF="${NO_SF:-false}" \
     -e NO_R2="${NO_R2:-false}" \
