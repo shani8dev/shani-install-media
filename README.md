@@ -1,6 +1,8 @@
 # Shani OS Install Media Builder
 
-A fully automated build system for **Shani OS** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, and COSMIC desktop profiles. All steps run inside a Docker container so your host system is never modified.
+A fully automated build system for **Shani OS** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, and headless Server profiles. Image/ISO builds run inside a Docker container so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
+
+Also builds and publishes **AWS AMIs** from an already-built base image — see [Building an AWS AMI](#aws-ami-builds-build-amiyml) below.
 
 The container image is maintained in [shani-builder](https://github.com/shani8dev/shani-builder).
 
@@ -622,6 +624,12 @@ The container runs `--privileged --cap-add SYS_ADMIN --device=/dev/fuse` because
 
 ## GitHub Actions
 
+This repo has one workflow of its own (`build-ami.yml`, AWS AMI builds —
+see below); the image/ISO build and promotion workflows live in
+shani-builder and are described here for reference.
+
+### Image/ISO builds (`build-image.yml`, `promote-stable.yml`)
+
 The workflow that builds this repo's images/ISOs, `build-image.yml`, lives
 in **[shani-builder](https://github.com/shani8dev/shani-builder)**, not
 here — it checks out this repo, then drives `run_in_container.sh`/`build.sh`
@@ -667,6 +675,38 @@ MOK keys are written to `keys/mok/` at build time:
 
 R2 secrets are optional — if unset, all uploads go to SourceForge only.
 
+### AWS AMI builds (`build-ami.yml`)
+
+This workflow lives in **this** repo, at `.github/workflows/build-ami.yml`,
+and drives the Packer template in `packer/` (see
+[`packer/README.md`](packer/README.md) for the full manual/local build
+docs — `make init` / `make validate` / `make build`). It builds an AMI from
+an already-published base image (`.zst` Btrfs send-stream from R2), using
+the same blue-green Btrfs layout as the physical/ISO installer.
+
+Triggers: any push to `main` touching `packer/**`, `image_profiles/server/**`,
+or `config/config.sh`, or manual `workflow_dispatch`.
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `profile` | `server` | `server`, `gnome`, `plasma`, or `cosmic` |
+| `root_volume_size_gb` | `20` | Root EBS volume size (20 for server, 40 recommended for desktop profiles) |
+| `promote_stable` | `false` | Accepted by the workflow but not currently wired to any step — has no effect yet |
+
+Authenticates to AWS via OIDC (`AWS_PACKER_ROLE_ARN`, permissions in
+[`packer/iam-policy.json`](packer/iam-policy.json)), not long-lived keys.
+On success, the built AMI ID is read from `packer-manifest.json` and
+written to the job summary; on failure, the Packer build log is uploaded
+as a workflow artifact.
+
+| Secret / var | Description |
+|--------------|-------------|
+| `AWS_PACKER_ROLE_ARN` | IAM role Packer assumes via OIDC |
+| `AWS_REGION` | Target AWS region |
+| `R2_BASE_URL` | Where the base `.zst` image is fetched from |
+| `GPG_KEY_ID`, `GPG_PUBLIC_KEY` | Verify the base image's signature before building from it |
+| `vars.PACKER_INSTANCE_TYPE` | Build instance type (repo/org variable, not a secret; default `c6a.xlarge`) |
+
 ---
 
 ## Project Structure
@@ -701,6 +741,9 @@ R2 secrets are optional — if unset, all uploads go to SourceForge only.
 │   │   └── overlay -> ../shared/overlay
 │   ├── plasma/                     # Same structure
 │   ├── cosmic/                     # Same structure
+│   ├── server/                     # Image-only — no iso_profiles/server/ counterpart;
+│   │                               # own overlay overrides (plymouth-*.service masked to
+│   │                               # /dev/null), consumed by packer/ for AMI builds
 │   └── shared/
 │       └── overlay/rootfs/         # Copied verbatim into every base image
 │           ├── etc/
@@ -739,6 +782,21 @@ R2 secrets are optional — if unset, all uploads go to SourceForge only.
 │       ├── ssh-private             # ← never commit
 │       ├── ssh-public
 │       └── github-ssh-secrets.env  # Generated — delete after uploading
+├── packer/                         # AWS AMI builder — see packer/README.md and
+│   │                               # "Building an AWS AMI" below
+│   ├── Makefile
+│   ├── iam-policy.json
+│   ├── templates/
+│   │   ├── shanios-ami.pkr.hcl
+│   │   ├── common.pkr.hcl
+│   │   └── variables.pkrvars.hcl
+│   └── scripts/
+│       ├── 00-bootstrap-shanios.sh
+│       ├── 01-configure-aws.sh
+│       └── 02-verify.sh
+├── .github/workflows/
+│   └── build-ami.yml               # CI counterpart to `make build` in packer/ —
+│                                   # see "Building an AWS AMI" below
 └── cache/                          # Generated at build time — not committed
     ├── build/                      # Btrfs loop image files (base.img, flatpak.img, snap.img)
     ├── output/                     # Final artifacts per profile/date
@@ -753,7 +811,19 @@ R2 secrets are optional — if unset, all uploads go to SourceForge only.
 
 ## Build Environment
 
-All steps run inside the `shrinivasvkumbhar/shani-builder` Docker image from [shani-builder](https://github.com/shani8dev/shani-builder). It is based on `archlinux:base-devel` and pre-installs `archiso`, `btrfs-progs`, `sbsigntools`, `shim-signed`, `mokutil`, `mtools`, `flatpak`, `snapd`, `rclone`, `rsync`, `openssh`, `mktorrent`, `zsync`, and more. It also imports the Shani OS signing GPG key and registers the `[shani]` custom pacman repository at `https://repo.shani.dev/x86_64`.
+Image/ISO builds (`build.sh`, everything under `scripts/`) all run inside
+the `shrinivasvkumbhar/shani-builder` Docker image from
+[shani-builder](https://github.com/shani8dev/shani-builder). It is based on
+`archlinux:base-devel` and pre-installs `archiso`, `btrfs-progs`,
+`sbsigntools`, `shim-signed`, `mokutil`, `mtools`, `flatpak`, `snapd`,
+`rclone`, `rsync`, `openssh`, `mktorrent`, `zsync`, and more. It also
+imports the Shani OS signing GPG key and registers the `[shani]` custom
+pacman repository at `https://repo.shani.dev/x86_64`.
+
+The AWS AMI build (`packer/`) is separate and does **not** use this
+container — it runs Packer directly on a plain `ubuntu-latest` GitHub
+runner (or locally via `make build`), building the AMI on top of an
+already-published base image rather than assembling one from scratch.
 
 ---
 
