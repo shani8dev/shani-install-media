@@ -445,11 +445,26 @@ _ensure_host_machine_id() {
     || die "Could not initialize /etc/machine-id in the builder container (needed by systemd-nspawn itself, not the target image)"
 }
 
+# Even with --register=no (which skips systemd-machined registration) and
+# --keep-unit (which skips asking systemd to allocate a transient scope),
+# nspawn still tries to connect to the system bus at startup — with no bus
+# present at all, that connection failure makes nspawn's PARENT kill its own
+# container-setup child outright, surfacing only the uninformative "Parent
+# died too early". The builder image has dbus installed but nothing starts
+# it. A private, otherwise-unused system bus is enough to satisfy this.
+_ensure_dbus() {
+  [[ -S /run/dbus/system_bus_socket ]] && return 0
+  mkdir -p /run/dbus
+  dbus-daemon --system --fork \
+    || die "Could not start dbus-daemon in the builder container (needed by systemd-nspawn itself)"
+}
+
 # ------------------------------------------------------------------
 # enter   (was 03-enter-slot.sh)
 # ------------------------------------------------------------------
 cmd_enter() {
   _ensure_host_machine_id
+  _ensure_dbus
   local slot="${1:?Usage: $(basename "$0") enter <blue|green> [--boot] [command...]}"
   shift || true
   [[ "$slot" =~ ^(blue|green)$ ]] || die "slot must be 'blue' or 'green'"
@@ -491,6 +506,8 @@ cmd_enter() {
     log "Booting @${slot} (full systemd boot via nspawn --boot)"
     exec systemd-nspawn \
         --quiet \
+        --register=no \
+        --keep-unit \
         --boot \
         --machine="shanios-${slot}" \
         --directory="$work/merged" \
@@ -508,8 +525,18 @@ cmd_enter() {
   fi
 
   log "Entering @${slot} via systemd-nspawn (writable overlay, ephemeral upper layer persists across runs in ${work}/upper)"
+  # --register=no: skip registering the new machine with systemd-machined
+  # over D-Bus (see _ensure_dbus above for why a bus needs to exist at all).
+  # --keep-unit: place the container in the CALLING process's own cgroup
+  # instead of asking systemd (over that same bus) to allocate a transient
+  # scope unit for it — there's no real systemd manager listening as
+  # org.freedesktop.systemd1 on this bus, so that request would otherwise
+  # fail with "Failed to allocate scope: Failed to execute program
+  # org.freedesktop.systemd1: Permission denied".
   exec systemd-nspawn \
       --quiet \
+      --register=no \
+      --keep-unit \
       --directory="$work/merged" \
       --capability=all \
       --bind="$root_loop" \

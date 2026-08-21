@@ -193,15 +193,26 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
 # that then fails with "No such file or directory" / "device node ... is
 # lost". Bind-mounting the real host /dev keeps every container's view of
 # loop devices in sync with the host's actual state.
+#
+# --cgroupns=host: Docker's default (private) cgroup namespace makes every
+# container see its own cgroup as "/", regardless of where it actually sits
+# in the host's real cgroup tree. `build.sh test enter`'s systemd-nspawn
+# needs to create its own child cgroup to delegate to the container it
+# spawns, and computes that child's path from what it reads as its own
+# current cgroup — under the private namespace this resolves to a path that
+# doesn't correspond to anything real, so the mkdir fails with "Failed to
+# create /payload subcgroup: No such file or directory". --cgroupns=host
+# makes the container's cgroup view match the host's actual tree.
 # ---------------------------------------------------------------------------
 "${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
+    --cgroupns=host \
     --tmpfs /tmp \
     --tmpfs /run/lock \
     --tmpfs /run \
     --cap-add SYS_ADMIN \
     --security-opt apparmor:unconfined \
     --security-opt seccomp:unconfined \
-    -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+    -v /sys/fs/cgroup:/sys/fs/cgroup \
     -v /lib/modules:/lib/modules:ro \
     -v /dev:/dev \
     --add-host="downloads.shani.dev:127.0.0.1" \
