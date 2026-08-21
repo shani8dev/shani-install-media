@@ -53,6 +53,7 @@ directly by the dispatcher at the bottom:
 | `upgrade` / `reboot` / `rollback` | `test.sh`'s `cmd_upgrade`/`cmd_reboot`/`cmd_rollback` | Drive the real update → reboot → rollback cycle (each just resolves the current slot and calls `cmd_enter`) |
 | `cycle -p <profile>` | `test.sh`'s inline `cycle` case | `disk` → `ca` → `bootstrap` → `serve` (background) → `upgrade` → `reboot` in one go |
 | `qemu` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test`. Also wires up a virtio-serial channel for `qemu-guest-agent` (every profile ships it via `shani-video-guest`), matching what a real libvirt-managed VM provides |
+| `iso -p <profile> [-d latest\|stable\|<date>]` | `test.sh`'s `cmd_iso` | A genuine UEFI boot (via OVMF) of a real, unmodified installer ISO from `OUTPUT_DIR` — **host-only**, run `test-env/test.sh iso -p <profile>` directly. Boots to the real live-installer `systemd-boot` menu; the GUI installer itself is interactive and not automated. If `disk/root.img`+`disk/esp.img` already exist, they're attached as an optional install target |
 | `clean` | `test.sh`'s `cmd_clean` | Unmounts everything (nspawn overlays, the ESP, the top-level Btrfs mount) and detaches root.img/esp.img's loop devices. Leaves the images themselves in place |
 
 **Run `clean` when you're done testing.** Loop-device attachment doesn't
@@ -160,7 +161,9 @@ test-env/test.sh qemu
   `cmd_bootstrap` creates the same full subvolume set and calls the same
   `gen-efi configure <slot>` each slot's own install would have, but skips
   install.sh's disk-partitioning and configure.sh's locale/hostname/user
-  setup
+  setup. `cmd_iso` gets you to the real, interactive installer GUI (see
+  below) but doesn't click through it — a human still has to actually run
+  the install to exercise this path end-to-end
 
 `cmd_qemu` (via OVMF) IS a genuine, complete UEFI boot of what
 `cmd_bootstrap` sets up — firmware → shim → systemd-boot → the real UKI →
@@ -175,6 +178,19 @@ every other production subvolume was equally missing. Both are now handled
 by `cmd_bootstrap` itself, using the exact subvolume list and per-slot
 `gen-efi configure` call a real install performs, so `cmd_qemu` works
 against any freshly bootstrapped disk with no manual setup.
+
+`cmd_iso` (via OVMF) is a genuine boot of a real, unmodified installer
+ISO — firmware → shim → systemd-boot, presenting the actual live-installer
+boot menu ("Shani OS installer (x86_64, UEFI)", the nomodeset variant, EFI
+Shell, Reboot Into Firmware Interface) — confirmed live. It's the one part
+of the pipeline this harness previously had zero coverage of at all:
+`build.sh iso`/`iso-only`/`repack` only build and upload the ISO, with no
+boot-test step anywhere. `cmd_iso` doesn't drive the GUI installer itself
+(it's interactive by design), but it does give an automated, repeatable
+answer to "does the ISO you just built actually boot" — the most common
+way an ISO silently breaks (a bad shim/MOK signature, a corrupt hybrid
+GPT/El Torito image, a missing kernel module in the live squashfs) shows
+up right here, before a human ever needs to sit through it.
 
 Two more gaps found via an actual booted-to-GDM run and fixed to match
 production/real-hypervisor behavior instead of leaving the harness to

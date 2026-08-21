@@ -68,6 +68,7 @@ Commands:
   rollback    Simulate a rollback (real shani-update --rollback)
   cycle       disk → ca → bootstrap → serve (background) → upgrade → reboot (requires -p <profile>)
   qemu        Genuine UEFI boot via OVMF — HOST-ONLY, see below
+  iso         Boot a real installer ISO via OVMF — HOST-ONLY, see below (requires -p <profile> [-d latest|stable|<date>])
   clean       Unmount everything and detach root.img/esp.img's loop devices
 
 Loop-device attachment does NOT survive across separate
@@ -80,8 +81,8 @@ otherwise releases them). root.img/esp.img themselves are left alone —
 `clean` only tears down mounts and loop attachments, not the disk images.
 
 Options:
-  -p <profile>    Profile name (e.g. gnome, plasma) — for bootstrap/cycle
-  -d <sel>        Image selector: 'latest' (default), 'stable', or a date — for bootstrap/cycle
+  -p <profile>    Profile name (e.g. gnome, plasma) — for bootstrap/cycle/iso
+  -d <sel>        Image selector: 'latest' (default), 'stable', or a date — for bootstrap/cycle/iso
 
 Run from the repo root, via build.sh (like every other command in this repo):
   ./run_in_container.sh build.sh test disk
@@ -95,9 +96,11 @@ Run from the repo root, via build.sh (like every other command in this repo):
   ./run_in_container.sh build.sh test cycle -p plasma
   ./run_in_container.sh build.sh test clean
 
-qemu needs your GPU/display, so run this file directly on the HOST instead
-of through build.sh/run_in_container.sh (which would put it in a container):
+qemu/iso need your GPU/display, so run this file directly on the HOST
+instead of through build.sh/run_in_container.sh (which would put it in a
+container):
   test-env/test.sh qemu
+  test-env/test.sh iso -p plasma
 EOF
   exit 1
 }
@@ -763,6 +766,135 @@ cmd_rollback() {
   cmd_enter "$current_slot" shani-update --rollback
 }
 
+# Locate OVMF firmware. Sets globals OVMF_CODE_PATH / OVMF_VARS_TEMPLATE_PATH
+# (shared by cmd_qemu and cmd_iso — both boot via the same firmware).
+_locate_ovmf() {
+  OVMF_CODE_PATH="${OVMF_CODE:-}"
+  OVMF_VARS_TEMPLATE_PATH="${OVMF_VARS_TEMPLATE:-}"
+  local candidate
+  for candidate in \
+      /usr/share/OVMF/OVMF_CODE_4M.fd \
+      /usr/share/OVMF/OVMF_CODE.fd \
+      /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+      /usr/share/edk2/x64/OVMF_CODE.fd; do
+      [[ -z "$OVMF_CODE_PATH" && -f "$candidate" ]] && OVMF_CODE_PATH="$candidate"
+  done
+  for candidate in \
+      /usr/share/OVMF/OVMF_VARS_4M.fd \
+      /usr/share/OVMF/OVMF_VARS.fd \
+      /usr/share/edk2-ovmf/x64/OVMF_VARS.fd \
+      /usr/share/edk2/x64/OVMF_VARS.fd; do
+      [[ -z "$OVMF_VARS_TEMPLATE_PATH" && -f "$candidate" ]] && OVMF_VARS_TEMPLATE_PATH="$candidate"
+  done
+  [[ -n "$OVMF_CODE_PATH" && -n "$OVMF_VARS_TEMPLATE_PATH" ]] || {
+      echo "Couldn't find OVMF firmware. Install it:" >&2
+      echo "  apt install qemu-system-x86 ovmf   (Debian/Ubuntu)" >&2
+      echo "  pacman -S qemu-full edk2-ovmf      (Arch)" >&2
+      echo "or set \$OVMF_CODE / \$OVMF_VARS_TEMPLATE explicitly." >&2
+      exit 1
+  }
+}
+
+# ------------------------------------------------------------------
+# iso   — HOST-ONLY: boot a real, unmodified installer ISO via OVMF
+#
+# This is the one thing cmd_qemu deliberately does NOT cover: the real
+# install flow (os-installer-config/scripts/install.sh's partitioning,
+# configure.sh's locale/hostname/user setup, the os-installer GUI itself)
+# has no automated test anywhere in this repo. cmd_iso doesn't automate the
+# GUI either (it's an interactive installer — a human has to click through
+# it), but it DOES give a genuine, automated confirmation that the signed
+# ISO you built actually boots: firmware -> shim -> systemd-boot -> the
+# live UKI -> kernel -> systemd -> the installer GUI, all unmodified.
+#
+# If disk/root.img + disk/esp.img already exist (run `disk` first), they're
+# attached as a second virtio drive so a human can actually run the
+# installer's partitioning/install step onto a real (throwaway) target
+# disk for a full end-to-end test — entirely optional, the ISO boots fine
+# without them.
+# ------------------------------------------------------------------
+cmd_iso() {
+  if _in_container; then
+    echo "qemu needs your GPU/display — it can't run inside the build container." >&2
+    echo "Run this file directly on the HOST instead, from the repo root:" >&2
+    echo "  test-env/test.sh iso -p <profile> [-d latest|stable|<date>]" >&2
+    exit 1
+  fi
+
+  local usage_iso
+  usage_iso() {
+    echo "Usage: $(basename "$0") iso -p <profile> [-d <date>|latest|stable]" >&2
+    exit 1
+  }
+
+  local profile="" date_sel="latest" opt OPTARG OPTIND=1
+  while getopts "p:d:" opt "$@"; do
+    case "$opt" in
+      p) profile="$OPTARG" ;;
+      d) date_sel="$OPTARG" ;;
+      *) usage_iso ;;
+    esac
+  done
+  [[ -n "$profile" ]] || usage_iso
+
+  local date_dir
+  if [[ "$date_sel" == "latest" || "$date_sel" == "stable" ]]; then
+    local pointer="${OUTPUT_DIR}/${profile}/iso-${date_sel}.txt"
+    [[ -f "$pointer" ]] || die "No iso-${date_sel}.txt for profile '${profile}' — build/release an ISO first (./build.sh iso -p ${profile} or iso-only)."
+    date_dir=$(tr -d '[:space:]' < "$pointer")
+  else
+    date_dir="$date_sel"
+  fi
+
+  local iso_dir="${OUTPUT_DIR}/${profile}/${date_dir}"
+  [[ -d "$iso_dir" ]] || die "No such directory: ${iso_dir}"
+
+  # Prefer the Secure-Boot-repacked, signed ISO (what actually ships) —
+  # fall back to the unsigned one if repack was never run in this dev setup.
+  local iso
+  iso=$(find "$iso_dir" -maxdepth 1 -name "signed_*.iso" | head -n1)
+  [[ -n "$iso" ]] || iso=$(find "$iso_dir" -maxdepth 1 -name "*.iso" ! -name "*signed*" | head -n1)
+  [[ -n "$iso" ]] || die "No .iso found under ${iso_dir}"
+
+  _locate_ovmf
+
+  # Separate NVRAM store from cmd_qemu's — installer-boot and post-install
+  # boot are different machines as far as UEFI is concerned; sharing one
+  # would let a MOK enrollment or boot-order change from one contaminate
+  # the other.
+  local vars_copy="${DATA_DIR}/OVMF_VARS_ISO.fd"
+  [[ -f "$vars_copy" ]] || cp "$OVMF_VARS_TEMPLATE_PATH" "$vars_copy"
+
+  local kvm_args=()
+  [[ -e /dev/kvm && -w /dev/kvm ]] && kvm_args=(-enable-kvm -cpu host) || echo "no /dev/kvm access — falling back to (slow) TCG emulation" >&2
+
+  local target_disk_args=()
+  if [[ -f "$ROOT_IMG" && -f "$ESP_IMG" ]]; then
+    log "Attaching disk/root.img + disk/esp.img as an install target (optional — the ISO boots without them)"
+    target_disk_args=(-drive if=virtio,format=raw,file="$ROOT_IMG" -drive if=virtio,format=raw,file="$ESP_IMG")
+  fi
+
+  echo "==> Booting ${iso} via OVMF (close the window / send SIGTERM to stop)"
+  echo "==> This lands in the live installer GUI — it does not automate clicking through it."
+  exec qemu-system-x86_64 \
+      -machine q35 \
+      -smp 4 \
+      -m "${QEMU_MEM:-4096}" \
+      "${kvm_args[@]}" \
+      -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE_PATH" \
+      -drive if=pflash,format=raw,file="$vars_copy" \
+      -drive if=none,id=isocd,format=raw,readonly=on,file="$iso" \
+      -device virtio-scsi-pci,id=scsi0 \
+      -device scsi-cd,drive=isocd,bootindex=0 \
+      "${target_disk_args[@]}" \
+      -device virtio-gpu-pci \
+      -display "${QEMU_DISPLAY:-gtk}" \
+      -device virtio-net-pci,netdev=net0 \
+      -netdev user,id=net0 \
+      -device qemu-xhci -device usb-kbd -device usb-tablet \
+      -serial mon:stdio
+}
+
 # ------------------------------------------------------------------
 # qemu   (was 07-boot-qemu.sh) — HOST-ONLY
 #
@@ -801,31 +933,11 @@ cmd_qemu() {
   # Locate OVMF firmware + a per-VM copy of the vars file (writable NVRAM store
   # — bootctl's `set-default` EFI-var write and any MOK enrollment land here;
   # copied once so re-running this doesn't reset it).
-  local ovmf_code="${OVMF_CODE:-}"
-  local ovmf_vars_template="${OVMF_VARS_TEMPLATE:-}"
-  local candidate
-  for candidate in \
-      /usr/share/OVMF/OVMF_CODE_4M.fd \
-      /usr/share/OVMF/OVMF_CODE.fd \
-      /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-      /usr/share/edk2/x64/OVMF_CODE.fd; do
-      [[ -z "$ovmf_code" && -f "$candidate" ]] && ovmf_code="$candidate"
-  done
-  for candidate in \
-      /usr/share/OVMF/OVMF_VARS_4M.fd \
-      /usr/share/OVMF/OVMF_VARS.fd \
-      /usr/share/edk2-ovmf/x64/OVMF_VARS.fd \
-      /usr/share/edk2/x64/OVMF_VARS.fd; do
-      [[ -z "$ovmf_vars_template" && -f "$candidate" ]] && ovmf_vars_template="$candidate"
-  done
-  [[ -n "$ovmf_code" && -n "$ovmf_vars_template" ]] || {
-      echo "Couldn't find OVMF firmware. Install it (see cmd_qemu's header comment)" >&2
-      echo "or set \$OVMF_CODE / \$OVMF_VARS_TEMPLATE explicitly." >&2
-      exit 1
-  }
+  _locate_ovmf
+  local ovmf_code="$OVMF_CODE_PATH"
 
   local vars_copy="${DATA_DIR}/OVMF_VARS.fd"
-  [[ -f "$vars_copy" ]] || cp "$ovmf_vars_template" "$vars_copy"
+  [[ -f "$vars_copy" ]] || cp "$OVMF_VARS_TEMPLATE_PATH" "$vars_copy"
 
   local kvm_args=()
   [[ -e /dev/kvm && -w /dev/kvm ]] && kvm_args=(-enable-kvm -cpu host) || echo "no /dev/kvm access — falling back to (slow) TCG emulation" >&2
@@ -894,6 +1006,7 @@ case "$COMMAND" in
     cmd_reboot
     ;;
   qemu)      cmd_qemu "$@" ;;
+  iso)       cmd_iso "$@" ;;
   clean)     cmd_clean "$@" ;;
   *)
     usage
