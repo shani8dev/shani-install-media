@@ -167,8 +167,14 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
     echo "R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}"
     echo "R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}"
     echo "R2_ACCOUNT_ID=${R2_ACCOUNT_ID:-}"
-    [[ -n "${SSH_PRIVATE_KEY:-}" ]] && echo "SSH_PRIVATE_KEY_B64=$(printf '%s' "${SSH_PRIVATE_KEY}" | base64 -w0)"
-    [[ -n "${GPG_PRIVATE_KEY:-}" ]] && echo "GPG_PRIVATE_KEY_B64=$(printf '%s' "${GPG_PRIVATE_KEY}" | base64 -w0)"
+    # printf '%s\n', not '%s': OpenSSH's key parser rejects a private key file
+    # that doesn't end in a trailing newline after the "-----END ... KEY-----"
+    # line with exactly "invalid format" — and GitHub secrets frequently lose
+    # that trailing newline when the key was originally copy-pasted in. Forcing
+    # one here is harmless if the secret already had it (a lone trailing blank
+    # line is ignored by both ssh and gpg parsers) and fixes the file if it didn't.
+    [[ -n "${SSH_PRIVATE_KEY:-}" ]] && echo "SSH_PRIVATE_KEY_B64=$(printf '%s\n' "${SSH_PRIVATE_KEY}" | base64 -w0)"
+    [[ -n "${GPG_PRIVATE_KEY:-}" ]] && echo "GPG_PRIVATE_KEY_B64=$(printf '%s\n' "${GPG_PRIVATE_KEY}" | base64 -w0)"
 } > "${SECRETS_ENV_FILE}"
 
 # ---------------------------------------------------------------------------
@@ -179,8 +185,22 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
 # ---------------------------------------------------------------------------
 # Run the container
 #
-# --add-host resolves downloads.shani.dev to the container's own loopback —
-# only meaningful for `build.sh test serve` / `test cycle` (see
+# --network=host: every `run_in_container.sh` invocation is a separate,
+# fresh `--rm`'d container (see test-env/README.md) — under Docker's default
+# bridge networking each one gets its OWN private network namespace/loopback,
+# so `test serve`'s HTTPS server (bound inside its own container's 127.0.0.1)
+# was never actually reachable from a separately-invoked `test enter`/
+# `test upgrade`/`test cycle` container. --add-host's mapping of
+# downloads.shani.dev to 127.0.0.1 just pointed at that OTHER container's own
+# empty loopback — confirmed live: the R2 fetch always failed, silently
+# falling through to shani-update.sh's hardcoded SourceForge fallback
+# (BASE_URL), which is NOT overridden by --add-host and reaches the REAL
+# public internet. --network=host makes every container share the host's
+# actual network stack, so `serve`'s bind on 0.0.0.0:443 and `--add-host`'s
+# 127.0.0.1 mapping in every other container now refer to the same loopback.
+#
+# --add-host resolves downloads.shani.dev to that shared loopback — only
+# meaningful for `build.sh test serve` / `test cycle` (see
 # test-env/README.md); a harmless no-op for every other command here, since
 # nothing else in this repo talks to that domain.
 #
@@ -205,6 +225,7 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
 # makes the container's cgroup view match the host's actual tree.
 # ---------------------------------------------------------------------------
 "${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
+    --network=host \
     --cgroupns=host \
     --tmpfs /tmp \
     --tmpfs /run/lock \
