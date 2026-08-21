@@ -231,5 +231,24 @@ popd > /dev/null
 
 gpg_sign_file "${IMAGE_FILE}"
 
+# ---------------------------------------------------------------------------
+# Differential-update control file (zsync2)
+# ---------------------------------------------------------------------------
+# Optional: lets shani-deploy fetch only the blocks that changed since a
+# machine's previously downloaded image instead of the full file. Soft-fail
+# on any problem — the full-image download/verify path works with or without
+# this file, so a control-file generation issue must never block a release.
+if command -v zsyncmake2 >/dev/null 2>&1; then
+    pushd "${OUTPUT_SUBDIR}" > /dev/null
+    if zsyncmake2 -u "${R2_BASE_URL}/${PROFILE}/${BUILD_DATE}/${IMAGE_NAME}" "${IMAGE_NAME}"; then
+        log "Generated ${IMAGE_NAME}.zsync"
+    else
+        warn "zsyncmake2 failed — continuing without a .zsync control file for this build"
+    fi
+    popd > /dev/null
+else
+    warn "zsyncmake2 not found — skipping .zsync control file generation"
+fi
+
 echo "${IMAGE_NAME}" > "${OUTPUT_SUBDIR}/latest.txt"
 log "Base image build completed successfully!"

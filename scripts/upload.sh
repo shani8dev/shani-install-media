@@ -234,6 +234,19 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
       log "Warning: No .zst.sha256 files found in ${OUTPUT_SUBDIR}"
     fi
 
+    # .zsync control file — optional, only present if zsyncmake2 was
+    # available at build time (see build-base-image.sh). Not finding one is
+    # not a warning-worthy condition on its own.
+    if ls "${OUTPUT_SUBDIR}"/*.zst.zsync 1>/dev/null 2>&1; then
+      sf_upload "base image zsync control file" \
+        --exclude="flatpakfs.zst.zsync" --exclude="snapfs.zst.zsync" \
+        "${OUTPUT_SUBDIR}"/*.zst.zsync "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/*.zst.zsync; do
+        [[ "$f" == *flatpakfs.zst.zsync || "$f" == *snapfs.zst.zsync ]] && continue
+        r2_upload "$f" "${R2_SUBPATH}"
+      done
+    fi
+
     if [[ -f "${OUTPUT_SUBDIR}/latest.txt" ]]; then
       sf_upload "dated latest.txt" "${OUTPUT_SUBDIR}/latest.txt" "${REMOTE_SUBPATH}"
       r2_upload "${OUTPUT_SUBDIR}/latest.txt" "${R2_SUBPATH}"

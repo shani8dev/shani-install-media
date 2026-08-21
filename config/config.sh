@@ -21,6 +21,12 @@ ISO_PROFILES_DIR="$(realpath ./iso_profiles)"
 IMAGE_PROFILES_DIR="$(realpath ./image_profiles)"
 GPG_KEY_ID="${GPG_KEY_ID:-7B927BFFD4A9EAAA8B666B77DE217F3DA8014792}"
 
+# Must match the R2_BASE_URL constant hardcoded in shani-deploy.sh/shani-update.sh —
+# it's baked into the .zsync control file's embedded URL at build time, so a
+# mismatch here means deployed machines' zsync2 differential fetch would point
+# at the wrong host.
+R2_BASE_URL="${R2_BASE_URL:-https://downloads.shani.dev}"
+
 # Canonical GPG home used by the builder container.
 BUILDER_GNUPGHOME="${GNUPGHOME:-/home/builduser/.gnupg}"
 
@@ -52,6 +58,11 @@ check_dependencies() {
     for cmd in "${deps[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
     done
+    # zsyncmake2 generates the .zsync control file for differential updates.
+    # Not fatal if missing — build-base-image.sh treats it as optional and
+    # skips control-file generation with a warning rather than failing the
+    # whole release, since it's an optimization on top of the full-image path.
+    command -v zsyncmake2 >/dev/null 2>&1 || warn "zsyncmake2 not installed — .zsync control files will not be generated"
 }
 
 # Check for tools required by build-iso.sh / repack-iso.sh.
