@@ -301,6 +301,7 @@ Each profile has its own subdirectory under both `image_profiles/` and `iso_prof
 | `gnome` | GNOME | No special Flatpak overrides |
 | `plasma` | KDE Plasma | Adds `Kvantum` filesystem override and `QT_STYLE_OVERRIDE=kvantum` |
 | `cosmic` | COSMIC | Same structure, no special overrides |
+| `server` | none (headless) | **Image-only — no `iso_profiles/server/` counterpart.** All `plymouth-*.service` units are masked to `/dev/null` (no boot splash on a headless system); has its own overlay/package-list under `image_profiles/server/` |
 
 **`image_profiles/<profile>/` contains:**
 
@@ -621,35 +622,21 @@ The container runs `--privileged --cap-add SYS_ADMIN --device=/dev/fuse` because
 
 ## GitHub Actions
 
-The workflow at `.github/workflows/build-image.yml` runs on a schedule (every Friday at 20:30 UTC) and supports manual dispatch via `workflow_dispatch`. It builds `gnome` and `plasma` in parallel with `fail-fast: false` so a failure in one profile does not cancel the other.
+The workflow that builds this repo's images/ISOs, `build-image.yml`, lives
+in **[shani-builder](https://github.com/shani8dev/shani-builder)**, not
+here — it checks out this repo, then drives `run_in_container.sh`/`build.sh`
+inside the shared build container. See
+[shani-builder's README](https://github.com/shani8dev/shani-builder#part-1b-install-media-build-workflow-build-imageyml)
+for the authoritative description of its inputs, secrets, and behavior.
+A separate workflow, `promote-stable.yml` (also in shani-builder), handles
+promoting a build to the stable channel.
 
-The `workflow_dispatch` trigger accepts three optional inputs:
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `profile` | _(empty — builds all)_ | Override to build a single profile, e.g. `gnome` |
-| `build_mode` | `image` | `image` = base image only; `iso-only` = ISO from R2; `full` = complete pipeline |
-| `promote_stable` | `false` | If `true`, runs `promote-stable` after upload |
-
-In `image` mode (default + scheduled), each matrix run performs: `image` → `release latest` → `upload image` → optionally `promote-stable`.
-
-In `iso-only` mode, each matrix run calls `build.sh iso-only` which runs: `build-iso.sh --from-r2` → `repack-iso.sh` → `upload iso`. Useful when the base image is already on R2 and only the ISO needs to be rebuilt or re-released.
-
-In `full` mode (manual dispatch), each matrix run calls `build.sh full` which runs the complete pipeline: `image` → `flatpak`? → `snap`? → `iso` → `repack` → `release latest` → `upload all`.
-
-The workflow injects all secrets as environment variables so every `sudo --preserve-env` call inside the container sees them without re-declaration:
-
-```yaml
-env:
-  SSH_PRIVATE_KEY:      ${{ secrets.SSH_PRIVATE_KEY }}
-  GPG_PRIVATE_KEY:      ${{ secrets.GPG_PRIVATE_KEY }}
-  GPG_PASSPHRASE:       ${{ secrets.GPG_PASSPHRASE }}
-  GPG_KEY_ID:           ${{ secrets.GPG_KEY_ID }}
-  R2_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
-  R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-  R2_ACCOUNT_ID:        ${{ secrets.R2_ACCOUNT_ID }}
-  R2_BUCKET:            ${{ secrets.R2_BUCKET }}
-```
+In short: it runs on a schedule (every Friday at 20:30 UTC) or manual
+`workflow_dispatch`, builds `gnome` and `plasma` by default (or a single
+profile if overridden) with `fail-fast: false`, and its `build_mode` input
+is `all` (image + release + upload, the default) or `full` (adds ISO +
+repack + upload all) — there is no `iso-only` mode or `promote_stable`
+input; promotion is the separate workflow mentioned above.
 
 MOK keys are written to `keys/mok/` at build time:
 
@@ -657,9 +644,9 @@ MOK keys are written to `keys/mok/` at build time:
 - name: Setup MOK keys
   run: |
     mkdir -p shani-install-media/keys/mok
-    echo "${{ secrets.MOK_KEY }}"                        > shani-install-media/keys/mok/MOK.key
-    echo "${{ secrets.MOK_CRT }}"                        > shani-install-media/keys/mok/MOK.crt
-    echo "${{ secrets.MOK_DER_B64 }}" | base64 --decode  > shani-install-media/keys/mok/MOK.der
+    printf '%s\n' "${{ secrets.MOK_KEY }}"      > shani-install-media/keys/mok/MOK.key
+    printf '%s\n' "${{ secrets.MOK_CRT }}"      > shani-install-media/keys/mok/MOK.crt
+    printf '%s\n' "${{ secrets.MOK_DER_B64 }}" | base64 --decode > shani-install-media/keys/mok/MOK.der
 ```
 
 ### Required secrets
