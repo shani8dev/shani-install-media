@@ -98,12 +98,25 @@ chmod 644 ~/.ssh/known_hosts && \
 printf "Host *\n    StrictHostKeyChecking no\n    BatchMode yes\n" > ~/.ssh/config && '
 fi
 
-# GPG private key — needed for signing images and ISOs
+# GPG private key — needed for signing images and ISOs.
+# `gpg --import` occasionally imports nothing on the first try in a brand-new
+# GNUPGHOME (a gpg-agent startup race) — and `gpg --list-secret-keys` exits 0
+# even with an empty keyring, so a silent failure here used to go unnoticed
+# until the signing step died hours into a full build. Retry a few times and
+# abort immediately (before any build work starts) if the secret key never
+# actually lands in the keyring.
 if [[ -n "${GPG_PRIVATE_KEY:-}" && -n "${GPG_PASSPHRASE:-}" ]]; then
     IMPORT_KEYS_CMD+="mkdir -p \"${CONTAINER_GNUPGHOME}\" && chmod 700 \"${CONTAINER_GNUPGHOME}\" && \
 echo \"\$GPG_PRIVATE_KEY\" > /tmp/gpg_private.key && \
-gpg --batch --yes --pinentry-mode loopback --passphrase \"\$GPG_PASSPHRASE\" --homedir \"${CONTAINER_GNUPGHOME}\" --import /tmp/gpg_private.key && \
+_gpg_ok=0 && \
+for _i in 1 2 3; do \
+  gpg --batch --yes --pinentry-mode loopback --passphrase \"\$GPG_PASSPHRASE\" --homedir \"${CONTAINER_GNUPGHOME}\" --import /tmp/gpg_private.key; \
+  if [ -n \"\$(gpg --homedir \"${CONTAINER_GNUPGHOME}\" --list-secret-keys 2>/dev/null)\" ]; then _gpg_ok=1; break; fi; \
+  echo \"[run_in_container.sh] WARN: GPG import produced no secret key (attempt \$_i/3) - retrying\" >&2; \
+  sleep 2; \
+done && \
 rm -f /tmp/gpg_private.key && \
+if [ \"\$_gpg_ok\" != 1 ]; then echo \"[run_in_container.sh] FATAL: GPG_PRIVATE_KEY failed to import into the keyring after 3 attempts - aborting before the build starts.\" >&2; exit 1; fi && \
 gpg --homedir \"${CONTAINER_GNUPGHOME}\" --list-secret-keys && "
 fi
 
