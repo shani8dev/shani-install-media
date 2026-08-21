@@ -43,6 +43,28 @@ if [ -f "$DATA_MNT/boot_hard_failure" ]; then
         warn "shanios-hook: boot_hard_failure cleared — root mount succeeded"
 fi
 
+# Announce a slot switch (update applied or rollback performed) via Plymouth,
+# once per switch — not on every subsequent normal boot of the same slot.
+# With the bgrt theme, this is only visible via Plymouth's Escape-key details
+# view rather than the primary splash; that's intentional, since bgrt has no
+# message area of its own and we don't want to disturb the seamless
+# firmware-logo boot for the common (no-switch) case.
+BOOTED_SLOT=$(getarg rootflags | sed 's/.*subvol=@//;s/,.*//')
+case "$BOOTED_SLOT" in
+    blue|green) ;;
+    *) BOOTED_SLOT="" ;;
+esac
+
+if [ -n "$BOOTED_SLOT" ] && command -v plymouth > /dev/null 2>&1; then
+    ANNOUNCED_SLOT=""
+    [ -f "$DATA_MNT/last-announced-slot" ] && \
+        ANNOUNCED_SLOT=$(cat "$DATA_MNT/last-announced-slot" 2>/dev/null)
+    if [ "$BOOTED_SLOT" != "$ANNOUNCED_SLOT" ]; then
+        plymouth display-message --text="ShaniOS: now running the ${BOOTED_SLOT} slot" 2>/dev/null || true
+        printf '%s' "$BOOTED_SLOT" > "$DATA_MNT/last-announced-slot" 2>/dev/null || true
+    fi
+fi
+
 # Do NOT unmount $DATA_MNT here. The /etc overlay (mounted by
 # shanios-overlay-etc.sh at pre-pivot 50) has its upper and work dirs on
 # this mount. Unmounting would break the overlay before pivot_root.
