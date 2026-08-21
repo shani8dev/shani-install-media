@@ -404,8 +404,24 @@ cmd_bootstrap() {
       log "Generating UKI + bootloader for @${slot_name} (gen-efi configure ${slot_name})"
       chroot "$MNT/$slot" /usr/local/bin/gen-efi configure "$slot_name" \
         || warn "gen-efi failed for @${slot_name} — cmd_qemu/cmd_enter --boot won't find a working entry for it"
-      cat > "$ESP_MNT/loader/entries/${OS_NAME}-${slot_name}.conf" <<ENTRYEOF
-title   ShaniOS (${slot_name})
+      # Matches shani-deploy.sh's own entry-writing exactly: the active slot
+      # (@blue, being booted for the first time) gets +3-0 boot-count tries
+      # so systemd-bless-boot / bless-boot.service has something real to
+      # bless once the boot proves healthy; the candidate (@green) gets a
+      # plain, non-counting entry as the unconditional fallback. Without the
+      # tries suffix, systemd-bless-boot correctly refuses with "Not booted
+      # with boot counting in effect" — confirmed live, this isn't cosmetic.
+      # (Even with the suffix present, don't expect the file to actually get
+      # renamed after booting on current systemd — that's a separate, open
+      # upstream regression: https://github.com/systemd/systemd/issues/40405)
+      local entry_filename
+      if [[ "$slot" == "@blue" ]]; then
+        entry_filename="${OS_NAME}-${slot_name}+3-0.conf"
+      else
+        entry_filename="${OS_NAME}-${slot_name}.conf"
+      fi
+      cat > "$ESP_MNT/loader/entries/${entry_filename}" <<ENTRYEOF
+title   ${OS_NAME}-${slot_name} ($( [[ "$slot" == "@blue" ]] && echo Active || echo Candidate ))
 efi     /EFI/${OS_NAME}/${OS_NAME}-${slot_name}.efi
 ENTRYEOF
       for fs in run dev sys proc; do
@@ -419,8 +435,14 @@ ENTRYEOF
     btrfs property set -f -ts "$MNT/$slot" ro true
   done
 
+  # Plain ID, no tries suffix and no glob — matches shani-deploy.sh's own
+  # loader.conf writing exactly. systemd-boot resolves "default" against
+  # entry IDs (the plain filename with any +tries-suffix stripped), not
+  # against literal filenames, so shanios-blue+3-0.conf's ID is
+  # shanios-blue.conf; per shani-deploy.sh's own comment a glob does not
+  # reliably match here even though it looks like it should.
   cat > "$ESP_MNT/loader/loader.conf" <<LOADEREOF
-default ${OS_NAME}-blue*.conf
+default ${OS_NAME}-blue.conf
 timeout 3
 console-mode max
 editor 0
