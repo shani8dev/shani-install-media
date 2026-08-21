@@ -305,17 +305,44 @@ cmd_bootstrap() {
 
   _mount_root
 
+  # Matches install.sh's create_subvolumes() exactly — a genuine UEFI boot
+  # (cmd_qemu, or --boot through cmd_enter) processes the received image's
+  # own /etc/fstab, which references every one of these by name. The
+  # earlier @data/@swap/@etc/@var-only set was enough for the plain
+  # cmd_enter overlay (which never touches fstab) but left a real boot
+  # dropping into emergency mode at "Failed to mount /var/cache" the
+  # instant it needed anything this list was missing.
   log "Creating top-level subvolumes"
-  for subvol in @data @swap @etc @var; do
+  for subvol in @root @home @data @nix @cache @log @flatpak @snapd @waydroid \
+                @containers @machines @lxc @lxd @libvirt @qemu @swap; do
     if ! btrfs subvolume show "$MNT/$subvol" &>/dev/null; then
       btrfs subvolume create "$MNT/$subvol"
     fi
   done
   chattr +C "$MNT/@swap" 2>/dev/null || true
 
-  mkdir -p "$MNT/@data/overlay/etc/upper" "$MNT/@data/overlay/etc/work" \
-           "$MNT/@data/overlay/var/upper" "$MNT/@data/overlay/var/work" \
+  # Matches install.sh's overlay-dir + varlib/varspool persistent-state-dir
+  # creation — /etc/fstab bind-mounts each of these from /data, and systemd
+  # fails the mount (cascading into emergency mode) if the source is missing.
+  mkdir -p "$MNT/@data/overlay/etc/lower" "$MNT/@data/overlay/etc/upper" "$MNT/@data/overlay/etc/work" \
+           "$MNT/@data/overlay/var/lower" "$MNT/@data/overlay/var/upper" "$MNT/@data/overlay/var/work" \
            "$MNT/@data/downloads"
+  for dir in \
+      varlib/dbus varlib/systemd varlib/fontconfig \
+      varlib/NetworkManager varlib/bluetooth varlib/firewalld \
+      varlib/samba varlib/nfs \
+      varlib/caddy varlib/tailscale varlib/cloudflared varlib/geoclue \
+      varlib/gdm varlib/sddm \
+      varlib/colord varlib/pipewire varlib/rtkit \
+      varlib/cups varlib/sane varlib/upower \
+      varlib/fprint varlib/AccountsService varlib/boltd \
+      varlib/sudo varlib/sshd varlib/polkit-1 \
+      varlib/fwupd varlib/tpm2-tss \
+      varlib/fail2ban varlib/restic varlib/rclone varlib/appimage \
+      varspool/anacron varspool/cron varspool/at \
+      varspool/cups varspool/samba varspool/postfix; do
+    mkdir -p "$MNT/@data/${dir}"
+  done
 
   if btrfs subvolume show "$MNT/shanios_base" &>/dev/null; then
     log "shanios_base already exists from a previous run, deleting it first"
@@ -340,6 +367,16 @@ cmd_bootstrap() {
   echo "blue" > "$MNT/@data/current-slot"
   echo "green" > "$MNT/@data/previous-slot"
 
+  # configure.sh's job on a real install: run gen-efi (UKI + bootloader
+  # binaries + cmdline) for each slot and write systemd-boot's loader
+  # entries. cmd_bootstrap skips the real installer, so without this a
+  # genuine UEFI boot (cmd_qemu, or --boot through cmd_enter) finds a
+  # completely empty ESP and never gets past firmware ("BdsDxe: failed to
+  # load Boot0001 ... Not Found" -> falls through to PXE).
+  mkdir -p "$ESP_MNT"
+  mountpoint -q "$ESP_MNT" || mount /dev/disk/by-label/shani_boot "$ESP_MNT"
+  mkdir -p "$ESP_MNT/EFI/BOOT" "$ESP_MNT/EFI/${OS_NAME}" "$ESP_MNT/loader/entries"
+
   for slot in @blue @green; do
     btrfs property set -f -ts "$MNT/$slot" ro false
 
@@ -356,8 +393,40 @@ cmd_bootstrap() {
       warn "'trust' not found in @${slot#@} — local-mirror TLS verification will fail."
     fi
 
+    if [[ -x "$MNT/$slot/usr/local/bin/gen-efi" ]]; then
+      local slot_name="${slot#@}"
+      mkdir -p "$MNT/$slot/boot/efi"
+      mountpoint -q "$MNT/$slot/boot/efi" || mount --bind "$ESP_MNT" "$MNT/$slot/boot/efi"
+      for fs in proc sys dev run; do
+        mkdir -p "$MNT/$slot/$fs"
+        mountpoint -q "$MNT/$slot/$fs" || mount --rbind "/$fs" "$MNT/$slot/$fs"
+      done
+      log "Generating UKI + bootloader for @${slot_name} (gen-efi configure ${slot_name})"
+      chroot "$MNT/$slot" /usr/local/bin/gen-efi configure "$slot_name" \
+        || warn "gen-efi failed for @${slot_name} — cmd_qemu/cmd_enter --boot won't find a working entry for it"
+      cat > "$ESP_MNT/loader/entries/${OS_NAME}-${slot_name}.conf" <<ENTRYEOF
+title   ShaniOS (${slot_name})
+efi     /EFI/${OS_NAME}/${OS_NAME}-${slot_name}.efi
+ENTRYEOF
+      for fs in run dev sys proc; do
+        mountpoint -q "$MNT/$slot/$fs" && umount -R "$MNT/$slot/$fs"
+      done
+      mountpoint -q "$MNT/$slot/boot/efi" && umount "$MNT/$slot/boot/efi"
+    else
+      warn "gen-efi not found in @${slot#@} — cmd_qemu/cmd_enter --boot won't have a working ESP entry for it"
+    fi
+
     btrfs property set -f -ts "$MNT/$slot" ro true
   done
+
+  cat > "$ESP_MNT/loader/loader.conf" <<LOADEREOF
+default ${OS_NAME}-blue*.conf
+timeout 3
+console-mode max
+editor 0
+LOADEREOF
+
+  umount "$ESP_MNT"
 
   btrfs filesystem sync "$MNT"
 

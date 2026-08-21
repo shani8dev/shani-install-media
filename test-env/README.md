@@ -47,7 +47,7 @@ directly by the dispatcher at the bottom:
 |---|---|---|
 | `disk` | `test.sh`'s `cmd_disk` | Creates two sparse loop-backed images standing in for the real GPT disk (`esp.img` FAT32, `root.img` Btrfs — see `os-installer-config/bits/part.sfdisk`). Auto-installs `dosfstools` first if `mkfs.fat` is missing from the builder image — see "Requirements" below |
 | `ca` | `test.sh`'s `cmd_ca` | Generates a throwaway CA + `downloads.shani.dev` server cert, used only inside this rig (see "The local mirror" below) |
-| `bootstrap -p <profile> [-d latest\|stable\|<date>]` | `test.sh`'s `cmd_bootstrap` | Resolves and `btrfs receive`s a real `.zst` **directly from `OUTPUT_DIR`** (config.sh's `./cache/output`), snapshots it to `@blue`/`@green`, and trust-anchors the test CA into each slot |
+| `bootstrap -p <profile> [-d latest\|stable\|<date>]` | `test.sh`'s `cmd_bootstrap` | Resolves and `btrfs receive`s a real `.zst` **directly from `OUTPUT_DIR`** (config.sh's `./cache/output`), snapshots it to `@blue`/`@green`, creates the full production subvolume set, trust-anchors the test CA into each slot, and runs `gen-efi configure <slot>` for each — the ESP comes out of `bootstrap` genuinely bootable, same as a real install |
 | `serve [port]` | `test.sh`'s `cmd_serve` | Serves `OUTPUT_DIR` as-is over real HTTPS as a stand-in for `downloads.shani.dev` |
 | `enter <blue\|green> [--boot]` | `test.sh`'s `cmd_enter` | Enters a slot via `systemd-nspawn`, looking exactly like a booted ShaniOS system to `shani-deploy`/`shani-update` |
 | `upgrade` / `reboot` / `rollback` | `test.sh`'s `cmd_upgrade`/`cmd_reboot`/`cmd_rollback` | Drive the real update → reboot → rollback cycle (each just resolves the current slot and calls `cmd_enter`) |
@@ -139,15 +139,30 @@ test-env/test.sh qemu
 
 ## What this does NOT simulate
 
-- Real UEFI firmware for the deploy/update steps (only `cmd_qemu`,
-  which runs on the host via OVMF, is a genuine UEFI boot)
 - `/etc` and `/var` as overlayfs mounts (real ShaniOS overlays them from
   `@data`; this harness leaves them as plain parts of the slot subvolume —
   fine for deploy/rollback/slot logic, not a full persistence test)
 - GPG signature verification is only as good as whatever `.asc` file sits
   next to your build output — `./build.sh` should already produce one
 - The real install flow (`os-installer-config/scripts/install.sh`) itself —
-  `cmd_bootstrap` mirrors its subvolume layout but doesn't invoke it
+  `cmd_bootstrap` creates the same full subvolume set and calls the same
+  `gen-efi configure <slot>` each slot's own install would have, but skips
+  install.sh's disk-partitioning and configure.sh's locale/hostname/user
+  setup
+
+`cmd_qemu` (via OVMF) IS a genuine, complete UEFI boot of what
+`cmd_bootstrap` sets up — firmware → shim → systemd-boot → the real UKI →
+kernel → systemd → GDM, all unmodified. `cmd_bootstrap` used to leave the
+ESP completely empty (no bootloader, no UKI — `cmd_qemu` would just fall
+through firmware to a PXE attempt), and used a minimal
+`@data`/`@swap`/`@etc`/`@var` subvolume set that was enough for the plain
+`cmd_enter` overlay (which never reads `/etc/fstab`) but left a real boot
+dropping into emergency mode the instant systemd tried to mount anything
+`/etc/fstab` references that this set didn't have — `@cache` first, but
+every other production subvolume was equally missing. Both are now handled
+by `cmd_bootstrap` itself, using the exact subvolume list and per-slot
+`gen-efi configure` call a real install performs, so `cmd_qemu` works
+against any freshly bootstrapped disk with no manual setup.
 
 ## Requirements
 
