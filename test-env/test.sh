@@ -112,9 +112,50 @@ _get_profile() {
 # ------------------------------------------------------------------
 # shared helpers
 # ------------------------------------------------------------------
+# Loop-device attachment (unlike root.img/esp.img themselves, which are
+# bind-mounted and persist on the host) does NOT survive across separate
+# `run_in_container.sh` invocations — each is a fresh container, so its
+# /dev/disk/by-label/* symlinks (created by cmd_disk) start out empty even
+# when root.img/esp.img already exist from an earlier session. Re-attach to
+# the existing images instead of requiring a fresh `disk` (which would wipe
+# and reformat them) every time a new container needs them.
+_ensure_disk_attached() {
+  [[ -e /dev/disk/by-label/shani_root && -e /dev/disk/by-label/shani_boot ]] && return 0
+
+  [[ -f "$ROOT_IMG" && -f "$ESP_IMG" ]] \
+    || die "root.img/esp.img not found under $DATA_DIR — run '$(basename "$0") disk' first"
+
+  mkdir -p /dev/disk/by-label
+
+  local root_loop esp_loop
+  if losetup -j "$ROOT_IMG" | grep -q "$ROOT_IMG"; then
+    root_loop=$(losetup -j "$ROOT_IMG" | cut -d: -f1)
+  else
+    root_loop=$(losetup --find --show "$ROOT_IMG") || die "Failed to attach loop device for $ROOT_IMG"
+  fi
+  if losetup -j "$ESP_IMG" | grep -q "$ESP_IMG"; then
+    esp_loop=$(losetup -j "$ESP_IMG" | cut -d: -f1)
+  else
+    esp_loop=$(losetup --find --show "$ESP_IMG") || die "Failed to attach loop device for $ESP_IMG"
+  fi
+
+  ln -sf "$root_loop" /dev/disk/by-label/shani_root
+  ln -sf "$esp_loop" /dev/disk/by-label/shani_boot
+  echo "$root_loop" > "${DATA_DIR}/.root_loop"
+  echo "$esp_loop" > "${DATA_DIR}/.esp_loop"
+  log "Re-attached existing disk images from a prior session: root=$root_loop esp=$esp_loop"
+}
+
 _mount_root() {
+  _ensure_disk_attached
   mkdir -p "$MNT"
-  mountpoint -q "$MNT" || mount -o subvolid=5 "/dev/disk/by-label/shani_root" "$MNT"
+  # compress=zstd matches production's BTRFS_TOP_OPTS (install.sh/build-base-image.sh).
+  # Without it, a rootfs that fits comfortably in production's compressed
+  # filesystem can exhaust an equally-sized uncompressed test disk mid-receive
+  # — btrfs then blocks in uninterruptible I/O wait (D state) trying to find
+  # metadata space rather than promptly failing with ENOSPC, hanging the
+  # whole test indefinitely instead of erroring out.
+  mountpoint -q "$MNT" || mount -o subvolid=5,compress=zstd "/dev/disk/by-label/shani_root" "$MNT"
 }
 
 _current_slot() {
@@ -136,7 +177,10 @@ cmd_disk() {
 
   check_dependencies_test
 
-  local root_size="${ROOT_SIZE:-16G}"
+  # 20G, not 16G: even with compress=zstd (see _mount_root), the transient
+  # peak during shanios_base -> @blue -> @green snapshotting plus btrfs's own
+  # metadata overhead needs headroom above a single profile's rootfs size.
+  local root_size="${ROOT_SIZE:-20G}"
   local esp_size="${ESP_SIZE:-512M}"
 
   mkdir -p "$DATA_DIR" /dev/disk/by-label
@@ -388,10 +432,24 @@ STUBEOF
   chmod +x "$INHIBIT_STUB"
 }
 
+# systemd-nspawn derives its own internal identifiers (machine naming,
+# cgroup/network naming) from the CALLING environment's /etc/machine-id via
+# sd_id128_get_machine_app_specific() — not from the target slot's machine-id,
+# which is fine and untouched. The published builder image has no
+# /etc/machine-id at all (it's not meant to run systemd services), so every
+# nspawn invocation used to fail immediately with "Failed to retrieve machine
+# ID: No such file or directory" before ever reaching the target rootfs.
+_ensure_host_machine_id() {
+  [[ -s /etc/machine-id ]] && return 0
+  systemd-machine-id-setup >/dev/null 2>&1 \
+    || die "Could not initialize /etc/machine-id in the builder container (needed by systemd-nspawn itself, not the target image)"
+}
+
 # ------------------------------------------------------------------
 # enter   (was 03-enter-slot.sh)
 # ------------------------------------------------------------------
 cmd_enter() {
+  _ensure_host_machine_id
   local slot="${1:?Usage: $(basename "$0") enter <blue|green> [--boot] [command...]}"
   shift || true
   [[ "$slot" =~ ^(blue|green)$ ]] || die "slot must be 'blue' or 'green'"

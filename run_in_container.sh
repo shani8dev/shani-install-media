@@ -183,17 +183,27 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
 # only meaningful for `build.sh test serve` / `test cycle` (see
 # test-env/README.md); a harmless no-op for every other command here, since
 # nothing else in this repo talks to that domain.
+#
+# -v /dev:/dev: without an explicit bind mount, Docker gives each container
+# its own synthesized /dev that only reflects loop-device nodes present on
+# the host at container-start time. Any loop device the HOST kernel
+# allocates afterward (e.g. from a prior test-env run's containers, which
+# don't get to clean up on exit — see test-env/README.md) has no device node
+# inside a fresh container, so `losetup --find` picks a free device number
+# that then fails with "No such file or directory" / "device node ... is
+# lost". Bind-mounting the real host /dev keeps every container's view of
+# loop devices in sync with the host's actual state.
 # ---------------------------------------------------------------------------
 "${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
     --tmpfs /tmp \
     --tmpfs /run/lock \
     --tmpfs /run \
     --cap-add SYS_ADMIN \
-    --device=/dev/fuse \
     --security-opt apparmor:unconfined \
     --security-opt seccomp:unconfined \
     -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
     -v /lib/modules:/lib/modules:ro \
+    -v /dev:/dev \
     --add-host="downloads.shani.dev:127.0.0.1" \
     -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
     -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
