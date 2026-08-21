@@ -390,6 +390,34 @@ cmd_bootstrap() {
   done
   chattr +C "$MNT/@swap" 2>/dev/null || true
 
+  # Matches install.sh's create_swapfile() — the shipped image's own
+  # /etc/fstab has a "/swap/swapfile none swap defaults 0 0" entry, and a
+  # real boot fails to activate it ("Failed to activate swap
+  # /swap/swapfile") if the file doesn't actually exist. install.sh sizes
+  # it to total RAM and skips it gracefully if there isn't enough space;
+  # do the same here EXCEPT for the sizing basis — install.sh's `free -m`
+  # runs on the machine being installed, but ours runs inside the builder
+  # container, which reports the BUILD HOST's RAM (e.g. 32G on a beefy
+  # build box), not the QEMU guest's. Sizing to that against a ~20G test
+  # disk with only a few GB free post-receive would always trip the
+  # low-space skip below, silently reproducing the exact bug this is
+  # fixing. Size to the guest's actual configured RAM (cmd_qemu's
+  # QEMU_MEM, same default) instead. Unlike install.sh, don't swapon it —
+  # that would activate swap on the builder host, not the guest being
+  # assembled.
+  if [[ ! -f "$MNT/@swap/swapfile" ]]; then
+    local swapfile_size available_mb
+    swapfile_size="${QEMU_MEM:-4096}"
+    available_mb=$(df -BM "$MNT" | awk 'NR==2 {print $4}' | sed 's/M//')
+    if (( available_mb < swapfile_size )); then
+      warn "Insufficient space for a ${swapfile_size}M swapfile (${available_mb}M available) — skipping, matching install.sh's zram-fallback behavior"
+    else
+      log "Creating swapfile at $MNT/@swap/swapfile (${swapfile_size}M)"
+      btrfs filesystem mkswapfile --size "${swapfile_size}M" "$MNT/@swap/swapfile" \
+        || die "Swapfile creation failed"
+    fi
+  fi
+
   # Matches install.sh's overlay-dir + varlib/varspool persistent-state-dir
   # creation — /etc/fstab bind-mounts each of these from /data, and systemd
   # fails the mount (cascading into emergency mode) if the source is missing.
@@ -802,6 +830,15 @@ cmd_qemu() {
   local kvm_args=()
   [[ -e /dev/kvm && -w /dev/kvm ]] && kvm_args=(-enable-kvm -cpu host) || echo "no /dev/kvm access — falling back to (slow) TCG emulation" >&2
 
+  # Every profile this harness boots (gnome/plasma/cosmic) ships
+  # shani-video-guest -> qemu-guest-agent, enabled by default. A real
+  # libvirt-managed VM always wires up this exact virtio-serial channel for
+  # it; without it here, the guest blocks at boot on "Timed out waiting for
+  # device /dev/virtio-ports/org.qemu.guest_agent.0" — a harness gap, not a
+  # ShaniOS one, so provide the channel like a real hypervisor would.
+  local qga_sock="${DATA_DIR}/qga.sock"
+  rm -f "$qga_sock"
+
   echo "==> Booting root.img + esp.img via OVMF (close the window / send SIGTERM to stop)"
   exec qemu-system-x86_64 \
       -machine q35 \
@@ -817,6 +854,9 @@ cmd_qemu() {
       -device virtio-net-pci,netdev=net0 \
       -netdev user,id=net0 \
       -device qemu-xhci -device usb-kbd -device usb-tablet \
+      -chardev socket,path="$qga_sock",server=on,wait=off,id=qga0 \
+      -device virtio-serial \
+      -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
       -serial mon:stdio
 }
 

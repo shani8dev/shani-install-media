@@ -52,7 +52,7 @@ directly by the dispatcher at the bottom:
 | `enter <blue\|green> [--boot]` | `test.sh`'s `cmd_enter` | Enters a slot via `systemd-nspawn`, looking exactly like a booted ShaniOS system to `shani-deploy`/`shani-update` |
 | `upgrade` / `reboot` / `rollback` | `test.sh`'s `cmd_upgrade`/`cmd_reboot`/`cmd_rollback` | Drive the real update → reboot → rollback cycle (each just resolves the current slot and calls `cmd_enter`) |
 | `cycle -p <profile>` | `test.sh`'s inline `cycle` case | `disk` → `ca` → `bootstrap` → `serve` (background) → `upgrade` → `reboot` in one go |
-| `qemu` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test` |
+| `qemu` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test`. Also wires up a virtio-serial channel for `qemu-guest-agent` (every profile ships it via `shani-video-guest`), matching what a real libvirt-managed VM provides |
 | `clean` | `test.sh`'s `cmd_clean` | Unmounts everything (nspawn overlays, the ESP, the top-level Btrfs mount) and detaches root.img/esp.img's loop devices. Leaves the images themselves in place |
 
 **Run `clean` when you're done testing.** Loop-device attachment doesn't
@@ -175,6 +175,25 @@ every other production subvolume was equally missing. Both are now handled
 by `cmd_bootstrap` itself, using the exact subvolume list and per-slot
 `gen-efi configure` call a real install performs, so `cmd_qemu` works
 against any freshly bootstrapped disk with no manual setup.
+
+Two more gaps found via an actual booted-to-GDM run and fixed to match
+production/real-hypervisor behavior instead of leaving the harness to
+paper over them:
+
+- `cmd_bootstrap` also creates `@swap/swapfile` now (via
+  `btrfs filesystem mkswapfile`, sized to available RAM, skipped if disk
+  space is short) — the shipped image's `/etc/fstab` already has a
+  `/swap/swapfile none swap defaults` entry, matching
+  `install.sh`'s `create_swapfile()`; without the file present a real boot
+  fails with "Failed to activate swap /swap/swapfile". Unlike
+  `install.sh`, this never calls `swapon` — that would activate swap on the
+  *builder host*, not the guest being assembled.
+- `cmd_qemu` now passes a virtio-serial channel + `virtserialport` for
+  `org.qemu.guest_agent.0`. Every profile (`gnome`/`plasma`/`cosmic`) ships
+  `shani-video-guest` → `qemu-guest-agent`, enabled by default; a real
+  libvirt-managed VM always provides this channel, and without it the boot
+  blocked on "Timed out waiting for device
+  /dev/virtio-ports/org.qemu.guest_agent.0".
 
 ## Requirements
 
