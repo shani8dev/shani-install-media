@@ -68,6 +68,16 @@ Commands:
   rollback    Simulate a rollback (real shani-update --rollback)
   cycle       disk → ca → bootstrap → serve (background) → upgrade → reboot (requires -p <profile>)
   qemu        Genuine UEFI boot via OVMF — HOST-ONLY, see below
+  clean       Unmount everything and detach root.img/esp.img's loop devices
+
+Loop-device attachment does NOT survive across separate
+run_in_container.sh invocations (each is a fresh --rm'd container) — every
+disk/bootstrap/enter/cycle call re-attaches (or reuses) root.img/esp.img's
+loop devices on the HOST, but nothing ever detaches them again on its own.
+Run `clean` when you're done testing, or loop devices accumulate on the
+host indefinitely across a session (only a reboot or manual `losetup -d`
+otherwise releases them). root.img/esp.img themselves are left alone —
+`clean` only tears down mounts and loop attachments, not the disk images.
 
 Options:
   -p <profile>    Profile name (e.g. gnome, plasma) — for bootstrap/cycle
@@ -83,6 +93,7 @@ Run from the repo root, via build.sh (like every other command in this repo):
   ./run_in_container.sh build.sh test reboot
   ./run_in_container.sh build.sh test rollback
   ./run_in_container.sh build.sh test cycle -p plasma
+  ./run_in_container.sh build.sh test clean
 
 qemu needs your GPU/display, so run this file directly on the HOST instead
 of through build.sh/run_in_container.sh (which would put it in a container):
@@ -211,6 +222,64 @@ cmd_disk() {
   log "root loop: $root_loop  (LABEL=shani_root)"
   log "esp  loop: $esp_loop  (LABEL=shani_boot)"
   log "Disk images written under: $DATA_DIR"
+}
+
+# ------------------------------------------------------------------
+# clean — undo everything _ensure_disk_attached/cmd_disk/cmd_enter leave
+# behind, without touching root.img/esp.img themselves.
+#
+# Nothing else in this file ever calls losetup -d on a successful path:
+# _ensure_disk_attached() re-attaches or reuses the existing loop device on
+# every invocation (correct — it can't know a later command still needs it),
+# and every run_in_container.sh invocation is a fresh --rm'd container, so
+# there's no container-exit hook to detach on either. Loop devices just
+# accumulate on the host across a testing session unless something
+# explicitly tears them down.
+# ------------------------------------------------------------------
+cmd_clean() {
+  local any=0
+
+  local slot work
+  for slot in blue green; do
+    work="${DATA_DIR}/nspawn-overlay-${slot}"
+    if mountpoint -q "${work}/merged" 2>/dev/null; then
+      log "Unmounting ${work}/merged"
+      umount -R "${work}/merged" 2>/dev/null || warn "Failed to unmount ${work}/merged"
+      any=1
+    fi
+  done
+
+  if mountpoint -q "$ESP_MNT" 2>/dev/null; then
+    log "Unmounting $ESP_MNT"
+    umount "$ESP_MNT" 2>/dev/null || warn "Failed to unmount $ESP_MNT"
+    any=1
+  fi
+
+  if mountpoint -q "$MNT" 2>/dev/null; then
+    log "Unmounting $MNT"
+    umount -R "$MNT" 2>/dev/null || warn "Failed to unmount $MNT"
+    any=1
+  fi
+
+  local img loop
+  for img in "$ROOT_IMG" "$ESP_IMG"; do
+    [[ -f "$img" ]] || continue
+    while read -r loop; do
+      [[ -n "$loop" ]] || continue
+      log "Detaching $loop ($img)"
+      losetup -d "$loop" 2>/dev/null || warn "Failed to detach $loop"
+      any=1
+    done < <(losetup -j "$img" 2>/dev/null | cut -d: -f1)
+  done
+
+  rm -f /dev/disk/by-label/shani_root /dev/disk/by-label/shani_boot
+  rm -f "${DATA_DIR}/.root_loop" "${DATA_DIR}/.esp_loop"
+
+  if (( any )); then
+    log "Clean complete — root.img/esp.img left in place, everything else torn down"
+  else
+    log "Nothing to clean up"
+  fi
 }
 
 # ------------------------------------------------------------------
@@ -785,6 +854,7 @@ case "$COMMAND" in
     cmd_reboot
     ;;
   qemu)      cmd_qemu "$@" ;;
+  clean)     cmd_clean "$@" ;;
   *)
     usage
     ;;

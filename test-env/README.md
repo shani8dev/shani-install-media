@@ -53,6 +53,15 @@ directly by the dispatcher at the bottom:
 | `upgrade` / `reboot` / `rollback` | `test.sh`'s `cmd_upgrade`/`cmd_reboot`/`cmd_rollback` | Drive the real update → reboot → rollback cycle (each just resolves the current slot and calls `cmd_enter`) |
 | `cycle -p <profile>` | `test.sh`'s inline `cycle` case | `disk` → `ca` → `bootstrap` → `serve` (background) → `upgrade` → `reboot` in one go |
 | `qemu` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test` |
+| `clean` | `test.sh`'s `cmd_clean` | Unmounts everything (nspawn overlays, the ESP, the top-level Btrfs mount) and detaches root.img/esp.img's loop devices. Leaves the images themselves in place |
+
+**Run `clean` when you're done testing.** Loop-device attachment doesn't
+survive across separate `run_in_container.sh` invocations (each is a fresh
+`--rm`'d container), so every `disk`/`bootstrap`/`enter`/`cycle` call
+re-attaches or reuses root.img/esp.img's loop devices on the *host* —
+nothing ever detaches them again on its own. Across a long testing session
+this accumulates loop devices indefinitely; only `clean`, a manual
+`losetup -d`, or a reboot releases them.
 
 ### One file, no sibling scripts
 
@@ -135,6 +144,9 @@ is the one deliberate, documented on-disk change made to a received image;
 
 # on the HOST, not through run_in_container.sh:
 test-env/test.sh qemu
+
+# when you're done — releases loop devices, leaves root.img/esp.img in place:
+./run_in_container.sh build.sh test clean
 ```
 
 ## What this does NOT simulate
