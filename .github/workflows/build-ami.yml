@@ -26,7 +26,7 @@ on:
         type: boolean
 
 env:
-  PACKER_VERSION: "1.11.0"
+  PACKER_VERSION: "1.16.0"
   SHANIOS_PROFILE: ${{ github.event.inputs.profile || 'server' }}
 
 jobs:
@@ -44,13 +44,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_PACKER_ROLE_ARN }}
           aws-region:     ${{ secrets.AWS_REGION }}
 
       - name: Install Packer ${{ env.PACKER_VERSION }}
-        uses: hashicorp/setup-packer@main
+        uses: hashicorp/setup-packer@v3
         with:
           version: ${{ env.PACKER_VERSION }}
 

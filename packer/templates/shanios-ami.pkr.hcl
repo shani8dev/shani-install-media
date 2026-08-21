@@ -47,16 +47,13 @@ source "amazon-ebssurrogate" "shanios" {
   ssh_timeout  = var.ssh_timeout
 
   # ── Builder root volume ───────────────────────────────────────────────────
-  # AL2023 OS (~3 GiB) + downloaded ShaniOS .zst (~2–4 GiB) + tools.
-  # 20 GiB is ample. Deleted after build.
-  root_block_device {
-    volume_type           = "gp3"
-    volume_size           = 20
-    iops                  = 3000
-    throughput            = 125
-    delete_on_termination = true
-    encrypted             = false
-  }
+  # amazon-ebssurrogate has no `root_block_device` block (confirmed via
+  # `packer validate`: "Blocks of type root_block_device are not expected
+  # here" — an earlier version of this template had one and it silently
+  # never validated). The builder host's own AL2023 boot volume size is
+  # inherited entirely from the source_ami_filter AMI's own root mapping
+  # and cannot be resized here; only the surrogate volume below (which
+  # becomes the final AMI root) is configurable.
 
   # ── ShaniOS target volume ─────────────────────────────────────────────────
   # Attached as /dev/xvdf. Bootstrap writes ShaniOS here.
@@ -73,13 +70,15 @@ source "amazon-ebssurrogate" "shanios" {
   }
 
   # ── AMI root device registration ──────────────────────────────────────────
+  # `ami_root_device` (RootBlockDevice) doesn't support `throughput` — only
+  # launch_block_device_mappings' (BlockDevice) does; confirmed via
+  # `packer validate`: "An argument named throughput is not expected here."
   ami_root_device {
     source_device_name    = "/dev/xvdf"
     device_name           = "/dev/xvda"
     volume_type           = "gp3"
     volume_size           = var.root_volume_size_gb
     iops                  = 3000
-    throughput            = 500
     delete_on_termination = true
   }
 
@@ -89,8 +88,17 @@ source "amazon-ebssurrogate" "shanios" {
 
   ami_architecture        = "x86_64"
   ami_virtualization_type = "hvm"
-  ami_ena_support         = true
-  ami_sriov_net_support   = true
+
+  # Enhanced networking: the correct packer-plugin-amazon field names are
+  # `ena_support`/`sriov_support`, NOT `ami_ena_support`/`ami_sriov_net_support`
+  # (those don't exist and fail `packer validate` with "An argument named ...
+  # is not expected here" — the same failure mode noted below for the GPT
+  # offset field). SR-IOV net support is the pre-Nitro enhanced-networking
+  # mechanism; every instance type this template targets (c6a, t3, m5, c5, r5)
+  # is Nitro-based and uses ENA exclusively, so sriov_support is omitted
+  # rather than set to a no-op false. Enabling ena_support requires
+  # ec2:ModifyInstanceAttribute in the builder's IAM policy (see iam-policy.json).
+  ena_support = true
 
   # uefi-preferred: works on Nitro (UEFI) and legacy instances (BIOS fallback)
   # Use "uefi" if you target only Nitro (t3, m5, c5, r5 and newer)

@@ -58,7 +58,7 @@ variable "shanios_profile" {
   description = "ShaniOS image profile to download and AMI-ify: server | gnome | plasma | cosmic."
   validation {
     condition     = contains(["server", "gnome", "plasma", "cosmic"], var.shanios_profile)
-    error_message = "shanios_profile must be one of: server, gnome, plasma, cosmic."
+    error_message = "The shanios_profile value must be one of: server, gnome, plasma, cosmic."
   }
 }
 

@@ -3,6 +3,7 @@
   "_comment2": "Attach this policy to the IAM role used by the CI runner (OIDC) or the IAM user.",
   "_comment3": "Replace ACCOUNT_ID with your 12-digit AWS account ID.",
   "_comment4": "ec2:DescribeInstanceTypeOfferings is required because builder_subnet_id defaults to blank (associate_public_ip_address=true with no explicit subnet) — Packer auto-selects a subnet capable of hosting instance_type and needs this permission to filter by capability; see the amazon-ebs/ebssurrogate builder docs' associate_public_ip_address note.",
+  "_comment5": "ec2:ModifyInstanceAttribute is required because shanios-ami.pkr.hcl sets ena_support = true — the amazon-ebssurrogate builder enables enhanced networking by calling ModifyInstanceAttribute on the running builder instance before snapshotting it.",
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -38,6 +39,7 @@
         "ec2:DeregisterImage",
         "ec2:RegisterImage",
         "ec2:ModifyImageAttribute",
+        "ec2:ModifyInstanceAttribute",
         "ec2:CreateTags",
         "ec2:DeleteTags"
       ],
