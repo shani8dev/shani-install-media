@@ -30,19 +30,30 @@ for arg in "$@"; do
             _blocked=1
             break
             ;;
-        # Short operations: extract the operation letter (first char after -)
-        # Block S (sync), R (remove), U (upgrade), D (database)
+        # Short operations: block S (sync), R (remove), U (upgrade), D (database)
         # Allow Q (query), F (file), V (version), h (help)
         *)
-            # For short flags like -Syu, -Rs, -U, extract the operation char
+            # For short flags like -Syu, -Rs, -U, check every character in the
+            # cluster, not just the first: pacman's getopt-style parser does
+            # not require the operation letter to be first — "-yS" is parsed
+            # identically to "-Sy" — so checking only arg[1] would miss it.
             if [[ "$arg" == -* && "${arg:0:2}" != "--" ]]; then
-                op="${arg:1:1}"  # first char after the single dash
-                case "$op" in
-                    S|R|U|D)
+                rest="${arg:1}"
+                if [[ "$rest" == *[RUD]* ]]; then
+                    _blocked=1
+                    break
+                fi
+                if [[ "$rest" == *S* ]]; then
+                    # -S is a write op unless every other character in the
+                    # cluster is one of the documented read-only modifiers
+                    # (s = search, l = list) — e.g. -Ss, -Sl, -Ssl.
+                    stripped="${rest//S/}"
+                    stripped="${stripped//[sl]/}"
+                    if [[ -n "$stripped" ]]; then
                         _blocked=1
                         break
-                        ;;
-                esac
+                    fi
+                fi
             fi
             ;;
     esac

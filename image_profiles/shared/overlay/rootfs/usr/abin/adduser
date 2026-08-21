@@ -43,7 +43,14 @@ provided_G=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --)
-            # End of options — pass remainder through as-is
+            # End of options. If -G was never given, add it now, before the
+            # "--" marker — appending it after would make useradd treat "-G"
+            # and the group list as positional arguments (extra usernames)
+            # instead of an option, since "--" ends option parsing.
+            if [[ $provided_G -eq 0 ]]; then
+                new_args+=("-G" "$EXISTING_GROUPS")
+                provided_G=1
+            fi
             new_args+=("$@")
             break
             ;;
@@ -55,7 +62,7 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             provided_groups="$1"
-            merged=$(printf '%s\n' ${provided_groups:+${provided_groups},}${EXISTING_GROUPS} \
+            merged=$(printf '%s\n' "${provided_groups:+${provided_groups},}${EXISTING_GROUPS}" \
                 | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
             new_args+=("-G" "$merged")
             shift
@@ -63,7 +70,7 @@ while [[ $# -gt 0 ]]; do
         -G*)
             provided_G=1
             provided_groups="${1:2}"
-            merged=$(printf '%s\n' ${provided_groups:+${provided_groups},}${EXISTING_GROUPS} \
+            merged=$(printf '%s\n' "${provided_groups:+${provided_groups},}${EXISTING_GROUPS}" \
                 | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
             new_args+=("-G" "$merged")
             shift
