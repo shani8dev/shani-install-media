@@ -23,15 +23,24 @@ fi
 # Host-side cache directories (bind-mounted into the container for reuse
 # between runs so pacman/flatpak/snap don't re-download everything each time)
 # ---------------------------------------------------------------------------
+HOST_OSI_CONFIG_DIR="${SHANIOS_TEST_OSI_HOST_DIR:-$(realpath -m "${HOST_WORK_DIR}/../os-installer-config")}"
 HOST_PACMAN_CACHE="${HOST_WORK_DIR}/cache/pacman_cache"
 HOST_FLATPAK_DATA="${HOST_WORK_DIR}/cache/flatpak_data"
 HOST_SNAPD_DATA="${HOST_WORK_DIR}/cache/snapd_data"
 HOST_SNAPD_SEED="${HOST_WORK_DIR}/cache/snapd_seed"
-mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}" "${HOST_SNAPD_DATA}" "${HOST_SNAPD_SEED}"
+# Same reuse-between-runs purpose as the caches above, but for
+# shani-deploy's own downloaded update images (test-env/test.sh binds this
+# over /data/downloads inside the nspawn slot — see _nspawn_binds) —
+# without it, a full cmd_bootstrap/cmd_install re-run wipes install.img's
+# @data subvolume (and any in-progress or completed download on it) from
+# scratch, forcing a full multi-GB re-download every time.
+HOST_DOWNLOAD_CACHE="${HOST_WORK_DIR}/cache/download_cache"
+mkdir -p "${HOST_PACMAN_CACHE}" "${HOST_FLATPAK_DATA}" "${HOST_SNAPD_DATA}" "${HOST_SNAPD_SEED}" "${HOST_DOWNLOAD_CACHE}"
 chmod 755 "${HOST_FLATPAK_DATA}"   # flatpak creates as 750
 chmod 755 "${HOST_SNAPD_DATA}"     # snapd may do the same
 chmod 755 "${HOST_SNAPD_SEED}"     # snap seed dir
 chmod 755 "${HOST_PACMAN_CACHE}"   # pacman cache, less likely but consistent
+chmod 755 "${HOST_DOWNLOAD_CACHE}" 2>/dev/null || true   # no-op if a prior root-owned container write took ownership; 755 is already what's wanted
 
 # ---------------------------------------------------------------------------
 # Container paths (fixed — must match the Dockerfile)
@@ -42,6 +51,19 @@ CONTAINER_PACMAN_CACHE="/var/cache/pacman"
 CONTAINER_FLATPAK_DATA="/var/lib/flatpak"
 CONTAINER_SNAPD_DATA="/var/lib/snapd"
 CONTAINER_SNAPD_SEED="/tmp/snap-seed"
+# test-env/test.sh's _nspawn_binds hardcodes this same path as the source
+# of an additional --bind onto /data/downloads inside the nspawn slot —
+# keep both in sync if this ever changes.
+CONTAINER_DOWNLOAD_CACHE="/var/cache/shani-downloads"
+# Fixed mount point for the sibling os-installer-config checkout (see below)
+# — test-env/test.sh's cmd_install/cmd_configure look for it here first.
+# MUST NOT be under /mnt: the real install.sh/configure.sh being tested
+# hardcode /mnt (and /mnt/boot/efi) as their own install target and mount
+# over it — a bind mount at /mnt/os-installer-config would be silently
+# shadowed the moment install.sh runs, breaking a same-session cmd_configure
+# call right after cmd_install (confirmed live: "os-installer-config not
+# found" on the very next command in the same container invocation).
+CONTAINER_OSI_CONFIG_DIR="/opt/os-installer-config"
 
 # ---------------------------------------------------------------------------
 # Detect container runtime: prefer docker, fall back to podman
@@ -178,9 +200,52 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
 } > "${SECRETS_ENV_FILE}"
 
 # ---------------------------------------------------------------------------
+# Sibling os-installer-config checkout (optional) — bind-mounted read-only
+# so test-env/test.sh's cmd_install/cmd_configure can run the REAL,
+# unmodified install.sh/configure.sh from it (see test-env/README.md). Not
+# every checkout of this repo has that sibling directory present (CI, a
+# partial clone, someone not testing that path at all), so this is a no-op
+# unless the directory actually exists on the host — same conditional
+# pattern as the SSH/GPG/R2 blocks above, just a bind mount instead of a
+# credential import.
+# ---------------------------------------------------------------------------
+OSI_MOUNT_ARGS=()
+if [[ -d "${HOST_OSI_CONFIG_DIR}/scripts" ]]; then
+    OSI_MOUNT_ARGS=(-v "${HOST_OSI_CONFIG_DIR}:${CONTAINER_OSI_CONFIG_DIR}:ro")
+else
+    echo "[run_in_container.sh] Note: no os-installer-config checkout found at ${HOST_OSI_CONFIG_DIR} — 'build.sh test install'/'configure' won't have a source to run (set SHANIOS_TEST_OSI_HOST_DIR to point elsewhere)."
+fi
+
+# ---------------------------------------------------------------------------
+# Sibling shani-deploy checkout (optional) — bind-mounted read-only so
+# test-env/test.sh's --local-src=<dir> (cmd_enter/cmd_upgrade/cmd_verifyboot/
+# cmd_desktop) can overlay the REAL, CURRENT shani-deploy/shani-update/
+# gen-efi/check-boot-failure scripts (and their systemd units) onto a slot,
+# instead of only ever exercising whatever got baked into the bootstrapped
+# image at build time. Same conditional/optional pattern as the
+# os-installer-config bind above — a no-op unless the sibling checkout is
+# actually present on the host.
+# ---------------------------------------------------------------------------
+HOST_SHANI_DEPLOY_DIR="${SHANIOS_TEST_DEPLOY_HOST_DIR:-$(realpath -m "${HOST_WORK_DIR}/../shani-deploy")}"
+# Deliberately NOT under /mnt — see CONTAINER_OSI_CONFIG_DIR above for why.
+CONTAINER_SHANI_DEPLOY_DIR="/opt/shani-deploy"
+DEPLOY_MOUNT_ARGS=()
+if [[ -d "${HOST_SHANI_DEPLOY_DIR}/scripts" ]]; then
+    DEPLOY_MOUNT_ARGS=(-v "${HOST_SHANI_DEPLOY_DIR}:${CONTAINER_SHANI_DEPLOY_DIR}:ro")
+else
+    echo "[run_in_container.sh] Note: no shani-deploy checkout found at ${HOST_SHANI_DEPLOY_DIR} — --local-src=${CONTAINER_SHANI_DEPLOY_DIR}/scripts won't have a source (set SHANIOS_TEST_DEPLOY_HOST_DIR to point elsewhere)."
+fi
+
+# ---------------------------------------------------------------------------
 # Pull latest builder image (non-fatal — uses cached image if offline)
 # ---------------------------------------------------------------------------
-"${CONTAINER_RUNTIME}" pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} — using cached image"
+# `timeout` here is load-bearing, not cosmetic: confirmed live that a stuck
+# registry connection makes plain `docker pull` hang indefinitely (not fail
+# fast), which silently defeats the "non-fatal, falls back to cached image"
+# intent below — every single invocation of this script would just hang
+# forever instead. 30s is generous for a real pull of this image while still
+# failing fast on a genuinely wedged connection.
+timeout 30 "${CONTAINER_RUNTIME}" pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} (timed out or offline) — using cached image"
 
 # ---------------------------------------------------------------------------
 # Run the container
@@ -224,6 +289,28 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
 # create /payload subcgroup: No such file or directory". --cgroupns=host
 # makes the container's cgroup view match the host's actual tree.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Forward every SHANIOS_TEST_* runtime var set on the host into the
+# container — test-env/test.sh reads a whole family of these
+# (SHANIOS_TEST_EXTRA_BINDS, SHANIOS_TEST_MNT, SHANIOS_TEST_DATA,
+# SHANIOS_TEST_ALLOW_NEW_LOCAL_SRC, ...) but none of them were actually
+# reaching the container before this — setting one on the host silently
+# did nothing, confirmed live (SHANIOS_TEST_ALLOW_NEW_LOCAL_SRC=1 set here
+# had zero effect inside test.sh until this loop was added). Generic
+# rather than one -e per variable so a new SHANIOS_TEST_* var test.sh adds
+# later doesn't need a matching line added here too.
+# ---------------------------------------------------------------------------
+# Named to NOT start with SHANIOS_TEST_ itself — it did originally, which
+# made compgen's own match list include this not-yet-populated array,
+# and `${!_var}` on an empty array under `set -u` died with "unbound
+# variable" (confirmed live). Anything actually named SHANIOS_TEST_* stays
+# a plain scalar, so this only matters for this one array's own name.
+TEST_ENV_FORWARD_ARGS=()
+for _var in $(compgen -v SHANIOS_TEST_); do
+    TEST_ENV_FORWARD_ARGS+=(-e "${_var}=${!_var}")
+done
+
 "${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
     --network=host \
     --cgroupns=host \
@@ -238,10 +325,13 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
     -v /dev:/dev \
     --add-host="downloads.shani.dev:127.0.0.1" \
     -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
+    "${OSI_MOUNT_ARGS[@]}" \
+    "${DEPLOY_MOUNT_ARGS[@]}" \
     -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
     -v "${HOST_FLATPAK_DATA}:${CONTAINER_FLATPAK_DATA}" \
     -v "${HOST_SNAPD_DATA}:${CONTAINER_SNAPD_DATA}" \
     -v "${HOST_SNAPD_SEED}:${CONTAINER_SNAPD_SEED}" \
+    -v "${HOST_DOWNLOAD_CACHE}:${CONTAINER_DOWNLOAD_CACHE}" \
     -e CUSTOM_MIRROR="${CUSTOM_MIRROR}" \
     --env-file "${SECRETS_ENV_FILE}" \
     -e GPG_KEY_ID="${GPG_KEY_ID:-}" \
@@ -250,5 +340,6 @@ trap 'rm -f "${SECRETS_ENV_FILE}"' EXIT
     -e NO_SF="${NO_SF:-false}" \
     -e NO_R2="${NO_R2:-false}" \
     ${BUILD_DATE:+-e BUILD_DATE="${BUILD_DATE}"} \
+    "${TEST_ENV_FORWARD_ARGS[@]}" \
     -w "${CONTAINER_WORK_DIR}" \
     "${DOCKER_IMAGE}" bash -c "${FINAL_CMD}"

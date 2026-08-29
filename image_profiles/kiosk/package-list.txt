@@ -1,0 +1,17 @@
+shani-keyring
+shani-settings
+shani-core
+shani-deploy
+shani-network
+shani-tools-network
+shani-fonts
+noto-fonts
+gdm
+firefox
+cage
+labwc
+waypaper
+xprintidle
+dracut
+openresolv
+desktop-entry-hider

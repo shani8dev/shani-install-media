@@ -8,3 +8,19 @@ keys/*/github*
 # shanios-test-env: loop disk images and generated CA/keys are large/local-only
 test-env/disk/*
 !test-env/disk/.gitkeep
+# Same, but for a stray nested "shani-install-media/" directory one level
+# deeper than the repo root — seen escape the rule above once already
+# because it only matched at repo-root depth. Root cause traced and fixed:
+# test-env/test.sh's DATA_DIR (unlike SCRIPT_DIR/REPO_ROOT) was never
+# realpath-normalized, so an unnormalized SHANIOS_TEST_DATA override could
+# resolve relative to whatever CWD happened to be active. The one found
+# nested copy was removed and this fallback pattern is now a safety net,
+# not an active workaround.
+**/test-env/disk/*
+!**/test-env/disk/.gitkeep
+
+# Belt-and-suspenders for the same nested-checkout scenario: a real repo
+# never legitimately has a subdirectory named after itself, so exclude one
+# outright regardless of what ends up inside it — not just the test-env/disk
+# case above, in case some other future path lands there instead.
+/shani-install-media/

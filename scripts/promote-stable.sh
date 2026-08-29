@@ -120,7 +120,7 @@ _fetch_from_r2() {
     log "Step 1: Fetching latest.txt from R2 (HTTP)..."
     if curl -fsSL \
         --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-        --max-time "$NETWORK_TIMEOUT" --connect-timeout 10 \
+        --max-time "$NETWORK_TIMEOUT" --connect-timeout "$NETWORK_CONNECT_TIMEOUT" \
         --output "${LATEST_TXT}" \
         "${R2_BASE_URL}/${PROFILE}/latest.txt" 2>/dev/null \
         && [[ -s "${LATEST_TXT}" ]]; then
@@ -135,7 +135,7 @@ _fetch_from_sf() {
   local url="https://sourceforge.net/projects/${PROJECT_NAME}/files/${PROFILE}/latest.txt/download"
   curl -fsSL \
     --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-    --max-time "$NETWORK_TIMEOUT" --connect-timeout 10 \
+    --max-time "$NETWORK_TIMEOUT" --connect-timeout "$NETWORK_CONNECT_TIMEOUT" \
     --user-agent "shanios-promote/1.0" \
     --output "${LATEST_TXT}" \
     "${url}" \
@@ -188,10 +188,10 @@ if [[ "${NO_SF}" == "false" ]]; then
   SF_ARTIFACT_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
   SF_SIGNATURE_URL="${SF_ARTIFACT_URL}.asc"
 
-  if ! curl -fsSL --head --max-time 20 --connect-timeout 10 "${SF_ARTIFACT_URL}" >/dev/null 2>&1; then
+  if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_ARTIFACT_URL}" >/dev/null 2>&1; then
     die "Artifact not reachable on SourceForge: ${SF_ARTIFACT_URL} — aborting promotion."
   fi
-  if ! curl -fsSL --head --max-time 20 --connect-timeout 10 "${SF_SIGNATURE_URL}" >/dev/null 2>&1; then
+  if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_SIGNATURE_URL}" >/dev/null 2>&1; then
     die "Signature not reachable on SourceForge: ${SF_SIGNATURE_URL} — aborting promotion."
   fi
   log "SourceForge: artifact and signature OK."
@@ -206,10 +206,10 @@ if [[ "${NO_R2}" == "false" ]]; then
     R2_ARTIFACT_URL="${R2_BASE_URL}/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
     R2_SIGNATURE_URL="${R2_ARTIFACT_URL}.asc"
 
-    if ! curl -fsSL --head --max-time 20 --connect-timeout 10 "${R2_ARTIFACT_URL}" >/dev/null 2>&1; then
+    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_ARTIFACT_URL}" >/dev/null 2>&1; then
       die "Artifact not reachable on R2: ${R2_ARTIFACT_URL} — aborting promotion."
     fi
-    if ! curl -fsSL --head --max-time 20 --connect-timeout 10 "${R2_SIGNATURE_URL}" >/dev/null 2>&1; then
+    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_SIGNATURE_URL}" >/dev/null 2>&1; then
       die "Signature not reachable on R2: ${R2_SIGNATURE_URL} — aborting promotion."
     fi
     log "R2: artifact and signature OK."

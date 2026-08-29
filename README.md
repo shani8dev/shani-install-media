@@ -1,6 +1,6 @@
-# Shani OS Install Media Builder
+# Shanios Install Media Builder
 
-A fully automated build system for **Shani OS** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, and headless Server profiles. Image/ISO builds run inside a Docker container so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
+A fully automated build system for **Shanios** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, kiosk, and headless Server profiles. Image/ISO builds run inside a Docker container so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
 
 Also builds and publishes **AWS AMIs** from an already-built base image — see [Building an AWS AMI](#aws-ami-builds-build-amiyml) below.
 
@@ -29,6 +29,8 @@ run_in_container.sh                  ← sets up Docker, injects all secrets
 ```
 
 All output lands in `cache/output/<profile>/<YYYYMMDD>/`.
+
+> **For detailed workflow, key management, build commands, and test harness usage, see `test-env/README.md`.** This README provides the pipeline overview; `test-env/README.md` has the command table, secrets wiring, and step-by-step procedures.
 
 ---
 
@@ -60,22 +62,7 @@ All output lands in `cache/output/<profile>/<YYYYMMDD>/`.
 
 All R2 variables are optional — if any are absent, R2 mirroring is silently skipped and SourceForge is used as the sole upload target. `--no-sf` and `--no-r2` flags (or `NO_SF=true` / `NO_R2=true` env vars) skip individual destinations selectively.
 
-**Local `.env` example:**
-
-```env
-GPG_PRIVATE_KEY="-----BEGIN PGP PRIVATE KEY BLOCK-----
-...
------END PGP PRIVATE KEY BLOCK-----"
-GPG_PASSPHRASE=your-passphrase
-GPG_KEY_ID=7B927BFFD4A9EAAA8B666B77DE217F3DA8014792
-SSH_PRIVATE_KEY="-----BEGIN OPENSSH PRIVATE KEY-----
-...
------END OPENSSH PRIVATE KEY-----"
-R2_ACCESS_KEY_ID=abc123
-R2_SECRET_ACCESS_KEY=secret
-R2_ACCOUNT_ID=0123456789abcdef0123456789abcdef
-R2_BUCKET=shanios-releases
-```
+Secrets are managed via GitHub Actions repository secrets or a local `.env` file — never commit private keys or `*.env` files.
 
 ---
 
@@ -118,31 +105,9 @@ cd keys/
 bash create-gpg-keys.sh
 ```
 
-To also upload the public key to the OpenPGP, Ubuntu, and MIT keyservers immediately:
+The script generates a 4096-bit RSA key in an isolated temporary GNUPG home, exports the armored private/public keys, and writes a `github-gpg-secrets.env` for GitHub Actions. It is idempotent — if the private key already exists it skips generation and only regenerates the env file.
 
-```bash
-bash create-gpg-keys.sh --upload
-```
-
-The script will:
-- Prompt for a passphrase (with confirmation)
-- Generate a 4096-bit RSA key (`Shani OS <shani@shani.dev>`, 5-year expiry) in an isolated temporary GNUPG home so your personal keyring is untouched
-- Export `gpg/gpg-private.asc` (passphrase-protected, `chmod 0600`) and `gpg/gpg-public.asc`
-- Write `gpg/github-gpg-secrets.env` containing `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `GPG_KEY_ID`, and `GPG_PUBLIC_KEY`
-
-The script is **idempotent** — if `gpg/gpg-private.asc` already exists it skips key generation, re-reads the fingerprint from the existing key (prompting for the passphrase), and only regenerates `github-gpg-secrets.env`.
-
-#### Add secrets to GitHub
-
-Open `gpg/github-gpg-secrets.env`. Add the following at **Settings → Secrets and variables → Actions → New repository secret**:
-
-| Secret | Description |
-|--------|-------------|
-| `GPG_PRIVATE_KEY` | Armored private key block |
-| `GPG_PASSPHRASE` | Key passphrase |
-| `GPG_KEY_ID` | Full 40-char fingerprint |
-
-#### Embed the public key in the base image
+#### Embed the public key
 
 Copy the public key into the shared overlay so it is baked into every base image:
 
@@ -151,7 +116,7 @@ cp keys/gpg/gpg-public.asc \
    image_profiles/shared/overlay/rootfs/etc/shani-keys/signing.asc
 ```
 
-`build-base-image.sh` imports this key into the chroot's `/root/.gnupg` and sets ultimate trust during the build.
+`build-base-image.sh` imports this key into the chroot's `/root/.gnupg` during the build.
 
 #### Shred after use
 
@@ -167,7 +132,7 @@ rmdir keys/gpg 2>/dev/null || true
 Machine Owner Keys (MOK) are an RSA-2048 keypair used to:
 
 1. **Sign EFI binaries** — GRUB (`grubx64.efi`), the EFI shell (`shellx64.efi`), and the kernel (`vmlinuz-linux`) are signed with `sbsign` inside `repack-iso.sh`
-2. **Embed `MOK.der` in the ISO** — placed at the EFI partition root and the ISO filesystem root so the end user can enroll it via MokManager on first boot
+2. **Install `MOK.der` in the base image** — `build-base-image.sh` installs it to `/etc/secureboot/keys/`; **embed in the ISO** — also placed at the EFI partition root and the ISO filesystem root so the end user can enroll it via MokManager on first boot
 3. **Install keys into the base image** — `build-base-image.sh` copies all three files into `<chroot>/etc/secureboot/keys/`
 
 | File | Purpose | Permissions |
@@ -192,24 +157,7 @@ The script is **idempotent** — if all three files exist it skips key generatio
 
 #### Add secrets to GitHub
 
-Open `mok/github-mok-secrets.env` and add these secrets:
-
-| Secret | Description |
-|--------|-------------|
-| `MOK_KEY` | Multiline PEM private key block |
-| `MOK_CRT` | Multiline PEM certificate block |
-| `MOK_DER_B64` | Single-line base64-encoded DER |
-
-The workflow reconstructs the files at build time:
-
-```yaml
-- name: Setup MOK keys
-  run: |
-    mkdir -p keys/mok
-    echo "${{ secrets.MOK_KEY }}"                    > keys/mok/MOK.key
-    echo "${{ secrets.MOK_CRT }}"                    > keys/mok/MOK.crt
-    echo "${{ secrets.MOK_DER_B64 }}" | base64 --decode > keys/mok/MOK.der
-```
+Open `mok/github-mok-secrets.env` and add the secrets to GitHub Actions.
 
 #### Shred after use
 
@@ -217,30 +165,6 @@ The workflow reconstructs the files at build time:
 shred -u keys/mok/MOK.key keys/mok/MOK.crt keys/mok/MOK.der keys/mok/github-mok-secrets.env
 rmdir keys/mok 2>/dev/null || true
 ```
-
-#### What `repack-iso.sh` does with the MOK keys
-
-1. Extracts `grubx64.efi`, `shellx64.efi`, and `vmlinuz-linux` from the unsigned ISO using `osirrox`
-2. Waits up to 30 seconds for the eltorito EFI image (`eltorito_img1_uefi.img`) to appear
-3. Mounts the eltorito image and copies out the kernel
-4. Copies `shimx64.efi` → `BOOTx64.EFI` and `mmx64.efi` from `cache/temp/<profile>/x86_64/airootfs/usr/share/shim-signed/`
-5. Signs `grubx64.efi`, `shellx64.efi`, and `vmlinuz-linux` with `sbsign --key mok/MOK.key --cert mok/MOK.crt`
-6. Injects everything back via `mcopy`:
-   - `vmlinuz-linux` → `::/shanios/boot/x86_64/vmlinuz-linux`
-   - `MOK.der` and signed `shellx64.efi` → `::/ ` (EFI partition root)
-   - `BOOTx64.EFI` (shim), `grubx64.efi`, `mmx64.efi` → `::/EFI/BOOT/`
-7. Rebuilds the full ISO with `xorriso`, also mapping `MOK.der` to `/MOK.der` in the ISO filesystem
-8. GPG-signs the final ISO → `signed_*.iso.asc` using `--import-ownertrust` to set key trust non-interactively
-9. SHA-256 checksums → `signed_*.iso.sha256`
-10. Creates a `.torrent` with two webseeds (`https://downloads.shani.dev/...` and `https://downloads.sourceforge.net/...`) and six public trackers
-
-#### End-user enrollment
-
-On first boot, UEFI loads `BOOTx64.EFI` (shim). Shim detects the key is not yet enrolled and launches **MokManager** (`mmx64.efi`) automatically:
-
-1. Select **"Enroll key from disk"**
-2. Navigate to the EFI partition root and select `MOK.der`
-3. Confirm enrollment and reboot — all subsequent boots proceed silently through shim → signed GRUB → signed kernel
 
 ---
 
@@ -303,6 +227,7 @@ Each profile has its own subdirectory under both `image_profiles/` and `iso_prof
 | `gnome` | GNOME | No special Flatpak overrides |
 | `plasma` | KDE Plasma | Adds `Kvantum` filesystem override and `QT_STYLE_OVERRIDE=kvantum` |
 | `cosmic` | COSMIC | Same structure, no special overrides |
+| `kiosk` | Cage + labwc (Firefox) | **Image-only — no `iso_profiles/kiosk/` counterpart.** Unattended GDM autologin drops straight into a full-screen Firefox (`cage -s firefox --kiosk`) inside a Cage/LabWC Wayland session; the `kiosk` user's home is a tmpfs mount (`home-kiosk.mount`) so nothing survives reboot. Packages: `firefox`, `cage`, `labwc`, `waypaper`, `xprintidle`, `gdm`, `desktop-entry-hider`, plus the `shani-*` base packages |
 | `server` | none (headless) | **Image-only — no `iso_profiles/server/` counterpart.** All `plymouth-*.service` units are masked to `/dev/null` (no boot splash on a headless system); has its own overlay/package-list under `image_profiles/server/` |
 
 **`image_profiles/<profile>/` contains:**
@@ -395,7 +320,7 @@ All commands are run via `run_in_container.sh`, which starts a privileged Docker
 - Runs `pacstrap -cC image_profiles/gnome/pacman.conf <chroot> $(< package-list.txt)`
 - Applies overlay files from `image_profiles/shared/overlay/rootfs/`
 - Runs `image_profiles/gnome/gnome-customization.sh <chroot>`
-- `arch-chroot`s to configure: locale (`en_US.UTF-8`), keymap (`us`), timezone (`UTC`), hostname (`shanios`), machine-id, `/etc/hosts`, `/etc/shani-version`, `/etc/shani-profile`, `/etc/shani-channel` (`stable`), `/etc/shani-extra-groups` (`sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld`), mount point directories, system groups with static GIDs, `subuid`/`subgid` for root, and imports the Shani signing public key with ultimate trust
+- `arch-chroot`s to configure: locale (`en_US.UTF-8`), keymap (`us`), timezone (`UTC`), hostname (`shanios`), machine-id, `/etc/hosts`, `/etc/shani-version`, `/etc/shani-profile`, `/etc/shani-channel` (`stable`), `/etc/shani-extra-groups` (`sys,cups,lp,scanner,realtime,input,video,kvm,libvirt,lxd,nixbld,sambashare`), mount point directories, system groups with static GIDs, `subuid`/`subgid` for root, and imports the Shani signing public key with ultimate trust
 - Marks subvolume read-only, streams it with `btrfs send | zstd --ultra --long=31 -T0 -22` → `cache/output/gnome/<DATE>/shanios-<DATE>-gnome.zst`
 - GPG-signs → `.zst.asc`, SHA-256 checksums → `.zst.sha256`
 - Writes `cache/output/gnome/<DATE>/latest.txt` containing the `.zst` filename
@@ -414,7 +339,7 @@ Skipped automatically by `all` if `image_profiles/gnome/flatpak-packages.txt` do
 - Removes apps not in the profile list, then removes unneeded runtimes/extensions (with a dry-run safety check before each removal), runs `flatpak uninstall --unused` and `flatpak repair`
 - Plasma: applies `--filesystem=xdg-config/Kvantum:ro` and `QT_STYLE_OVERRIDE=kvantum`
 - Any profile with Steam, Heroic, Lutris, RetroArch, or Bottles: applies `--filesystem=~/Games:create` and `/mnt`, `/media`, `/run/media` permissions
-- Allocates a 14 GB Btrfs loop image at `cache/build/flatpak.img`, creates subvolume `flatpak_subvol`
+- Allocates a 15 GB Btrfs loop image at `cache/build/flatpak.img`, creates subvolume `flatpak_subvol`
 - Copies `/var/lib/flatpak` into the subvolume with `tar -cf - | tar -xf -`
 - Streams the read-only subvolume → `cache/output/gnome/<DATE>/flatpakfs.zst`
 
@@ -532,6 +457,14 @@ R2 path: `r2:<R2_BUCKET>/<profile>/<DATE>/`
 
 After all uploads complete the R2 cleanup routine deletes old dated folders under the profile prefix, keeping only the 2 most recent dated folders and the folder pinned by `stable.txt` on R2. Central `latest.txt` and `stable.txt` are never deleted.
 
+#### `verify` — Read-only check of the latest uploaded artifact
+
+```bash
+./run_in_container.sh build.sh verify -p gnome
+```
+
+Runs `upload.sh -p <profile> --verify-only`. It is strictly read-only: no artifacts are uploaded and the R2 cleanup routine is skipped. It resolves the build date, confirms the local `cache/output/<profile>/<DATE>/` directory exists, and verifies the latest base-image artifact already on SourceForge by fetching its remote `.sha256` and comparing it to the local SHA-256. Use it to confirm a prior upload has propagated to the CDN without re-uploading anything.
+
 #### `publish` — Release + upload in one call
 
 ```bash
@@ -554,6 +487,7 @@ Equivalent to running `release` then `upload` in sequence.
 | `release` | `release.sh` | Write `latest.txt` or `stable.txt` |
 | `upload` | `upload.sh` | Push artifacts to SourceForge and/or R2. Modes: `image` (default), `iso`, `all`. Never uploads flatpakfs/snapfs |
 | `promote-stable` | `promote-stable.sh` | Fetch `latest.txt` from SF, verify artifact exists, publish as `stable.txt` |
+| `verify` | `upload.sh` | Read-only check of the latest uploaded artifact on SourceForge — fetches the remote `.sha256` and compares it to the local SHA-256; no uploads, no R2 cleanup |
 | `test` | `test-env/test.sh` | Install/boot/update/rollback a built image on loop-mounted disks — see [`test-env/README.md`](test-env/README.md) |
 | `publish` | — | `release` + `upload` |
 | `all` | — | image → release latest → upload image (base image only, no ISO) |
@@ -741,6 +675,7 @@ as a workflow artifact.
 │   │   └── overlay -> ../shared/overlay
 │   ├── plasma/                     # Same structure
 │   ├── cosmic/                     # Same structure
+│   ├── kiosk/                      # Single-app Firefox kiosk (Cage + labwc, ephemeral tmpfs home)
 │   ├── server/                     # Image-only — no iso_profiles/server/ counterpart;
 │   │                               # own overlay overrides (plymouth-*.service masked to
 │   │                               # /dev/null), consumed by packer/ for AMI builds
@@ -817,7 +752,7 @@ the `shrinivasvkumbhar/shani-builder` Docker image from
 `archlinux:base-devel` and pre-installs `archiso`, `btrfs-progs`,
 `sbsigntools`, `shim-signed`, `mokutil`, `mtools`, `flatpak`, `snapd`,
 `rclone`, `rsync`, `openssh`, `mktorrent`, `zsync`, and more. It also
-imports the Shani OS signing GPG key and registers the `[shani]` custom
+imports the Shanios signing GPG key and registers the `[shani]` custom
 pacman repository at `https://repo.shani.dev/x86_64`.
 
 The AWS AMI build (`packer/`) is separate and does **not** use this
@@ -832,7 +767,7 @@ already-published base image rather than assembling one from scratch.
 | Repository | Description |
 |------------|-------------|
 | [shani-builder](https://github.com/shani8dev/shani-builder) | Docker build environment and automated package builder |
-| [shani-pkgbuilds](https://github.com/shani8dev/shani-pkgbuilds) | PKGBUILD sources for Shani OS custom packages |
+| [shani-pkgbuilds](https://github.com/shani8dev/shani-pkgbuilds) | PKGBUILD sources for Shanios custom packages |
 | [shani-repo](https://github.com/shani8dev/shani-repo) | Published Arch-compatible package repository (`https://repo.shani.dev`) |
 
 ---

@@ -132,6 +132,22 @@ if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" ]]; then
         || die "Customizations failed"
 fi
 
+# Optional OEM/private-mirror injection (integration-map Product 6, Option A).
+# Rewrites shani-deploy's compile-time constants inside the image before the
+# btrfs snapshot — preserves immutability at runtime (no /etc override file).
+if [[ -n "${CUSTOM_MIRROR_BASE_URL:-}" || -n "${CUSTOM_GPG_KEY_ID:-}" ]]; then
+    DEPLOY_IN_IMAGE="${SUBVOL_MOUNT}/usr/local/bin/shani-deploy"
+    [[ -f "$DEPLOY_IN_IMAGE" ]] || die "shani-deploy not found at ${DEPLOY_IN_IMAGE} — cannot inject custom mirror"
+    if [[ -n "${CUSTOM_MIRROR_BASE_URL:-}" ]]; then
+        sed -i "s|readonly R2_BASE_URL=.*|readonly R2_BASE_URL=\"${CUSTOM_MIRROR_BASE_URL}\"|" "$DEPLOY_IN_IMAGE"
+        log "Injected CUSTOM_MIRROR_BASE_URL into image shani-deploy"
+    fi
+    if [[ -n "${CUSTOM_GPG_KEY_ID:-}" ]]; then
+        sed -i "s|readonly GPG_KEY_ID=.*|readonly GPG_KEY_ID=\"${CUSTOM_GPG_KEY_ID}\"|" "$DEPLOY_IN_IMAGE"
+        log "Injected CUSTOM_GPG_KEY_ID into image shani-deploy"
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 # chroot configuration
 # ---------------------------------------------------------------------------

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Shani Kiosk (cage)
+Comment=Single-application Wayland kiosk session
+Exec=cage -s firefox --kiosk
+Type=Application
+DesktopNames=kiosk

@@ -146,6 +146,47 @@ check_dependencies_test() {
     done
 }
 
+# Check for tools required by test-env's cmd_install/cmd_configure — running
+# the REAL os-installer-config install.sh/configure.sh end-to-end (see
+# test-env/README.md's "install/configure" section). Superset of
+# check_dependencies_test's disk/btrfs tooling plus everything those two
+# scripts themselves shell out to directly. The published builder image is
+# built for image/ISO assembly, not for running the installer, so several of
+# these (sudo, parted/partprobe, cryptsetup, firewalld, dracut) are
+# genuinely likely to be missing — auto-installed the same way cmd_disk
+# auto-installs dosfstools, via the same persistent pacman cache
+# run_in_container.sh already bind-mounts, before failing hard on anything
+# that still can't be found afterward.
+check_dependencies_install() {
+    check_dependencies_test
+
+    local deps=(
+        "sudo:sudo" "sfdisk:util-linux" "parted:parted" "partprobe:parted"
+        "cryptsetup:cryptsetup" "swapon:util-linux" "free:procps-ng"
+        "awk:gawk" "mktemp:coreutils" "shred:coreutils"
+        "udevadm:systemd" "hostnamectl:systemd" "localectl:systemd" "timedatectl:systemd"
+        "firewall-offline-cmd:firewalld" "dracut:dracut"
+        "sbsign:sbsigntools" "sbverify:sbsigntools" "mokutil:mokutil"
+    )
+
+    local missing_pkgs=() entry cmd pkg
+    for entry in "${deps[@]}"; do
+        cmd="${entry%%:*}"; pkg="${entry##*:}"
+        command -v "$cmd" >/dev/null 2>&1 || missing_pkgs+=("$pkg")
+    done
+
+    if [[ ${#missing_pkgs[@]} -gt 0 ]] && command -v pacman >/dev/null 2>&1; then
+        log "install/configure need packages not in the builder image: ${missing_pkgs[*]} — installing"
+        pacman -Sy --needed --noconfirm "${missing_pkgs[@]}" \
+            || warn "pacman install of one or more packages failed — see errors above"
+    fi
+
+    for entry in "${deps[@]}"; do
+        cmd="${entry%%:*}"; pkg="${entry##*:}"
+        command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed (pacman -S ${pkg})."
+    done
+}
+
 # ---------------------------------------------------------------------------
 # GPG signing
 # ---------------------------------------------------------------------------

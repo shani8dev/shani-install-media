@@ -1,0 +1,13 @@
+# Populate the tmpfs kiosk home from skel on every boot.
+# Adapted from the systemd-guest-user pattern (Akrai/systemd-guest-user, GPLv3).
+[Unit]
+DefaultDependencies=no
+Requires=home-kiosk.mount
+After=systemd-tmpfiles-setup.service home-kiosk.mount
+RefuseManualStart=yes
+RefuseManualStop=yes
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'cp -a /etc/skel/. /home/kiosk/'
+ExecStart=/usr/bin/chown -R kiosk:users /home/kiosk
