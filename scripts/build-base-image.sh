@@ -120,6 +120,14 @@ mapfile -t _packages < <(
 pacstrap -cC "$PACMAN_CONFIG" "${SUBVOL_MOUNT}" "${_packages[@]}" \
     || die "pacstrap failed"
 
+# ── Export fully-resolved installed package set (read-only db query, no net) ──
+# `pacman -Qq` reads /var/lib/pacman/local/ in the chroot, giving the complete
+# list that actually landed in this image (top-level pkgs + all transitive
+# deps) — the reviewable ground-truth for "what ships" checks.
+PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${PROFILE}.packages.txt"
+arch-chroot "${SUBVOL_MOUNT}" pacman -Qq > "${PACKAGE_LIST_ARTIFACT}"
+log "Exported resolved package list (${PACKAGE_LIST_ARTIFACT})"
+
 if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" ]]; then
     log "Applying overlay files..."
     cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${SUBVOL_MOUNT}/" \

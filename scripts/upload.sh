@@ -210,6 +210,13 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
       log "Warning: No .zst files found in ${OUTPUT_SUBDIR}"
     fi
 
+    if ls "${OUTPUT_SUBDIR}"/*.packages.txt 1>/dev/null 2>&1; then
+      sf_upload "resolved package list" "${OUTPUT_SUBDIR}"/*.packages.txt "${REMOTE_SUBPATH}"
+      for f in "${OUTPUT_SUBDIR}"/*.packages.txt; do r2_upload "$f" "${R2_SUBPATH}"; done
+    else
+      log "Warning: No .packages.txt files found in ${OUTPUT_SUBDIR}"
+    fi
+
     if ls "${OUTPUT_SUBDIR}"/*.zst.asc 1>/dev/null 2>&1; then
       sf_upload "base image signatures" \
         --exclude="flatpakfs.zst.asc" --exclude="snapfs.zst.asc" \
