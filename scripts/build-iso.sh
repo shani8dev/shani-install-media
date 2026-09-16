@@ -226,7 +226,8 @@ if [[ "$FROM_R2" == "true" ]]; then
   verify_base_image "${OUTPUT_SUBDIR}/${r2_base_image}"
 
   # Optional layered images — local copy wins; download if present on R2.
-  # No sidecars are uploaded for these layers so no verification is performed.
+  # Sidecars are mandatory once the layer itself is present, same as the
+  # base image: refuse to build from an unverified Flatpak/Snap layer.
   for _layer in flatpakfs snapfs; do
     _layer_file="${OUTPUT_SUBDIR}/${_layer}.zst"
     _layer_url="${R2_DATED_URL}/${_layer}.zst"
@@ -238,6 +239,14 @@ if [[ "$FROM_R2" == "true" ]]; then
         || warn "${_layer}.zst download failed — skipping layer."
     else
       log "No ${_layer}.zst found locally or on R2 — skipping."
+    fi
+
+    if [[ -f "$_layer_file" ]]; then
+      [[ -f "${_layer_file}.sha256" ]] \
+        || r2_download "${_layer_url}.sha256" "${_layer_file}.sha256" true
+      [[ -f "${_layer_file}.asc" ]] \
+        || r2_download "${_layer_url}.asc" "${_layer_file}.asc" true
+      verify_base_image "$_layer_file"
     fi
   done
 
@@ -267,20 +276,29 @@ base_image=$(<"${OUTPUT_SUBDIR}/latest.txt")
 ISO_DIR="${TEMP_DIR}/${PROFILE}/iso/${OS_NAME}/x86_64"
 mkdir -p "$ISO_DIR"
 
-log "Copying base image → rootfs.zst..."
-cp "${OUTPUT_SUBDIR}/${base_image}" "${ISO_DIR}/rootfs.zst" \
-  || die "Failed to copy base image"
+# Hardlink into mkarchiso's own (ephemeral, wiped-on-next-run) work tree
+# instead of copying — these multi-GB artifacts are pure inputs to ISO
+# assembly, never reopened for writing. Falls back to cp automatically
+# when the work tree is on a different filesystem (hardlinks can't cross
+# devices) or the source is itself already a hardlink target.
+link_or_copy() {
+  local src="$1" dst="$2" label="$3"
+  ln "$src" "$dst" 2>/dev/null || cp "$src" "$dst" || die "Failed to place ${label}"
+}
+
+log "Linking base image → rootfs.zst..."
+link_or_copy "${OUTPUT_SUBDIR}/${base_image}" "${ISO_DIR}/rootfs.zst" "base image"
 
 if [[ -f "${OUTPUT_SUBDIR}/flatpakfs.zst" ]]; then
-  log "Copying flatpakfs.zst..."
-  cp "${OUTPUT_SUBDIR}/flatpakfs.zst" "${ISO_DIR}/" || die "Failed to copy Flatpak image"
+  log "Linking flatpakfs.zst..."
+  link_or_copy "${OUTPUT_SUBDIR}/flatpakfs.zst" "${ISO_DIR}/flatpakfs.zst" "Flatpak image"
 else
   log "No flatpakfs.zst for profile '${PROFILE}' — skipping."
 fi
 
 if [[ -f "${OUTPUT_SUBDIR}/snapfs.zst" ]]; then
-  log "Copying snapfs.zst..."
-  cp "${OUTPUT_SUBDIR}/snapfs.zst" "${ISO_DIR}/" || die "Failed to copy Snap image"
+  log "Linking snapfs.zst..."
+  link_or_copy "${OUTPUT_SUBDIR}/snapfs.zst" "${ISO_DIR}/snapfs.zst" "Snap image"
 else
   log "No snapfs.zst for profile '${PROFILE}' — skipping."
 fi

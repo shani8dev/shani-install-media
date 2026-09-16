@@ -289,6 +289,18 @@ LOOP_DEVICE_TMP="$LOOP_DEVICE"
 LOOP_DEVICE=""
 detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE_TMP"
 
+# ---------------------------------------------------------------------------
+# Checksum and sign
+# ---------------------------------------------------------------------------
+gpg_prepare_keyring
+
+pushd "${OUTPUT_SUBDIR}" > /dev/null
+sha256sum "snapfs.zst" > "snapfs.zst.sha256" \
+    || die "Checksum generation failed"
+popd > /dev/null
+
+gpg_sign_file "${OUTPUT_FILE}"
+
 log "==========================================="
 log "Snap image created successfully!"
 log "Output: ${OUTPUT_FILE}"
