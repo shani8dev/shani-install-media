@@ -66,24 +66,30 @@ mkdir -p "${WORK_DIR}" "${MOUNT_DIR}"
 # ─────────────────────────────────────────────────────────────────────────────
 log "Resolving latest image for profile '${SHANIOS_PROFILE}'..."
 
-LATEST_URL="${ARTIFACT_BASE}/${SHANIOS_PROFILE}/latest.txt"
-log "Fetching: ${LATEST_URL}"
-BASE_IMAGE_NAME=$(
-    curl -fsSL --max-time 30 --retry 3 --retry-delay 5 "${LATEST_URL}" \
-    | tr -d '[:space:]'
-)
-[[ -n "${BASE_IMAGE_NAME}" ]] || die "latest.txt is empty or unreachable: ${LATEST_URL}"
-log "Latest image: ${BASE_IMAGE_NAME}"
+# Allow override of base image filename via BASE_IMAGE_OVERRIDE environment variable
+      if [[ -n "${BASE_IMAGE_OVERRIDE:-}" ]]; then
+          BASE_IMAGE_NAME="${BASE_IMAGE_OVERRIDE}"
+          log "Using base image override: ${BASE_IMAGE_NAME}"
+      else
+          LATEST_URL="${ARTIFACT_BASE}/${SHANIOS_PROFILE}/latest.txt"
+          log "Fetching: ${LATEST_URL}"
+          BASE_IMAGE_NAME=$(
+              curl -fsSL --max-time 30 --retry 3 --retry-delay 5 "${LATEST_URL}" \
+              | tr -d '[:space:]'
+          )
+          [[ -n "${BASE_IMAGE_NAME}" ]] || die "latest.txt is empty or unreachable: ${LATEST_URL}"
+          log "Latest image: ${BASE_IMAGE_NAME}"
+      fi
 
-# Extract 8-digit build date from filename (e.g. shanios-20240115-gnome.zst → 20240115)
-BUILD_DATE=$(echo "${BASE_IMAGE_NAME}" | grep -oE '[0-9]{8}' | head -1)
-[[ -n "${BUILD_DATE}" ]] || die "Cannot extract build date from filename: ${BASE_IMAGE_NAME}"
+      # Extract 8-digit build date from filename (e.g. shanios-20240115-gnome.zst → 20240115)
+      BUILD_DATE=$(echo "${BASE_IMAGE_NAME}" | grep -oE '[0-9]{8}' | head -1)
+      [[ -n "${BUILD_DATE}" ]] || die "Cannot extract build date from filename: ${BASE_IMAGE_NAME}"
 
-DATED_BASE="${ARTIFACT_BASE}/${SHANIOS_PROFILE}/${BUILD_DATE}"
-IMAGE_URL="${DATED_BASE}/${BASE_IMAGE_NAME}"
-SHA256_URL="${IMAGE_URL}.sha256"
-ASC_URL="${IMAGE_URL}.asc"
-IMAGE_FILE="${WORK_DIR}/${BASE_IMAGE_NAME}"
+      DATED_BASE="${ARTIFACT_BASE}/${SHANIOS_PROFILE}/${BUILD_DATE}"
+      IMAGE_URL="${DATED_BASE}/${BASE_IMAGE_NAME}"
+      SHA256_URL="${IMAGE_URL}.sha256"
+      ASC_URL="${IMAGE_URL}.asc"
+      IMAGE_FILE="${WORK_DIR}/${BASE_IMAGE_NAME}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. Download base image (aria2c preferred; curl fallback)

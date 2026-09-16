@@ -39,6 +39,12 @@ variable "associate_public_ip" {
   description = "Assign a public IP to the builder. Set false for private VPC with NAT gateway."
 }
 
+variable "builder_ami_id" {
+  type        = string
+  default     = ""
+  description = "Specific AMI ID to use for the builder host. If set, overrides the most_recent al2023-ami-*-x86_64 lookup."
+}
+
 # ── ShaniOS source artifact ───────────────────────────────────────────────────
 variable "r2_base_url" {
   type        = string

@@ -76,7 +76,6 @@ else
 
     # Generate the key in batch mode
     gpg --homedir "$TMPGNUPG" --batch --gen-key <<EOF
-%no-protection
 Key-Type: ${KEY_TYPE}
 Key-Length: ${KEY_LENGTH}
 Subkey-Type: ${KEY_TYPE}

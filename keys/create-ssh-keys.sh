@@ -131,7 +131,12 @@ else
     echo "   Output  : $(pwd)/${OUTPUT_DIR}/"
     echo ""
 
-    SSH_PASSPHRASE=""
+    while true; do
+        read -rsp "Enter passphrase for the new key (leave empty for no passphrase): " SSH_PASSPHRASE; echo
+        read -rsp "Confirm passphrase: " SSH_PASSPHRASE2; echo
+        [[ "$SSH_PASSPHRASE" == "$SSH_PASSPHRASE2" ]] && break
+        echo "❌ Passphrases do not match. Try again."
+    done
 
     # ssh-keygen always writes the public key as <private>.pub; rename afterward
     ssh-keygen \

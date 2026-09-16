@@ -8,27 +8,92 @@ source "${SCRIPT_DIR}/../config/config.sh"
 
 # Parse options
 PROFILE=""
-while getopts "p:" opt; do
+CLEAN_BASE=false
+BRANCH=""
+while getopts "p:cb:" opt; do
   case "$opt" in
     p) PROFILE="$OPTARG" ;;
+    c) CLEAN_BASE=true ;;
+    b) BRANCH="$OPTARG" ;;
     *) die "Invalid option" ;;
   esac
 done
 shift $((OPTIND - 1))
 [[ -z "$PROFILE" ]] && die "Profile (-p) is required."
 
+# Use provided branch or fall back to config default
+BRANCH="${BRANCH:-${SHANIOS_CHANNEL:-stable}}"
+
+# Compute variant name for cache hash and traceability
+compute_variant_name "$BRANCH" "$PROFILE"
+
+# Deliberately NOT ${PROFILE}/${BRANCH}/${BUILD_DATE}: upload.sh, build-iso.sh,
+# and repack-iso.sh all still expect ${PROFILE}/${BUILD_DATE} with no branch
+# segment, so nesting under branch here would make this script write artifacts
+# none of those (unmodified) downstream consumers would ever find. Branch is
+# still distinguishable via IMAGE_NAME/PACKAGE_LIST_ARTIFACT below, which embed
+# it in the filename itself.
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
+# ── Cached base with change detection ────────────────────────────────────────
+# Save the used package list hash in the base image for change detection.
+# On subsequent builds, compare current package list vs cached list.
+# Only regenerate base cache if list changed or CLEAN_BASE flag used.
+PACKAGE_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/package-list.txt"
+[[ -f "$PACKAGE_LIST" ]] || die "Package list not found for profile ${PROFILE}"
+
+# Compute hash of current package list (excluding comments and blank lines)
+CURRENT_LIST_HASH=$(
+    grep -v '^\s*#' "$PACKAGE_LIST" \
+    | tr -d '\r' \
+    | grep -v '^\s*$' \
+    | sha256sum \
+    | awk '{print $1}'
+)
+
+# Deliberately NOT under OUTPUT_SUBDIR: that path includes BUILD_DATE, so a
+# hash written there could never be found by tomorrow's build — the "skip if
+# unchanged" check would never hit across a day boundary, which is the most
+# common case it exists to speed up. mkdir -p above already created this
+# stable, date-independent parent as a side effect of creating OUTPUT_SUBDIR.
+# VARIANT_NAME already embeds the branch, so different branches of the same
+# profile get distinct hash files without needing a branch subdirectory.
+CACHE_HASH_FILE="${OUTPUT_DIR}/${PROFILE}/${VARIANT_NAME}.listhash"
+CACHED_HASH=""
+if [[ -f "$CACHE_HASH_FILE" ]]; then
+    CACHED_HASH=$(cat "$CACHE_HASH_FILE")
+fi
+
+if [[ "$CLEAN_BASE" == "false" && "$CURRENT_LIST_HASH" == "$CACHED_HASH" ]]; then
+    log "Package list unchanged (hash: ${CURRENT_LIST_HASH:0:12}...), skipping base rebuild"
+    log "Use -c flag to force rebuild"
+    exit 0
+fi
+
+log "Package list hash: ${CURRENT_LIST_HASH:0:12}..."
+
 PACMAN_CONFIG="./image_profiles/${PROFILE}/pacman.conf"
 BASE_SUBVOL="${OS_NAME}_base"
-IMAGE_NAME="${OS_NAME}-${BUILD_DATE}-${PROFILE}.zst"
+IMAGE_NAME="${OS_NAME}-${BUILD_DATE}-${BRANCH}-${PROFILE}.zst"
 IMAGE_FILE="${OUTPUT_SUBDIR}/${IMAGE_NAME}"
 
 log "Building base image for profile: ${PROFILE}"
 check_dependencies
 check_mok_keys
 check_gpg_key
+
+# Preflight cleanup: release residual mounts from interrupted previous builds
+for mnt in "${BUILD_DIR}/${OS_NAME}_base" "${BUILD_DIR}/${OS_NAME}_target"; do
+    if mountpoint -q "$mnt" 2>/dev/null; then
+        warn "Residual mount detected at ${mnt}, cleaning up"
+        umount -R "$mnt" 2>/dev/null || warn "Failed to unmount ${mnt}"
+    fi
+done
+for loop in $(losetup -j "${BUILD_DIR}/"*.img 2>/dev/null | cut -d: -f1); do
+    warn "Residual loop device detected: ${loop}, detaching"
+    losetup -d "$loop" 2>/dev/null || warn "Failed to detach ${loop}"
+done
 
 # ---------------------------------------------------------------------------
 # Set up Btrfs image for base system (10G)
@@ -124,7 +189,7 @@ pacstrap -cC "$PACMAN_CONFIG" "${SUBVOL_MOUNT}" "${_packages[@]}" \
 # `pacman -Qq` reads /var/lib/pacman/local/ in the chroot, giving the complete
 # list that actually landed in this image (top-level pkgs + all transitive
 # deps) — the reviewable ground-truth for "what ships" checks.
-PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${PROFILE}.packages.txt"
+PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${BRANCH}-${PROFILE}.packages.txt"
 arch-chroot "${SUBVOL_MOUNT}" pacman -Qq > "${PACKAGE_LIST_ARTIFACT}"
 log "Exported resolved package list (${PACKAGE_LIST_ARTIFACT})"
 
@@ -275,4 +340,8 @@ else
 fi
 
 echo "${IMAGE_NAME}" > "${OUTPUT_SUBDIR}/latest.txt"
+
+# Save package list hash for change detection on subsequent builds
+echo "${CURRENT_LIST_HASH}" > "${CACHE_HASH_FILE}"
+
 log "Base image build completed successfully!"

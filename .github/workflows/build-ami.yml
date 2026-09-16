@@ -25,6 +25,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: ami-build-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   PACKER_VERSION: "1.16.0"
   SHANIOS_PROFILE: ${{ github.event.inputs.profile || 'server' }}
@@ -40,6 +44,15 @@ jobs:
       contents: read
 
     steps:
+      - name: Notify Discord — Build Started
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK" ] && exit 0
+          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg sha "${{ github.sha }}" '{content: ("🏗️ **ShaniOS AMI Build Started**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nSHA: `" + $sha + "`")}')
+          curl -s -X POST "$DISCORD_WEBHOOK" -H "Content-Type: application/json" -d "$MSG" || true
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -109,6 +122,33 @@ jobs:
           name: packer-build-log-${{ env.SHANIOS_PROFILE }}
           path: /tmp/packer-build.log
           retention-days: 7
+
+      - name: Upload AMI manifest artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shani-ami-manifest-${{ env.SHANIOS_PROFILE }}
+          path: packer/packer-manifest.json
+          retention-days: 7
+
+      - name: Notify Discord — Build Failed
+        if: failure() && github.event_name == 'workflow_dispatch'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK" ] && exit 0
+          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{content: ("❌ **ShaniOS AMI Build Failed**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\n[View logs](" + $run_url + ")")}')
+          curl -s -X POST "$DISCORD_WEBHOOK" -H "Content-Type: application/json" -d "$MSG" || true
+
+      - name: Notify Discord — Build Succeeded
+        if: success() && github.event_name == 'workflow_dispatch'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK" ] && exit 0
+          AMI_ID="${{ steps.ami.outputs.ami_id }}"
+          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg ami "$AMI_ID" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{content: ("✅ **ShaniOS AMI Build Complete**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nAMI ID: `" + $ami + "`\n[View logs](" + $run_url + ")")}')
+          curl -s -X POST "$DISCORD_WEBHOOK" -H "Content-Type: application/json" -d "$MSG" || true
 
       - name: Job summary
         if: success()

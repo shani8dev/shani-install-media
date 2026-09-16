@@ -31,6 +31,15 @@ R2_BASE_URL="${R2_BASE_URL:-https://downloads.shani.dev}"
 BUILDER_GNUPGHOME="${GNUPGHOME:-/home/builduser/.gnupg}"
 
 # ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# Defined early (rather than further down with the other helpers) because the
+# safety-guard block below runs immediately at source time and calls these.
+log()  { echo "[INFO] $*" >&2; }
+warn() { echo "[WARN] $*" >&2; }
+die()  { echo "[ERROR] $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
 # Shared network / retry constants (used by promote-stable.sh, upload.sh, etc.)
 # ---------------------------------------------------------------------------
 CURL_RETRIES=3
@@ -38,15 +47,99 @@ CURL_RETRY_DELAY=5
 NETWORK_TIMEOUT=30
 NETWORK_CONNECT_TIMEOUT=10
 
+# ---------------------------------------------------------------------------
+# Environment sanitization - prevent host environment leaks
+# ---------------------------------------------------------------------------
+# Unset variables that can cause issues in chroot/build environment
+unset XDG_RUNTIME_DIR 2>/dev/null || true
+export HOME="${HOME:-/root}"
+
 # Ensure all writable cache directories exist before any script runs.
 mkdir -p "${OUTPUT_DIR}" "${BUILD_DIR}" "${TEMP_DIR}" "${MOK_DIR}" "${GPG_DIR}"
 
+# Per-variant cache directory to prevent parallel build collisions
+VARIANT_CACHE_DIR="${BUILD_DIR}/variant-${PROFILE:-default}"
+mkdir -p "${VARIANT_CACHE_DIR}"
+
 # ---------------------------------------------------------------------------
-# Logging
+# Safety guard - prevent accidental host modifications
 # ---------------------------------------------------------------------------
-log()  { echo "[INFO] $*" >&2; }
-warn() { echo "[WARN] $*" >&2; }
-die()  { echo "[ERROR] $*" >&2; exit 1; }
+# Verify we are not running as root on the host system unintentionally
+# (builder container runs as root, but host execution should be cautious)
+if [[ "${IS_IN_CONTAINER:-false}" != "true" ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+        warn "Running as root outside container - ensure this is intentional"
+        if [[ -t 0 ]]; then
+            read -rp "Continue as root? [y/N] " confirm
+            [[ "$confirm" =~ ^[Yy]$ ]] || die "Aborted by user"
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Branch/Channel configuration
+# ---------------------------------------------------------------------------
+# Supported branches: stable, unstable, forky, rolling
+# Branch determines package repository URLs and appears in output filenames
+SHANIOS_CHANNEL="${SHANIOS_CHANNEL:-stable}"
+
+# Map branch names to repository URLs (Debian-style)
+# These can be customized per branch as needed
+declare -A BRANCH_REPOS=(
+    [stable]="https://downloads.shani.dev stable main"
+    [unstable]="https://downloads.shani.dev unstable main"
+    [forky]="https://downloads.shani.dev forky main"
+    [rolling]="https://downloads.shani.dev rolling main"
+)
+
+# Default repository for unknown branches
+DEFAULT_REPO="https://downloads.shani.dev stable main"
+
+# Branch-specific package list suffix (empty for stable)
+declare -A BRANCH_PKG_SUFFIX=(
+    [stable]=""
+    [unstable]="-unstable"
+    [forky]="-forky"
+    [rolling]="-rolling"
+)
+
+# Dynamic variant name computation for unique build traceability
+# Call after PROFILE and BRANCH are set to compute VARIANT_NAME
+compute_variant_name() {
+    local branch="${1:-${BRANCH:-stable}}"
+    local profile="${2:-${PROFILE:-default}}"
+    VARIANT_NAME="${branch}-${profile}"
+    if [[ "${MINIMAL_BUILD:-false}" == "true" ]]; then
+        VARIANT_NAME="${VARIANT_NAME}-minimal"
+    fi
+    if [[ "${WITH_NVIDIA:-false}" == "true" ]]; then
+        VARIANT_NAME="${VARIANT_NAME}-nvidia"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Unmount helpers
+# ---------------------------------------------------------------------------
+
+# Unmount all directories under a given prefix tree.
+# Reads /proc/self/mounts, checks each path with mountpoint -q,
+# and uses umount -R for recursive unmounting.
+# Args:
+#   $1 = directory prefix to match and unmount
+unmount_tree() {
+    local prefix="$1"
+    local src mount_point rest
+
+    # /proc/self/mounts lines are "<source> <mountpoint> <fstype> <opts> <dump>
+    # <pass>" — reading into a single variable would capture the whole line
+    # (source device first), so the prefix match against a mountpoint path
+    # would never hit. Split into fields instead.
+    while read -r src mount_point rest; do
+        if [[ "$mount_point" == "$prefix"* ]] && mountpoint -q "$mount_point" 2>/dev/null; then
+            umount -R "$mount_point" || warn "Failed to unmount $mount_point"
+        fi
+    done < /proc/self/mounts
+}
 
 # ---------------------------------------------------------------------------
 # Dependency checks
@@ -54,7 +147,7 @@ die()  { echo "[ERROR] $*" >&2; exit 1; }
 
 # Check for tools required by build-base-image.sh.
 check_dependencies() {
-    local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync gpg sha256sum zstd fallocate mkfs.btrfs openssl )
+    local deps=( btrfs pacstrap losetup mount umount arch-chroot rsync gpg sha256sum zstd truncate mkfs.btrfs openssl )
     for cmd in "${deps[@]}"; do
         command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required but not installed."
     done
@@ -318,7 +411,10 @@ setup_btrfs_image() {
     log "Removing existing image file (if any): $img_path"
     rm -f "$img_path"
 
-    fallocate -l "$size" "$img_path" || die "Failed to allocate image file: $img_path"
+    # Sparse allocation: the Btrfs filesystem still reports "$size" capacity,
+    # but the backing file only consumes disk blocks as they're actually
+    # written, instead of the full size up front.
+    truncate -s "$size" "$img_path" || die "Failed to allocate image file: $img_path"
 
     local loop_device
     loop_device=$(losetup --find --show "$img_path") \

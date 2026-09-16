@@ -32,15 +32,17 @@ source "amazon-ebssurrogate" "shanios" {
   subnet_id     = var.builder_subnet_id != "" ? var.builder_subnet_id : null
   associate_public_ip_address = var.associate_public_ip
 
-  # ── Builder host AMI: latest Amazon Linux 2023 x86_64 ────────────────────
+  # ── Builder host AMI: specific ID or latest Amazon Linux 2023 x86_64 ─────
   source_ami_filter {
-    filters = {
-      name                = "al2023-ami-*-x86_64"
-      root-device-type    = "ebs"
-      virtualization-type = "hvm"
-    }
+    filters = merge(
+      {
+        root-device-type    = "ebs"
+        virtualization-type = "hvm"
+      },
+      var.builder_ami_id != "" ? { image-id = var.builder_ami_id } : { name = "al2023-ami-*-x86_64" }
+    )
     owners      = ["amazon"]
-    most_recent = true
+    most_recent = var.builder_ami_id == "" ? true : false
   }
 
   ssh_username = var.ssh_username
