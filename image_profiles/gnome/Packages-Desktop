@@ -1,0 +1,15 @@
+# Packages-Desktop — GUI packages
+# Installed after Base. Profile-specific desktop meta-package is first.
+shani-desktop-gnome
+shani-accessibility
+shani-fonts
+shani-multimedia
+shani-bluetooth
+shani-peripherals
+shani-printer
+shani-scanner
+shani-video
+shani-video-guest
+desktop_entry-hider
+pipewire-jack
+noto-fonts
