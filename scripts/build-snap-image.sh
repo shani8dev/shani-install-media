@@ -7,8 +7,8 @@ set -Eeuo pipefail
 # Subshell error isolation — report which step failed
 error_function() {
     local rc=$?
-    echo "[ERROR] Build step failed with exit code $rc" >set -Eeuo pipefail2
-    echo "[ERROR] Check output above for the failed step" >set -Eeuo pipefail2
+    echo "[ERROR] Build step failed with exit code $rc" >&2
+    echo "[ERROR] Check output above for the failed step" >&2
     return $rc
 }
 trap error_function EXIT

@@ -12,7 +12,7 @@ inflate the main file back to unreadable length.
 ---
 
 - **MOK private key in base image (Critical).**
-  `scripts/build-base-image.sh:100` installs `MOK.key` into the image —
+  `scripts/build-base-image.sh:165-167` installs `MOK.key` into the image —
   by design, needs human architecture decision.
 - **`SigLevel = Never` for non-server profiles (High) — FIXED.**
   `image_profiles/{kiosk,gnome,plasma}/pacman.conf` used
@@ -26,10 +26,17 @@ inflate the main file back to unreadable length.
   all 14 post-install hooks ran, `/usr/bin/bash` ended up installed. See
   "Testing pacman.conf/signing changes: `cmd_pacstrap`" below for the
   reusable pattern this now is.
-- **`%no-protection` (High).** `keys/create-gpg-keys.sh:79` — unencrypted
-  signing key.
-- **`SSH_PASSPHRASE=""` (High).** `keys/create-ssh-keys.sh:134` — SSH
-  deploy key without passphrase.
+- **GPG key passphrase is operator-supplied (High — residual).**
+  `keys/create-gpg-keys.sh:66-68` prompts interactively for the signing
+  key's passphrase; it lands in the batch file at `:87` (`Passphrase:`) and
+  is applied via `--passphrase` at `:104`/`:130`. No `%no-protection`
+  directive remains in the file. Residual risk: an empty passphrase entered
+  at the prompt still yields an unencrypted key.
+- **SSH key passphrase is operator-supplied (High — residual).**
+  `keys/create-ssh-keys.sh:135-137` prompts "leave empty for no passphrase";
+  `SSH_PASSPHRASE=""` is only the `:127` default reset before the prompt,
+  applied via `-N` at `:146`. An operator can still choose an empty
+  passphrase (passphrase-less deploy key).
 - **6 profiles:** cosmic, gnome, kiosk, plasma, server, shared.
 - **CI status.** 1 CI workflow (`build-ami.yml`).
 - **`promote-stable.sh` connect-timeout config drift (Low) — FIXED.**
