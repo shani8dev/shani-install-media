@@ -7,7 +7,8 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-HOST_WORK_DIR="$(dirname "$(realpath "$0")")"
+# Use BASH_SOURCE (symlink-aware) so bind-mounts resolve to the calling repo
+HOST_WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # Load .env if present — sets credentials and optional overrides like DOCKER_IMAGE,
 # CUSTOM_MIRROR, NO_SF, NO_R2, BUILD_DATE, R2_BUCKET, etc.
