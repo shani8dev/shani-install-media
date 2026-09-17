@@ -3,6 +3,15 @@
 # Artifacts are written to: cache/output/<profile>/<BUILD_DATE>/
 
 set -Eeuo pipefail
+
+# Subshell error isolation — report which step failed
+error_function() {
+    local rc=$?
+    echo "[ERROR] Build step failed with exit code $rc" >set -Eeuo pipefail2
+    echo "[ERROR] Check output above for the failed step" >set -Eeuo pipefail2
+    return $rc
+}
+trap error_function EXIT
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "${SCRIPT_DIR}/../config/config.sh"
 
