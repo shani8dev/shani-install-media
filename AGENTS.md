@@ -359,10 +359,7 @@ whether it could just be one `shani-settings` file first.
   fix belongs in that repo, not a local patched copy here.
 - `shani-deploy`'s scripts are packaged and tested here but owned by that
   sibling repo — same rule.
-- `run_in_container.sh` exists **duplicated**, not shared, in both this
-  repo and `shani-pkgbuilds`. A fix to one (e.g. a runtime-detection bug,
-  a flag that breaks under plain Docker) needs to be checked against the
-  other copy too — they will drift silently otherwise.
+- `run_in_container.sh` is symlinked from `shani-pkgbuilds/run_in_container.sh` → `../shani-install-media/run_in_container.sh`. Uses `BASH_SOURCE`-aware `HOST_WORK_DIR` so bind-mounts resolve to the calling repo's directory. Fix here covers both repos.
 - This repo's builder container image comes from the sibling
   `shani-builder` repo. If a build starts failing in a way that traces
   back to the image itself (a missing tool, a changed base), the fix
