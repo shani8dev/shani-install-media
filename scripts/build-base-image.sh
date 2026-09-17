@@ -49,12 +49,17 @@ mkdir -p "${OUTPUT_SUBDIR}"
 # Save the used package list hash in the base image for change detection.
 # On subsequent builds, compare current package list vs cached list.
 # Only regenerate base cache if list changed or CLEAN_BASE flag used.
-PACKAGE_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/package-list.txt"
-[[ -f "$PACKAGE_LIST" ]] || die "Package list not found for profile ${PROFILE}"
+# Package lists split into Base/Desktop/Extras for ordered installation.
+PACKAGE_BASE="${IMAGE_PROFILES_DIR}/${PROFILE}/Packages-Base"
+PACKAGE_DESKTOP="${IMAGE_PROFILES_DIR}/${PROFILE}/Packages-Desktop"
+PACKAGE_EXTRAS="${IMAGE_PROFILES_DIR}/${PROFILE}/Packages-Extras"
+[[ -f "$PACKAGE_BASE" ]] || die "Package list not found for profile ${PROFILE}: Packages-Base"
 
-# Compute hash of current package list (excluding comments and blank lines)
+# Compute hash of current package lists (excluding comments and blank lines),
+# concatenated in installation order: Base → Desktop → Extras.
 CURRENT_LIST_HASH=$(
-    grep -v '^\s*#' "$PACKAGE_LIST" \
+    cat "$PACKAGE_BASE" "$PACKAGE_DESKTOP" "$PACKAGE_EXTRAS" \
+    | grep -v '^\s*#' \
     | tr -d '\r' \
     | grep -v '^\s*$' \
     | sha256sum \
@@ -179,18 +184,17 @@ install -m 644 "${MOK_DIR}/MOK.der" "$secureboot_target/MOK.der" || die "Failed 
 # Install base system via pacstrap and apply overlays/customizations
 # ---------------------------------------------------------------------------
 log "Installing base system..."
-package_list="${IMAGE_PROFILES_DIR}/${PROFILE}/package-list.txt"
-[[ -f "$package_list" ]] || die "Package list not found for profile ${PROFILE}"
 
-# Read packages into an array, stripping blank lines and comments,
-# and trimming carriage returns (Windows line endings).
+# Read packages from Base, Desktop, Extras in installation order.
 mapfile -t _packages < <(
-    grep -v '^\s*#' "$package_list" \
+    cat "$PACKAGE_BASE" "$PACKAGE_DESKTOP" "$PACKAGE_EXTRAS" \
+    | grep -v '^\s*#' \
     | tr -d '\r' \
     | grep -v '^\s*$'
 )
 [[ ${#_packages[@]} -gt 0 ]] || die "Package list is empty for profile ${PROFILE}"
 
+# Install in order: Base first, then Desktop, then Extras.
 pacstrap -cC "$PACMAN_CONFIG" "${SUBVOL_MOUNT}" "${_packages[@]}" \
     || die "pacstrap failed"
 
