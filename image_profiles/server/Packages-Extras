@@ -1,0 +1,5 @@
+# Packages-Extras — optional packages
+# Installed last. Cloud integration packages for AWS AMI builds.
+cloud-init
+amazon-ssm-agent
+amazon-ec2-utils

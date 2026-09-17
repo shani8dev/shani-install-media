@@ -1,6 +1,5 @@
-shani-keyring
-shani-settings
-shani-core
+# Packages-Desktop — GUI packages
+# Installed after Base. Profile-specific desktop meta-package is first.
 shani-desktop-plasma
 shani-accessibility
 shani-fonts
@@ -9,17 +8,8 @@ shani-bluetooth
 shani-peripherals
 shani-printer
 shani-scanner
-shani-network
-shani-tools-network
-shani-storage
-shani-tools
-shani-tools-extra
 shani-video
 shani-video-guest
-shani-deploy
-desktop-entry-hider
-dracut
+desktop_entry-hider
 pipewire-jack
-openresolv
 noto-fonts
-waydroid-helper

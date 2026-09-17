@@ -1,0 +1,2 @@
+# Packages-Base — always installed (core system packages)
+# Shared profile provides overlay files only; no pacman packages required.
