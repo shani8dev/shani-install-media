@@ -1,0 +1,12 @@
+# Packages-Base — always installed (core system packages)
+# These are installed first, before Desktop and Extras.
+shani-keyring
+shani-settings
+shani-core
+shani-network
+shani-tools-network
+shani-storage
+shani-tools
+shani-deploy
+dracut
+openresolv
