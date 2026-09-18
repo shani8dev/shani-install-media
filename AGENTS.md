@@ -343,10 +343,11 @@ is deliberately just the current-state summary.
   `packer/templates/shanios-ami.pkr.hcl:36-43` — no pinned AMI ID for the
   AL2023 builder instance (lower severity: that root is discarded after
   the build).
-- **No LICENSE file despite README claiming one (fact).**
-  `README.md:775-777` points to a GPLv3 license that doesn't exist
-  anywhere in the repo.
-- **No CHANGELOG.md or CONTRIBUTING.md (fact).**
+- **LICENSE / CHANGELOG.md / CONTRIBUTING.md — CLOSED.** All three
+  exist at the repo root and are committed (added in `a32ed96`; verified
+  present 2026-09-18). `LICENSE` matches the canonical GPL-3.0 text used
+  across the shani ecosystem, so `README.md:775-777`'s reference is now
+  accurate.
 - **6 profiles:** cosmic, gnome, kiosk, plasma, server, shared.
 - **CI status.** 4 workflow files: `build-ami.yml` (Packer AMI builds,
   triggered on pushes touching `packer/**` — runs `packer init`/`packer
