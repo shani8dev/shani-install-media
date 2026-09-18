@@ -75,6 +75,63 @@ than trying to make a single QEMU boot faster.
 `bootstrap` runs the REAL `install.sh`+`configure.sh` from the sibling
 `os-installer-config` checkout (plus one genuinely test-only step:
 trust-anchoring this session's throwaway CA into both slots) — it no
+
+## 🧪 MANDATORY: Full Test Harness Sequence (non-negotiable)
+
+**You MUST run the full test harness. Do not skip it. Do not substitute
+static checks for it. Do not say "this should work" without evidence.**
+
+Every change to build/boot/deploy logic must be verified with the real
+test harness. This is the ONLY way to prove things actually work.
+
+### The complete test sequence (run ALL of these)
+
+```bash
+# 1. Clean any stale loop devices from previous sessions
+./run_in_container.sh build.sh test clean
+
+# 2. Generate throwaway CA + leaf cert
+./run_in_container.sh build.sh test ca
+
+# 3. Bootstrap: REAL install.sh + configure.sh into @blue/@green
+./run_in_container.sh build.sh test bootstrap -p gnome -d latest
+
+# 4. REAL deploy (download → SHA256+GPG verify → extract → UKI sign → boot entry write)
+#    --local-src overlays the sibling shani-deploy checkout's current scripts
+./run_in_container.sh build.sh test upgrade --local-src=/opt/shani-deploy/scripts
+
+# 5. REAL rollback
+./run_in_container.sh build.sh test rollback --local-src=/opt/shani-deploy/scripts
+
+# 6. ALWAYS clean up when done
+./run_in_container.sh build.sh test clean
+```
+
+### What each step actually proves
+
+| Step | Proves |
+|------|--------|
+| `clean` | No stale loop devices break the next run |
+| `ca` | Test CA + leaf cert generation works |
+| `bootstrap` | install.sh + configure.sh produce a bootable slot with signed EFI |
+| `upgrade` | shani-deploy does download → verify → extract → UKI sign → boot entry write |
+| `rollback` | Snapshot + restore mechanism works |
+| `clean` | Loop devices released, no resource leaks |
+
+### Prerequisites
+
+- Docker must be running (`docker info`)
+- The `shani-builder` Docker image must be built (`shrinivasvkumbhar/shani-builder:latest`)
+- Pre-built images should exist at `cache/output/<profile>/` — check there first
+- No `/dev/kvm` on this host — QEMU boots are very slow, use nspawn commands
+
+### If a step fails
+
+Do NOT skip it. Do NOT say "it probably works." Investigate the failure:
+- Check the log file referenced in the error
+- Run the step again with verbose output
+- If it's a stale loop device issue, run `clean` first
+- If it's a corrupted cached package, the error will say so explicitly
 longer needs a separate `disk` step first; that command sets up a
 different, faster fabricate-only disk pair (`root.img`/`esp.img`)
 `bootstrap` doesn't touch anymore (it creates and uses its own
