@@ -300,18 +300,36 @@ here before (the AMI/packer path).
 evidence behind every line below, see `AUDIT-HISTORY.md`.** This section
 is deliberately just the current-state summary.
 
-- **MOK private key in base image (Critical).**
-  `scripts/build-base-image.sh:100` installs `MOK.key` into the image —
-  by design, needs human architecture decision.
-- **Real MOK private key reachable in git history (Critical).** Two
-  distinct RSA PEM private keys were committed as `mok/MOK.key` in
-  `16c6f3a`/`458b442`, later deleted in `6bb7045` — but both blobs remain
-  fully retrievable via `git log --all -p` since history was never
-  rewritten. Treat both keys as burned; rotation is a human decision.
-- **`%no-protection` (High).** `keys/create-gpg-keys.sh:79` — unencrypted
-  signing key.
-- **`SSH_PASSPHRASE=""` (High).** `keys/create-ssh-keys.sh:134` — SSH
-  deploy key without passphrase.
+- **MOK private key in base image (Critical) — re-verified present
+  2026-09-18.** `scripts/build-base-image.sh:179` (line number shifted,
+  behavior unchanged) still does
+  `install -m 600 "${MOK_DIR}/MOK.key" "$secureboot_target/MOK.key"` — by
+  design, needs human architecture decision. Not touched this session.
+- **Real MOK private key reachable in git history (Critical) — re-verified
+  present 2026-09-18.** Confirmed both `16c6f3a` and `458b442` still
+  contain a `mok/MOK.key` blob (`git show <sha> --stat`), and neither
+  commit has been rewritten out of history. Two distinct RSA PEM private
+  keys, later deleted in `6bb7045` but still fully retrievable via
+  `git log --all -p`. Treat both keys as burned; rotation/history-rewrite
+  is a human decision — not touched this session.
+- **`%no-protection` GPG key generation — re-checked 2026-09-18, appears
+  RESOLVED but unconfirmed for the currently-deployed key.**
+  `keys/create-gpg-keys.sh` no longer contains any `%no-protection` batch
+  directive — it now *requires* an interactively-entered passphrase (no
+  empty-passphrase path exists for GPG, unlike the SSH script below) before
+  generating a key. This contradicts the line-79 reference this section
+  used to cite (the file has changed since). Not independently verified
+  whether the specific GPG key currently in production use
+  (`GPG_KEY_ID=7B927BFFD4A9EAAA8B666B77DE217F3DA8014792`, seen live in this
+  session's container runs) was itself generated with an older,
+  unprotected version of this script — that's a separate historical
+  question this session didn't investigate. Human should confirm the live
+  key's protection status directly (`gpg --list-secret-keys` shows
+  protection algorithm) before downgrading this from "known issue."
+- **`SSH_PASSPHRASE=""` (High) — re-verified present 2026-09-18.**
+  `keys/create-ssh-keys.sh:127` sets the default to empty; an interactive
+  prompt (lines 135-137) can override it, but any non-interactive/headless
+  run still gets an unprotected key. Not touched this session.
 - **`SigLevel = Never` for non-server profiles — FIXED.** All three of
   `image_profiles/{kiosk,gnome,plasma}/pacman.conf` now read `SigLevel =
   Required DatabaseOptional`, matching cosmic/server — verified with a
@@ -362,6 +380,27 @@ is deliberately just the current-state summary.
   `packer validate`/`packer build` run), not by `test-env`.
 - **20 uncommitted changes at audit time (fact, snapshot only as of
   2026-08-28, not necessarily a problem).**
+- **AMI/packer bootstrap soft-failed open on a missing SHA-256 sidecar —
+  FIXED (2026-09-18).** `packer/scripts/00-bootstrap-shanios.sh`'s SHA-256
+  verification step downloaded `${SHA256_URL}` and, if that curl failed for
+  any reason (bad URL, transient network issue, missing sidecar), only
+  logged `warn "SHA-256 sidecar not reachable — skipping checksum
+  verification"` and continued the AMI build with a completely unverified
+  base image — the exact soft-fail-open pattern this file's own "Supply-chain
+  discipline" section above warns has been a real, shipped bug on this
+  path before. GPG verification (below it) is independently fail-closed
+  when `GPG_PUBLIC_KEY` is set, but that variable is optional, so a
+  transient sidecar-fetch failure with no GPG key configured meant zero
+  integrity verification, silently. Since `build-base-image.sh` always
+  writes a `.sha256` sidecar next to every published base image, an
+  unreachable sidecar here means something is genuinely wrong. Changed the
+  `warn`+continue to `die`, matching `scripts/build-iso.sh`'s existing
+  hard-failure policy for the same class of check. Not yet re-verified with
+  a live `packer build` (that requires AWS credentials/`build-ami.yml` CI,
+  out of scope for the local `test-env` harness used elsewhere in this
+  file) — verified with `bash -n` and a manual read of the control flow
+  only; a human should confirm with a real `packer validate`/`packer build`
+  run before treating this as fully proven.
 
 ## Before claiming a package/service is "missing" — check the whole chain first
 

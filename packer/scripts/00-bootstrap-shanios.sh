@@ -136,7 +136,14 @@ if curl -fsSL --max-time 30 --retry 3 --output "${SHA256_FILE}" "${SHA256_URL}" 
     popd > /dev/null
     log "SHA-256 OK"
 else
-    warn "SHA-256 sidecar not reachable — skipping checksum verification"
+    # Fail closed, not open: build-base-image.sh always writes a .sha256
+    # sidecar next to every published base image, so an unreachable sidecar
+    # here means something is genuinely wrong (bad URL, network issue, or a
+    # missing artifact) — not a case to silently proceed with an unverified
+    # image. Matches scripts/build-iso.sh's hard-failure policy; this exact
+    # soft-fail pattern was previously a real shipped bug on this AMI/packer
+    # path (see AGENTS.md "Supply-chain discipline").
+    die "SHA-256 sidecar not reachable at ${SHA256_URL} — refusing to use an unverified base image"
 fi
 
 if [[ -n "${GPG_PUBLIC_KEY:-}" ]]; then
