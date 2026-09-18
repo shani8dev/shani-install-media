@@ -83,6 +83,10 @@ than trying to make a single QEMU boot faster.
 `bootstrap` runs the REAL `install.sh`+`configure.sh` from the sibling
 `os-installer-config` checkout (plus one genuinely test-only step:
 trust-anchoring this session's throwaway CA into both slots) — it no
+longer needs a separate `disk` step first; that command sets up a
+different, faster fabricate-only disk pair (`root.img`/`esp.img`)
+`bootstrap` doesn't touch anymore (it creates and uses its own
+`install.img`, exactly like a real install would).
 
 ## 🧪 MANDATORY: Full Test Harness Sequence (non-negotiable)
 
@@ -140,10 +144,6 @@ Do NOT skip it. Do NOT say "it probably works." Investigate the failure:
 - Run the step again with verbose output
 - If it's a stale loop device issue, run `clean` first
 - If it's a corrupted cached package, the error will say so explicitly
-longer needs a separate `disk` step first; that command sets up a
-different, faster fabricate-only disk pair (`root.img`/`esp.img`)
-`bootstrap` doesn't touch anymore (it creates and uses its own
-`install.img`, exactly like a real install would).
 
 If two consecutive `run_in_container.sh` invocations show a stale loop
 device attached to `root.img`/`esp.img`/`install.img` (`losetup -a`),
@@ -293,6 +293,19 @@ existing ISO path's policy (`scripts/build-iso.sh`). If you add a new
 fetch step, make it fail closed by default; a soft-fail "warn and
 continue" on a missing/mismatched signature has been a real, shipped bug
 here before (the AMI/packer path).
+
+## Boundaries
+
+- ✅ **Always**: run the real test harness (`clean`→`ca`→`bootstrap`→...→
+  `clean`) for any build/boot logic change — `bash -n` and a source read
+  have both missed real, shipped bugs here before.
+- ⚠️ **Ask first**: rotating the MOK key, rewriting git history to scrub
+  the leaked MOK key blobs, or regenerating the GPG/SSH signing keys — all
+  four are re-verified present as of 2026-09-18 and explicitly documented
+  as needing a human architecture decision, not a code patch.
+- 🚫 **Never**: enumerate, grep, or read anything under `test-env/disk/` or
+  `cache/` — these are build artifacts and loop-mounted images (hundreds
+  of thousands of files, partly permission-restricted), not source.
 
 ## Audit-verified known issues (confirmed present)
 
