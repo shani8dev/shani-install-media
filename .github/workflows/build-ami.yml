@@ -44,14 +44,17 @@ jobs:
       contents: read
 
     steps:
-      - name: Notify Discord — Build Started
+      - name: Notify Telegram — Build Started
         if: github.event_name == 'workflow_dispatch'
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$DISCORD_WEBHOOK" ] && exit 0
-          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg sha "${{ github.sha }}" '{content: ("🏗️ **ShaniOS AMI Build Started**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nSHA: `" + $sha + "`")}')
-          curl -s -X POST "$DISCORD_WEBHOOK" -H "Content-Type: application/json" -d "$MSG" || true
+          [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && exit 0
+          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg sha "${{ github.sha }}" '{text: ("🏗️ **ShaniOS AMI Build Started**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nSHA: `" + $sha + "`")}')
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --argjson msg "$MSG" '{chat_id: $chat, text: $msg.text, parse_mode: "Markdown"}')" || true
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -131,24 +134,30 @@ jobs:
           path: packer/packer-manifest.json
           retention-days: 7
 
-      - name: Notify Discord — Build Failed
+      - name: Notify Telegram — Build Failed
         if: failure() && github.event_name == 'workflow_dispatch'
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$DISCORD_WEBHOOK" ] && exit 0
-          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{content: ("❌ **ShaniOS AMI Build Failed**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\n[View logs](" + $run_url + ")")}')
-          curl -s -X POST "$DISCORD_WEBHOOK" -H "Content-Type: application/json" -d "$MSG" || true
+          [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && exit 0
+          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("❌ **ShaniOS AMI Build Failed**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\n[View logs](" + $run_url + ")")}')
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --argjson msg "$MSG" '{chat_id: $chat, text: $msg.text, parse_mode: "Markdown"}')" || true
 
-      - name: Notify Discord — Build Succeeded
+      - name: Notify Telegram — Build Succeeded
         if: success() && github.event_name == 'workflow_dispatch'
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          [ -z "$DISCORD_WEBHOOK" ] && exit 0
+          [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && exit 0
           AMI_ID="${{ steps.ami.outputs.ami_id }}"
-          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg ami "$AMI_ID" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{content: ("✅ **ShaniOS AMI Build Complete**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nAMI ID: `" + $ami + "`\n[View logs](" + $run_url + ")")}')
-          curl -s -X POST "$DISCORD_WEBHOOK" -H "Content-Type: application/json" -d "$MSG" || true
+          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg ami "$AMI_ID" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("✅ **ShaniOS AMI Build Complete**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nAMI ID: `" + $ami + "`\n[View logs](" + $run_url + ")")}')
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --argjson msg "$MSG" '{chat_id: $chat, text: $msg.text, parse_mode: "Markdown"}')" || true
 
       - name: Job summary
         if: success()

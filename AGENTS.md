@@ -340,12 +340,14 @@ is deliberately just the current-state summary.
   anywhere in the repo.
 - **No CHANGELOG.md or CONTRIBUTING.md (fact).**
 - **6 profiles:** cosmic, gnome, kiosk, plasma, server, shared.
-- **CI status.** 1 workflow (`build-ami.yml`), triggered on pushes
-  touching `packer/**`. Runs `packer init`/`packer validate templates/`
-  (catches template syntax errors before any real build), then a real
-  `packer build` against AWS to produce a genuine AMI — this is not a
-  cheap syntax-only check, it actually provisions real cloud resources.
-  This is a *different* verification path from `test-env`'s local
+- **CI status.** 4 workflow files: `build-ami.yml` (Packer AMI builds,
+  triggered on pushes touching `packer/**` — runs `packer init`/`packer
+  validate templates/`, then a real `packer build` against AWS to produce a
+  genuine AMI), `build-image.yml` (shellcheck/py_compile lint via
+  `shani-ci-commons` `lint.yml`), `build.yml` (profile image builds via
+  `shani-ci-commons` `build.yml`), and `notify-telegram.yml` (manual-dispatch
+  Telegram notification via `shani-ci-commons` `notify-telegram.yml`).
+  `build-ami.yml` is a *different* verification path from `test-env`'s local
   loop-disk harness used elsewhere in this file — a `packer` template
   change is only truly verified by this workflow (or a manual
   `packer validate`/`packer build` run), not by `test-env`.
