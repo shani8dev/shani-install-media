@@ -186,7 +186,15 @@ The `kiosk` user is created by `systemd-kiosk-user.service` with no password. If
 
 ### Adding or removing packages
 
-Edit `image_profiles/kiosk/package-list.txt` and rebuild. Packages that enable systemd services in their `.install` scripts (like `shani-network` enabling `firewalld`) will be active automatically.
+Edit `image_profiles/kiosk/Packages-Base`, `Packages-Desktop`, or
+`Packages-Extras` and rebuild. Each file is a plain list — blank lines and
+lines starting with `#` are ignored, so use `#` to comment out a package
+without renumbering anything. Packages that enable systemd services in their
+`.install` scripts (like `shani-network` enabling `firewalld`) will be active
+automatically.
+
+`image_profiles/kiosk/package-list.txt` is a legacy artifact and is no longer
+read by the build; delete it to prevent drift.
 
 ## Security considerations
 

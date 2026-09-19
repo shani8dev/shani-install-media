@@ -1,0 +1,15 @@
+# Packages-Desktop — GUI packages
+# Installed after Base. The gamescope session is a tiling Wayland compositor
+# purpose-built for gaming, not a full desktop environment — no GNOME/Plasma
+# deps, just the gamescope session + the gaming stack.
+#
+# gamescope / mangohud come from Arch [extra]. gamescope-session-plus is a
+# ShaniOS PKGBUILD (shani-pkgbuilds/gamescope-session-plus/, a portable
+# reimplementation of ChimeraOS's MIT gamescope-session-plus framework).
+# steam stays a flatpak, already in
+# image_profiles/gamescope/flatpak-packages.txt.
+shani-desktop-gamescope
+shani-fonts
+noto-fonts
+desktop-entry-hider
+pipewire-jack

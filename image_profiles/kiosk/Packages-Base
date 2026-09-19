@@ -1,0 +1,12 @@
+# Packages-Base — always installed (core system packages)
+# These are installed first, before Desktop and Extras.
+# Kiosk profile: minimal core — no shani-storage/shani-tools (not needed
+# for a locked-down single-app kiosk session).
+shani-keyring
+shani-settings
+shani-core
+shani-deploy
+shani-network
+shani-tools-network
+dracut
+openresolv

@@ -1,0 +1,13 @@
+# Gamescope home lives entirely in tmpfs — nothing written to disk survives reboot.
+# Adapted from the systemd-guest-user pattern (Akrai/systemd-guest-user, GPLv3).
+[Unit]
+Conflicts=umount.target
+Before=umount.target
+RefuseManualStart=yes
+RefuseManualStop=yes
+
+[Mount]
+What=tmpfs
+Where=/home/gamescope
+Type=tmpfs
+Options=mode=0750,uid=gamescope,gid=users,strictatime,nosuid,nodev

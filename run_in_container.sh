@@ -171,7 +171,26 @@ RCLONE_EOF
 echo 'rclone config written for Cloudflare R2' && "
 fi
 
-FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}"
+# The container runs as root (--privileged, no --user — real losetup/mount/
+# nspawn/cryptsetup work inside it needs that), so anything it writes under
+# the bind-mounted ${HOST_WORK_DIR} — most importantly test-env/disk/*.img —
+# comes back root-owned on the host. That silently blocks every HOST-ONLY
+# command that needs WRITE access to those images (`test-env/test.sh qemu`,
+# `gui`, `iso` — deliberately run outside this container, on real host
+# hardware/display) the moment they're run as a normal user afterward:
+# confirmed live — a freshly bootstrapped disk/root.img came back 644
+# root:root, and `test-env/test.sh gui` couldn't even open it for the
+# write-mode UEFI boot it needs to perform. Fixed by handing the known
+# output dirs back to the HOST user's UID:GID from INSIDE the container
+# (only root — which the container genuinely is — can chown to an arbitrary
+# UID; a plain chown attempted from run_in_container.sh itself afterward, on
+# the host side, would just fail with "Operation not permitted"). Runs
+# regardless of the user command's own exit code, and its own failure is
+# swallowed (`|| true`) so a permissions hiccup here never masks the real
+# command's result.
+CHOWN_OUTPUT_CMD=" ; _rc=\$?; chown -R $(id -u):$(id -g) \"${CONTAINER_WORK_DIR}/test-env/disk\" \"${CONTAINER_WORK_DIR}/output\" 2>/dev/null || true; exit \$_rc"
+
+FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}${CHOWN_OUTPUT_CMD}"
 
 # ---------------------------------------------------------------------------
 # Secrets env-file (never `-e VAR=value` on the docker CLI) — `docker run -e`

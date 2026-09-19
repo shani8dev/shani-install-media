@@ -1,0 +1,19 @@
+# Packages-Base — always installed (core system packages)
+# These are installed first, before Desktop and Extras.
+# Gamescope profile: gaming-optimized core. shani-settings provides the
+# full controller/RGB/sysctl gaming ruleset for free (70-controllers.rules,
+# 60-openrgb.rules incl. ROG Ally/Strix Claw, 99-*-wheel-perms.rules,
+# 60-antimicrox-uinput.rules, 80-gamecompatibility.conf).
+shani-keyring
+shani-settings
+shani-core
+shani-network
+shani-tools-network
+shani-storage
+shani-tools
+shani-deploy
+shani-bluetooth
+shani-peripherals
+shani-video
+dracut
+openresolv

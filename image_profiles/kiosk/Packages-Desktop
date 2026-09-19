@@ -1,0 +1,11 @@
+# Packages-Desktop — kiosk session packages
+# Installed after Base. The kiosk session is cage + labwc + firefox,
+# not a full desktop environment — no shani-desktop-* meta-package.
+shani-fonts
+noto-fonts
+gdm
+firefox
+cage
+labwc
+xprintidle
+desktop-entry-hider

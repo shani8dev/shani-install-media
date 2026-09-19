@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Shani Gamescope
+Comment=Gaming-optimized Wayland session (gamescope)
+Exec=gamescope-session-plus steam
+Type=Application
+DesktopNames=gamescope

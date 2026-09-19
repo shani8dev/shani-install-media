@@ -198,7 +198,28 @@ Commands:
               localhost:5900.
   gui         Headless real-desktop check via OVMF+QMP+guest-agent — HOST-ONLY,
               see below (requires python3 on the host; no distrobox/socat).
-              [--exec="shell command"] [--out=<file.ppm>] [--timeout=N]
+              Actions run in the order given on the command line, e.g.
+              --click=100,200 --type="hello" --key=ret --screenshot=out.ppm
+              is: click, then type, then press Enter, then screenshot.
+              [--exec="shell command"]        run a command in the guest
+              [--click=X,Y[:button]]          click at pixel X,Y (button:
+                                               left/right/middle, default left)
+              [--doubleclick=X,Y]             two quick clicks at X,Y
+              [--move=X,Y]                    move pointer without clicking
+              [--type="text"]                 type literal text (US layout)
+              [--key=COMBO]                   e.g. ret, tab, ctrl+alt+t, alt+F4
+              [--sleep=SECS]                  pause between actions
+              [--screenshot=<file.ppm>]       screendump at this point (repeatable)
+              [--out=<file.ppm>]              final screenshot if none given above
+              [--timeout=N]                   guest-agent boot-wait timeout
+              All coordinates are real framebuffer pixels — resolved against
+              the CURRENT resolution automatically (a fresh screendump) on
+              every click/move, so it stays correct even if the desktop
+              resizes between actions. Input goes through the guest's
+              emulated USB keyboard/tablet (real HID events, like a real
+              keyboard/mouse), so it works identically for an X11 or a
+              Wayland session — no xdotool/ydotool dependency, nothing to
+              install in the (deliberately minimal) shanios image.
   watch       [--port=N]   HOST-ONLY local dashboard (default
               http://127.0.0.1:8090/) to actually SEE a boot: live-tails
               whichever *-console.log is newest (desktop/verify-boot), plus
@@ -2937,6 +2958,216 @@ PYEOF
 }
 
 # ------------------------------------------------------------------
+# QMP input-send-event helpers — real HID-level input injection into the
+# guest's emulated USB keyboard/tablet (-device usb-kbd -device usb-tablet,
+# already wired up in cmd_gui/cmd_qemu). This is the same path a physical
+# keyboard/mouse would take, so it is display-server-agnostic by
+# construction: it works identically whether the guest desktop happens to
+# be running X11 or Wayland, because the guest OS itself is the one
+# translating USB HID reports into UI events — we never touch its
+# compositor, window manager, or any per-display-server protocol. This
+# is what makes it viable where the earlier nspawn+X11/Wayland-socket-
+# forwarding approach wasn't: no EGL/vendor-driver crashes, no headless-
+# compositor fragility, no dependency on xdotool/ydotool existing inside
+# the (intentionally minimal) shanios image at all.
+# ------------------------------------------------------------------
+_qmp_click() {
+  local sock="$1" x="$2" y="$3" button="${4:-left}"
+  python3 - "$sock" "$x" "$y" "$button" <<'PYEOF'
+import json, os, socket, sys, tempfile, time
+
+sock_path, x, y, button = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+
+def readline(s):
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    return buf
+
+def rpc(s, payload):
+    s.sendall(json.dumps(payload).encode() + b"\n")
+    resp = json.loads(readline(s))
+    if "error" in resp:
+        print("QMP error: %s" % resp["error"], file=sys.stderr)
+        sys.exit(1)
+    return resp
+
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(30)
+s.connect(sock_path)
+readline(s)
+s.sendall(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n")
+readline(s)
+
+# Absolute pointer positioning is normalized 0..32767 over the CURRENT
+# framebuffer size, so we need that size first — cheapest reliable source
+# is a real screendump's own PPM header (P6\nW H\n255\n...), not a guess.
+fd, probe_path = tempfile.mkstemp(suffix=".ppm")
+os.close(fd)
+try:
+    rpc(s, {"execute": "screendump", "arguments": {"filename": probe_path}})
+    with open(probe_path, "rb") as f:
+        assert f.readline().strip() == b"P6"
+        dims = f.readline()
+        while dims.startswith(b"#"):
+            dims = f.readline()
+        w, h = (int(v) for v in dims.split())
+finally:
+    try:
+        os.remove(probe_path)
+    except OSError:
+        pass
+
+abs_x = max(0, min(32767, round(x / w * 32767)))
+abs_y = max(0, min(32767, round(y / h * 32767)))
+
+rpc(s, {"execute": "input-send-event", "arguments": {"events": [
+    {"type": "abs", "data": {"axis": "x", "value": abs_x}},
+    {"type": "abs", "data": {"axis": "y", "value": abs_y}},
+    {"type": "btn", "data": {"down": True, "button": button}},
+]}})
+time.sleep(0.08)
+rpc(s, {"execute": "input-send-event", "arguments": {"events": [
+    {"type": "btn", "data": {"down": False, "button": button}},
+]}})
+print("clicked (%d,%d) -> abs(%d,%d) on %dx%d fb" % (x, y, abs_x, abs_y, w, h))
+PYEOF
+}
+
+# "ctrl+alt+t", "ret", "shift+tab", "alt+F4" — modifiers held while the
+# final key is pressed, released in reverse order. Aliases cover common
+# names; anything else passes through as a literal QEMU QKeyCode.
+_qmp_key() {
+  local sock="$1" combo="$2"
+  python3 - "$sock" "$combo" <<'PYEOF'
+import json, socket, sys
+
+sock_path, combo = sys.argv[1], sys.argv[2]
+
+ALIASES = {
+    "super": "meta_l", "meta": "meta_l", "win": "meta_l",
+    "enter": "ret", "return": "ret", "escape": "esc",
+    "space": "spc", "del": "delete", "pageup": "pgup", "pagedown": "pgdn",
+}
+
+def readline(s):
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    return buf
+
+def rpc(s, payload):
+    s.sendall(json.dumps(payload).encode() + b"\n")
+    resp = json.loads(readline(s))
+    if "error" in resp:
+        print("QMP error: %s" % resp["error"], file=sys.stderr)
+        sys.exit(1)
+    return resp
+
+qcodes = []
+for part in combo.lower().split("+"):
+    qcodes.append(ALIASES.get(part, part))
+
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(30)
+s.connect(sock_path)
+readline(s)
+s.sendall(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n")
+readline(s)
+
+events = [{"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": q}}} for q in qcodes]
+events += [{"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": q}}} for q in reversed(qcodes)]
+rpc(s, {"execute": "input-send-event", "arguments": {"events": events}})
+print("sent key combo: %s" % combo)
+PYEOF
+}
+
+# Types arbitrary text one character at a time via QEMU QKeyCodes (US
+# layout). Unmappable characters are skipped with a warning rather than
+# aborting the whole sequence — a stray unicode char shouldn't lose an
+# otherwise-good test run.
+_qmp_type() {
+  local sock="$1" text="$2"
+  python3 - "$sock" "$text" <<'PYEOF'
+import json, socket, sys, time
+
+sock_path, text = sys.argv[1], sys.argv[2]
+
+UNSHIFTED = {
+    "-": "minus", "=": "equal", "[": "bracket_left", "]": "bracket_right",
+    "\\": "backslash", ";": "semicolon", "'": "apostrophe", "`": "grave_accent",
+    ",": "comma", ".": "dot", "/": "slash", " ": "spc", "\n": "ret", "\t": "tab",
+}
+SHIFTED = {
+    "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
+    "*": "8", "(": "9", ")": "0", "_": "minus", "+": "equal",
+    "{": "bracket_left", "}": "bracket_right", "|": "backslash",
+    ":": "semicolon", '"': "apostrophe", "~": "grave_accent",
+    "<": "comma", ">": "dot", "?": "slash",
+}
+
+def qcode_for(ch):
+    if ch.isalpha() and ch.isascii():
+        return ch.lower(), ch.isupper()
+    if ch.isdigit():
+        return ch, False
+    if ch in UNSHIFTED:
+        return UNSHIFTED[ch], False
+    if ch in SHIFTED:
+        return SHIFTED[ch], True
+    return None, False
+
+def readline(s):
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    return buf
+
+def rpc(s, payload):
+    s.sendall(json.dumps(payload).encode() + b"\n")
+    resp = json.loads(readline(s))
+    if "error" in resp:
+        print("QMP error: %s" % resp["error"], file=sys.stderr)
+        sys.exit(1)
+    return resp
+
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(30)
+s.connect(sock_path)
+readline(s)
+s.sendall(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n")
+readline(s)
+
+typed = 0
+for ch in text:
+    qcode, shift = qcode_for(ch)
+    if qcode is None:
+        print("skipping unmappable character: %r" % ch, file=sys.stderr)
+        continue
+    events = []
+    if shift:
+        events.append({"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": "shift"}}})
+    events.append({"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": qcode}}})
+    events.append({"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": qcode}}})
+    if shift:
+        events.append({"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "shift"}}})
+    rpc(s, {"execute": "input-send-event", "arguments": {"events": events}})
+    typed += 1
+    time.sleep(0.03)
+print("typed %d/%d chars" % (typed, len(text)))
+PYEOF
+}
+
+# ------------------------------------------------------------------
 # gui   (headless real-desktop verification) — HOST-ONLY
 #
 # Boots disk/root.img + disk/esp.img exactly like `cmd_qemu` (same real
@@ -2959,7 +3190,9 @@ cmd_gui() {
   if _in_container; then
     echo "gui boots a real headless QEMU instance — it can't run inside the build container." >&2
     echo "Run this file directly on the HOST instead, from the repo root:" >&2
-    echo "  test-env/test.sh gui [--exec=\"shell command\"] [--out=<file.ppm>] [--timeout=N]" >&2
+    echo "  test-env/test.sh gui [--exec=CMD] [--click=X,Y[:button]] [--doubleclick=X,Y]" >&2
+    echo "                       [--move=X,Y] [--type=TEXT] [--key=COMBO] [--sleep=SECS]" >&2
+    echo "                       [--screenshot=<file.ppm>] [--out=<file.ppm>] [--timeout=N]" >&2
     exit 1
   fi
 
@@ -2972,14 +3205,28 @@ cmd_gui() {
     exit 1
   }
 
-  local exec_cmd="" out_file="" boot_timeout=300 arg
+  # Actions run in the exact order given on the command line — a UI test is
+  # a script (click, then type, then screenshot), so order must survive
+  # arg parsing. ACTIONS holds "kind\x1fvalue" pairs; out_file/timeout are
+  # order-independent scalars.
+  local -a ACTIONS=()
+  local out_file="" boot_timeout=300 arg saw_screenshot=0
   for arg in "$@"; do
     case "$arg" in
-      --exec=*)    exec_cmd="${arg#--exec=}" ;;
-      --out=*)     out_file="${arg#--out=}" ;;
-      --timeout=*) boot_timeout="${arg#--timeout=}" ;;
+      --exec=*)        ACTIONS+=("exec"$'\x1f'"${arg#--exec=}") ;;
+      --click=*)       ACTIONS+=("click"$'\x1f'"${arg#--click=}") ;;
+      --doubleclick=*) ACTIONS+=("doubleclick"$'\x1f'"${arg#--doubleclick=}") ;;
+      --move=*)        ACTIONS+=("move"$'\x1f'"${arg#--move=}") ;;
+      --type=*)        ACTIONS+=("type"$'\x1f'"${arg#--type=}") ;;
+      --key=*)         ACTIONS+=("key"$'\x1f'"${arg#--key=}") ;;
+      --sleep=*)       ACTIONS+=("sleep"$'\x1f'"${arg#--sleep=}") ;;
+      --screenshot=*)  ACTIONS+=("screenshot"$'\x1f'"${arg#--screenshot=}"); saw_screenshot=1 ;;
+      --out=*)         out_file="${arg#--out=}" ;;
+      --timeout=*)     boot_timeout="${arg#--timeout=}" ;;
       *)
-        echo "Usage: $(basename "$0") gui [--exec=\"shell command\"] [--out=<file.ppm>] [--timeout=N]" >&2
+        echo "Usage: $(basename "$0") gui [--exec=CMD] [--click=X,Y[:button]] [--doubleclick=X,Y]" >&2
+        echo "                       [--move=X,Y] [--type=TEXT] [--key=COMBO] [--sleep=SECS]" >&2
+        echo "                       [--screenshot=<file.ppm>] [--out=<file.ppm>] [--timeout=N]" >&2
         exit 1
         ;;
     esac
@@ -3044,16 +3291,100 @@ cmd_gui() {
     die "guest-agent never responded within ${boot_timeout}s — see ${console_log}"
   fi
 
-  if [[ -n "$exec_cmd" ]]; then
-    log "Running inside guest: ${exec_cmd}"
-    _qga_exec "$qga_sock" "$exec_cmd" || warn "guest-exec exited non-zero (output above, if any)"
-  fi
-
-  log "Letting the compositor settle for 5s before screendump..."
+  log "Letting the compositor settle for 5s before running actions..."
   sleep 5
 
-  _qmp_screendump "$qmp_sock" "$out_file" || die "screendump failed"
-  log "Screenshot saved: ${out_file}"
+  local action kind value
+  for action in "${ACTIONS[@]}"; do
+    kind="${action%%$'\x1f'*}"
+    value="${action#*$'\x1f'}"
+    case "$kind" in
+      exec)
+        log "Running inside guest: ${value}"
+        _qga_exec "$qga_sock" "$value" || warn "guest-exec exited non-zero (output above, if any)"
+        ;;
+      click)
+        local cx cy cbtn="left"
+        IFS=':' read -r value cbtn <<<"$value"
+        IFS=',' read -r cx cy <<<"$value"
+        [[ -n "$cbtn" ]] || cbtn="left"
+        log "Click (${cx},${cy}) button=${cbtn}"
+        _qmp_click "$qmp_sock" "$cx" "$cy" "$cbtn" || warn "click failed"
+        ;;
+      doubleclick)
+        local dx dy
+        IFS=',' read -r dx dy <<<"$value"
+        log "Double-click (${dx},${dy})"
+        _qmp_click "$qmp_sock" "$dx" "$dy" left || warn "click 1/2 failed"
+        sleep 0.15
+        _qmp_click "$qmp_sock" "$dx" "$dy" left || warn "click 2/2 failed"
+        ;;
+      move)
+        local mx my
+        IFS=',' read -r mx my <<<"$value"
+        log "Move pointer to (${mx},${my})"
+        python3 - "$qmp_sock" "$mx" "$my" <<'PYEOF' || warn "move failed"
+import json, os, socket, sys, tempfile
+sock_path, x, y = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+def readline(s):
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk: break
+        buf += chunk
+    return buf
+def rpc(s, payload):
+    s.sendall(json.dumps(payload).encode() + b"\n")
+    resp = json.loads(readline(s))
+    if "error" in resp:
+        print("QMP error: %s" % resp["error"], file=sys.stderr); sys.exit(1)
+    return resp
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(30); s.connect(sock_path)
+readline(s)
+s.sendall(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n"); readline(s)
+fd, probe_path = tempfile.mkstemp(suffix=".ppm"); os.close(fd)
+try:
+    rpc(s, {"execute": "screendump", "arguments": {"filename": probe_path}})
+    with open(probe_path, "rb") as f:
+        assert f.readline().strip() == b"P6"
+        dims = f.readline()
+        while dims.startswith(b"#"): dims = f.readline()
+        w, h = (int(v) for v in dims.split())
+finally:
+    try: os.remove(probe_path)
+    except OSError: pass
+abs_x = max(0, min(32767, round(x / w * 32767)))
+abs_y = max(0, min(32767, round(y / h * 32767)))
+rpc(s, {"execute": "input-send-event", "arguments": {"events": [
+    {"type": "abs", "data": {"axis": "x", "value": abs_x}},
+    {"type": "abs", "data": {"axis": "y", "value": abs_y}},
+]}})
+print("moved -> abs(%d,%d) on %dx%d fb" % (abs_x, abs_y, w, h))
+PYEOF
+        ;;
+      type)
+        log "Typing: ${value}"
+        _qmp_type "$qmp_sock" "$value" || warn "type failed"
+        ;;
+      key)
+        log "Key: ${value}"
+        _qmp_key "$qmp_sock" "$value" || warn "key failed"
+        ;;
+      sleep)
+        log "Sleeping ${value}s"
+        sleep "$value"
+        ;;
+      screenshot)
+        _qmp_screendump "$qmp_sock" "$value" || warn "screenshot failed"
+        log "Screenshot saved: ${value}"
+        ;;
+    esac
+  done
+
+  if [[ "$saw_screenshot" -eq 0 ]]; then
+    _qmp_screendump "$qmp_sock" "$out_file" || die "screendump failed"
+    log "Screenshot saved: ${out_file}"
+  fi
 }
 
 # ------------------------------------------------------------------
