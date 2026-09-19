@@ -312,6 +312,52 @@ for _var in $(compgen -v SHANIOS_TEST_); do
     TEST_ENV_FORWARD_ARGS+=(-e "${_var}=${!_var}")
 done
 
+# ---------------------------------------------------------------------------
+# X11 forwarding: bind the HOST's real X11 socket through so a GUI app run
+# inside test-env (yad, gnome-shell's own X11 fallback, etc.) can render
+# onto the host's actual display instead of needing a separate headless
+# Wayland compositor set up INSIDE the nested nspawn container — confirmed
+# live this session that a manually-launched `gnome-shell --headless
+# --virtual-monitor=...` compositor hits a real GTK3/Wayland client
+# compatibility gap (a GDK3 Wayland client like yad connects to the
+# compositor socket and gets partway through real protocol setup — cursor
+# theme buffer creation — before failing/crashing the whole compositor;
+# root-caused to this image's broken nvidia EGL vendor file even after
+# forcing __EGL_VENDOR_LIBRARY_FILENAMES to mesa's). X11 has none of that:
+# it's the standard, long-established way to run a container GUI app on the
+# host's display (see e.g. https://github.com/systemd/systemd/issues/12671),
+# needs no GPU/EGL for a plain 2D dialog, and the host here already has a
+# real, working X11 session (confirmed: XDG_SESSION_TYPE=x11). Only added
+# when the host actually has an X11 DISPLAY and socket dir — a no-op
+# (empty array) on a pure-Wayland host or a host with no display at all
+# (CI, a bare server), same conditional-array pattern as TEST_ENV_FORWARD_ARGS
+# above. Requires the host to have run `xhost +local:` (or an equivalent
+# per-container `xhost +si:localuser:<uid>`) beforehand — not done
+# automatically here since it's a host-wide access-control change, not
+# something this script should silently enable.
+X11_FORWARD_ARGS=()
+if [[ -n "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
+    X11_FORWARD_ARGS+=(-v /tmp/.X11-unix:/tmp/.X11-unix -e "DISPLAY=${DISPLAY}")
+fi
+
+# Same idea, for a Wayland host: bind just the one real compositor socket
+# file through (not the whole host XDG_RUNTIME_DIR, which also holds the
+# D-Bus session bus, the keyring, portals, etc. — no reason to expose all
+# of that to get a GUI app rendering). Container-side path matches the
+# host's own XDG_RUNTIME_DIR/WAYLAND_DISPLAY so a client inside just needs
+# those two env vars set the same way they already are on the host — no
+# separate remapping to track. No-op on a pure-X11 host (this one) or one
+# with no display at all, same conditional pattern as X11 above.
+WAYLAND_FORWARD_ARGS=()
+if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" && \
+      -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]]; then
+    WAYLAND_FORWARD_ARGS+=(
+        -v "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+        -e "WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
+        -e "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}"
+    )
+fi
+
 "${CONTAINER_RUNTIME}" run --rm ${TTY_FLAGS} --privileged \
     --network=host \
     --cgroupns=host \
@@ -325,6 +371,8 @@ done
     -v /lib/modules:/lib/modules:ro \
     -v /dev:/dev \
     --add-host="downloads.shani.dev:127.0.0.1" \
+    "${X11_FORWARD_ARGS[@]}" \
+    "${WAYLAND_FORWARD_ARGS[@]}" \
     -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
     "${OSI_MOUNT_ARGS[@]}" \
     "${DEPLOY_MOUNT_ARGS[@]}" \

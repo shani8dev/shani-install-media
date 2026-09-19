@@ -357,6 +357,39 @@ is deliberately just the current-state summary.
      writes) — see `shani-deploy/AGENTS.md`'s matching entry for the full
      story of what this harness fix was needed to prove.
 
+- **New: real host-display forwarding (X11 and Wayland) into `test-env`
+  containers, replacing the need for a separate headless compositor for
+  GUI verification (2026-09-19).** The existing `desktop` command's
+  `gnome-shell --headless --virtual-monitor=...` approach has a genuine
+  GTK3/Wayland client compatibility gap: a real client (`yad`) connects
+  to the compositor socket and gets partway through real protocol setup
+  (cursor theme buffer creation) before failing or crashing the whole
+  compositor — root-caused to this image's broken nvidia EGL vendor file
+  (`10_nvidia.json` sorts before `50_mesa.json` in
+  `/usr/share/glvnd/egl_vendor.d/`, and `systemd-fstab-generator`-style
+  container detection makes things worse, not better, here) even after
+  forcing `__EGL_VENDOR_LIBRARY_FILENAMES` to mesa's explicitly. The fix
+  isn't to keep patching that path — it's to not need it at all: bind the
+  HOST's real X11 socket (`/tmp/.X11-unix`) or Wayland socket
+  (`$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`, just the one file, not the whole
+  runtime dir) through both the Docker layer (`run_in_container.sh`'s new
+  `X11_FORWARD_ARGS`/`WAYLAND_FORWARD_ARGS`, conditional on the host
+  actually having one set) and the nspawn layer (`test.sh`'s new
+  `X11_BIND`/`WAYLAND_BIND` in `_nspawn_binds()`, wired into both
+  `NSPAWN_ENTER_ARGS` and `NSPAWN_FULL_BOOT_ARGS`) — this is the standard,
+  long-established way to run a container GUI app on the host's real
+  display (see e.g. systemd/systemd#12671), needs no GPU/EGL for a plain
+  2D dialog, and required no changes to any real (non-test) code at all.
+  Requires the host to have run `xhost +local:` beforehand for X11 (not
+  done automatically — a host-wide access-control change, not this
+  script's call to make). Verified end-to-end: a real `yad` dialog
+  rendered and was captured via `import -window root` (ImageMagick,
+  already in the image) into a file bound out through the existing
+  `SHANIOS_TEST_EXTRA_BINDS` mechanism — this is what caught the real
+  `--image-on-top` bug documented in `shani-deploy/AGENTS.md` (impossible
+  to find by reading `show_dialog()`'s source; it looked completely
+  correct until an actual dialog was actually rendered).
+
 - **MOK private key in base image (Critical) — re-verified present
   2026-09-18.** `scripts/build-base-image.sh:179` (line number shifted,
   behavior unchanged) still does

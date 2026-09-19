@@ -1035,6 +1035,28 @@ _nspawn_binds() {
   DOWNLOAD_CACHE_BIND=()
   [[ -d /var/cache/shani-downloads ]] && DOWNLOAD_CACHE_BIND=(--bind=/var/cache/shani-downloads:/data/downloads)
 
+  # Bind the host's real X11 socket through (run_in_container.sh already
+  # did this one layer up, Docker host -> Docker container, when DISPLAY
+  # was set there — this is the SAME bind one layer further in, Docker
+  # container -> nspawn container, so a GUI app run inside test-env can
+  # render on the host's actual display instead of needing a separate
+  # headless compositor set up inside nspawn. See run_in_container.sh's
+  # X11_FORWARD_ARGS comment for the full story of why this exists. A
+  # no-op if /tmp/.X11-unix isn't present in the Docker container (i.e.
+  # run_in_container.sh's own bind was skipped — no host DISPLAY at all).
+  X11_BIND=()
+  [[ -d /tmp/.X11-unix ]] && X11_BIND=(--bind=/tmp/.X11-unix:/tmp/.X11-unix)
+
+  # Same idea for a Wayland host — see run_in_container.sh's
+  # WAYLAND_FORWARD_ARGS comment for the full story. Docker already
+  # bound the one socket file through to this same path one layer up; if
+  # it's there, forward it one more layer into nspawn.
+  WAYLAND_BIND=()
+  if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" && \
+        -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]]; then
+    WAYLAND_BIND=(--bind="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}")
+  fi
+
   EXTRA_BIND_ARR=()
   if [[ -n "$EXTRA_BINDS" ]]; then
     local pair rest="$EXTRA_BINDS"
@@ -1217,6 +1239,8 @@ _nspawn_full_boot_args() {
     "${HOSTS_BIND[@]}"
     "${REPO_BIND[@]}"
     "${EXTRA_BIND_ARR[@]}"
+    "${X11_BIND[@]}"
+    "${WAYLAND_BIND[@]}"
     --resolv-conf=bind-host
     --system-call-filter='add_key keyctl bpf'
   )
@@ -1404,6 +1428,8 @@ _prepare_enter_args() {
       --bind="${INHIBIT_STUB}:/usr/bin/systemd-inhibit"
       "${REPO_BIND[@]}"
       "${EXTRA_BIND_ARR[@]}"
+      "${X11_BIND[@]}"
+      "${WAYLAND_BIND[@]}"
       --resolv-conf=bind-host
       --
       /bin/bash -c "$setup" -- "$@"
@@ -1896,6 +1922,25 @@ set -uo pipefail
 # only need the native Wayland compositor + its Screenshot D-Bus API, no
 # X11 client support, so disable Xwayland entirely via Mutter's own debug
 # env var instead of fixing the EGL library.
+#
+# WAYLAND_DISPLAY exported so it can be propagated into the D-Bus
+# activation environment below — confirmed live this matters:
+# gnome-shell's OWN Screenshot D-Bus method works with no explicit
+# propagation at all (it's a method on the compositor process itself,
+# already running, not a separate D-Bus activation), but ANY other client
+# needing the display — a manually launched `yad` dialog, or gnome-shell's
+# own D-Bus-activated org.gnome.Shell.Screencast service — failed with
+# "Gtk-WARNING: cannot open display" every time, because WAYLAND_DISPLAY
+# was never in dbus-run-session's activation environment, only in the one
+# shell that happened to launch gnome-shell itself.
+#
+# Fixed value "wayland-0", NOT a custom name: confirmed live that
+# gnome-shell --headless ignores a pre-set WAYLAND_DISPLAY env var
+# entirely and always creates its socket at the compositor's own default
+# name regardless (`ls $XDG_RUNTIME_DIR` after startup showed `wayland-0`
+# even with WAYLAND_DISPLAY=wayland-shani-probe exported beforehand) — so
+# this just reflects that reality rather than attempting to override it.
+export WAYLAND_DISPLAY=wayland-0
 MUTTER_NO_XWAYLAND=1 gnome-shell --headless --virtual-monitor=1280x800 >/tmp/desktop-probe-shell.log 2>&1 &
 GSPID=$!
 ready=0
@@ -1910,6 +1955,11 @@ if [ "$ready" -ne 1 ]; then
   kill "$GSPID" 2>/dev/null; wait 2>/dev/null
   exit 1
 fi
+# Propagate WAYLAND_DISPLAY (and XDG_RUNTIME_DIR, already exported by the
+# caller) into the D-Bus session's OWN activation environment — without
+# this, any client dbus-activates (or that --exec launches fresh) never
+# sees it, only the process tree that happened to launch gnome-shell does.
+dbus-update-activation-environment --verbose WAYLAND_DISPLAY XDG_RUNTIME_DIR >/tmp/desktop-probe-dbusenv.log 2>&1 || true
 if [ -n "${DESKTOP_PROBE_EXEC:-}" ]; then
   bash -c "$DESKTOP_PROBE_EXEC" || echo "probe --exec command exited non-zero (continuing)" >&2
 fi
