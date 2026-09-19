@@ -26,9 +26,11 @@ source "${SCRIPT_DIR}/../config/config.sh"
 
 # Parse profile option
 PROFILE="$DEFAULT_PROFILE"
-while getopts "p:" opt; do
+FLATPAK_CLEAN="false"
+while getopts "p:c" opt; do
   case "$opt" in
     p) PROFILE="$OPTARG" ;;
+    c) FLATPAK_CLEAN="true" ;;
     *) die "Invalid option" ;;
   esac
 done
@@ -42,6 +44,49 @@ check_dependencies "for profile: ${PROFILE}"
 
 # Ensure Flathub remote is added
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+# ---------------------------------------------------------------------------
+# Optional clean start (-c).
+#
+# The Flatpak data dir is shared across profiles (cache/flatpak_data →
+# /var/lib/flatpak), so a prior profile's installed apps would otherwise
+# linger and pollute this profile's build. A clean start uninstalls every
+# currently-installed system app — refs and deployed data — but deliberately
+# does NOT prune the repo object cache: /var/lib/flatpak/repo/objects holds
+# the downloaded blobs, and they stay, so the next profile's install reuses
+# every already-downloaded package instead of re-fetching it.
+#
+# This is the only way to get both properties at once in flatpak 1.18.1:
+# there is no --cache-dir to point elsewhere, and --installation=NAME is not
+# functional in this builder image (verified: "Could not find installation").
+# Wiping /var/lib/flatpak wholesale would also wipe the object cache, which
+# defeats the reuse this mode exists to preserve.
+# ---------------------------------------------------------------------------
+if [[ "$FLATPAK_CLEAN" == "true" ]]; then
+    log "Clean start (-c): uninstalling all currently-installed system Flatpak" \
+        "apps (repo object cache preserved for reuse)..."
+    installed_apps=$(flatpak list --system --app --columns=application 2>/dev/null || true)
+    if [[ -n "$installed_apps" ]]; then
+        while IFS= read -r app || [[ -n "$app" ]]; do
+            [[ -z "$app" ]] && continue
+            log "  Uninstalling $app"
+            flatpak uninstall --assumeyes --noninteractive --system --delete-data "$app" \
+                || warn "Failed to uninstall $app"
+        done <<< "$installed_apps"
+    fi
+    # Remove orphaned runtimes too, but NOT via --unused: that flag prunes
+    # unreferenced ostree objects from the repo cache, which would throw away
+    # downloads this profile (or a future one) still needs.
+    installed_runtimes=$(flatpak list --system --runtime --columns=application 2>/dev/null || true)
+    if [[ -n "$installed_runtimes" ]]; then
+        while IFS= read -r rt || [[ -n "$rt" ]]; do
+            [[ -z "$rt" ]] && continue
+            flatpak uninstall --assumeyes --noninteractive --system --delete-data "$rt" \
+                || warn "Failed to uninstall runtime $rt"
+        done <<< "$installed_runtimes"
+    fi
+    log "Clean start complete."
+fi
 
 FLATPAK_PACKAGE_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/flatpak-packages.txt"
 
@@ -370,6 +415,49 @@ done
 log "Gaming app permissions configured"
 
 # ---------------------------------------------------------------------------
+# Verify the installed set matches the profile list exactly.
+#
+# The Flatpak data dir is shared across profiles (cache/flatpak_data →
+# /var/lib/flatpak), so a prior profile's apps/runtimes can linger here
+# unless the converge pass above actually removed them. Every removal in
+# that pass is non-fatal (|| warn), so a leak would otherwise ship
+# silently into flatpakfs.zst — contaminating a profile that never asked
+# for the package. This makes the convergence declarative: the build
+# fails closed if anything from a previous profile survived, instead of
+# tarring it into the image.
+#
+# Two checks:
+#   1. Every app in the profile list is installed (catches a failed
+#      install that the per-app || warn swallowed).
+#   2. No installed app is outside the profile list (catches a leaked
+#      app from a previous profile that the removal pass missed).
+# ---------------------------------------------------------------------------
+log "Verifying installed Flatpak set matches profile '${PROFILE}'..."
+missing_apps=()
+for pkg in "${packages[@]}"; do
+    if ! flatpak info --system "$pkg" >/dev/null 2>&1; then
+        missing_apps+=("$pkg")
+    fi
+done
+if [[ ${#missing_apps[@]} -ne 0 ]]; then
+    die "Profile apps not installed: ${missing_apps[*]}"
+fi
+log "All ${#packages[@]} profile apps confirmed installed."
+
+leaked_apps=()
+while IFS= read -r app || [[ -n "$app" ]]; do
+    [[ -z "$app" ]] && continue
+    if ! printf '%s\n' "${packages[@]}" | grep -Fxq "$app"; then
+        leaked_apps+=("$app")
+    fi
+done < <(flatpak list --system --app --columns=application 2>/dev/null || true)
+if [[ ${#leaked_apps[@]} -ne 0 ]]; then
+    die "Apps installed but NOT in profile '${PROFILE}' list (leaked from a" \
+        "previous profile?): ${leaked_apps[*]}"
+fi
+log "No leaked apps — installed set matches profile list exactly."
+
+# ---------------------------------------------------------------------------
 # Pre-flight: verify host Flatpak data fits in the target image size (15 G).
 # A 10 % headroom is reserved for Btrfs metadata overhead.
 # ---------------------------------------------------------------------------
@@ -462,6 +550,18 @@ detach_btrfs_image "$FLATPAK_MOUNT" "$LOOP_DEVICE_TMP"
 # Checksum and sign
 # ---------------------------------------------------------------------------
 gpg_prepare_keyring
+
+# Export the resolved Flatpak set that actually landed in this image — the
+# reviewable ground-truth for "what ships" checks, matching build-base-image.sh.
+FLATPAK_PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${PROFILE}.flatpakfs.packages.txt"
+{
+    echo "# Flatpak apps + runtimes installed in this image ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+    echo "# apps"
+    flatpak list --system --app --columns=application 2>/dev/null || true
+    echo "# runtimes"
+    flatpak list --system --runtime --columns=application 2>/dev/null || true
+} > "${FLATPAK_PACKAGE_LIST_ARTIFACT}"
+log "Exported resolved Flatpak package list (${FLATPAK_PACKAGE_LIST_ARTIFACT})"
 
 pushd "${OUTPUT_SUBDIR}" > /dev/null
 sha256sum "flatpakfs.zst" > "flatpakfs.zst.sha256" \

@@ -34,7 +34,7 @@ done
 if [[ -n "$PROFILE" ]]; then
     PROFILES=("$PROFILE")
 else
-    PROFILES=(gnome plasma cosmic kiosk server shared)
+    PROFILES=(gnome plasma cosmic gamescope kiosk server shared)
 fi
 
 log "Generating manifests for profiles: ${PROFILES[*]}"
@@ -42,10 +42,10 @@ log "Generating manifests for profiles: ${PROFILES[*]}"
 # Generate a manifest for each dated build directory found under each
 # profile. There is deliberately no branch level in the directory tree here:
 # build-base-image.sh, upload.sh, and build-iso.sh all share a single
-# ${OUTPUT_DIR}/${profile}/${date}/ layout — branch is distinguished in the
-# artifact filenames instead (e.g. shanios-20260916-stable-gnome.zst), not by
-# a separate directory. -b/BRANCH filters which files get checksummed within
-# each date directory rather than selecting a (nonexistent) branch directory.
+# ${OUTPUT_DIR}/${profile}/${date}/ layout. Which channel/branch a build
+# belongs to is tracked by the pointer files (latest.txt / <channel>.txt),
+# not by the filename — so -b/BRANCH is accepted for compatibility but no
+# longer filters anything, since no artifact name carries a branch segment.
 # latest.txt is intentionally NOT written here: build-base-image.sh already
 # writes the per-date one, and upload.sh already maintains the central
 # profile-level one during publish — duplicating that here risks the two
@@ -59,24 +59,11 @@ for prof in "${PROFILES[@]}"; do
     while IFS= read -r date_dir; do
         date_name="$(basename "$date_dir")"
 
-        if [[ -n "$BRANCH" ]]; then
-            shopt -s nullglob
-            branch_matches=("${date_dir}"/*"-${BRANCH}-${prof}".*)
-            shopt -u nullglob
-            if [[ ${#branch_matches[@]} -eq 0 ]]; then
-                continue
-            fi
-        fi
-
         log "Generating manifest for ${prof}/${date_name}..."
 
         # Generate SHA256SUMS
         pushd "$date_dir" > /dev/null
-        if [[ -n "$BRANCH" ]]; then
-            sha256sum *"-${BRANCH}-${prof}".* 2>/dev/null > SHA256SUMS || true
-        else
-            sha256sum *.zst *.asc *.sha256 2>/dev/null > SHA256SUMS || true
-        fi
+        sha256sum *.zst *.asc *.sha256 2>/dev/null > SHA256SUMS || true
         popd > /dev/null
 
         # Generate manifest.json with structured metadata

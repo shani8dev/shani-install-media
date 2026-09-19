@@ -182,19 +182,19 @@ if [[ -z "$BUILD_DATE_DIR" ]]; then
   die "Could not extract build date from latest release filename: ${LATEST_RELEASE}"
 fi
 
-# SourceForge verification
+# SourceForge verification — artifact + every sidecar that upload.sh ships
 if [[ "${NO_SF}" == "false" ]]; then
   log "Verifying artifact on SourceForge..."
   SF_ARTIFACT_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
-  SF_SIGNATURE_URL="${SF_ARTIFACT_URL}.asc"
-
-  if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_ARTIFACT_URL}" >/dev/null 2>&1; then
-    die "Artifact not reachable on SourceForge: ${SF_ARTIFACT_URL} — aborting promotion."
-  fi
-  if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_SIGNATURE_URL}" >/dev/null 2>&1; then
-    die "Signature not reachable on SourceForge: ${SF_SIGNATURE_URL} — aborting promotion."
-  fi
-  log "SourceForge: artifact and signature OK."
+  SF_BASE="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
+  # Checksum + signature are mandatory; the resolved package list is the
+  # reviewable ground-truth of what shipped, so it must be present too.
+  for suffix in "" ".asc" ".sha256" ".packages.txt"; do
+    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_BASE}${suffix}" >/dev/null 2>&1; then
+      die "Sidecar not reachable on SourceForge: ${SF_BASE}${suffix} — aborting promotion."
+    fi
+  done
+  log "SourceForge: artifact + .asc + .sha256 + .packages.txt OK."
 else
   log "Skipping SourceForge artifact verification (--no-sf)."
 fi
@@ -204,28 +204,23 @@ if [[ "${NO_R2}" == "false" ]]; then
   if [[ -n "${R2_BASE_URL:-}" ]]; then
     log "Verifying artifact on R2 (HTTP)..."
     R2_ARTIFACT_URL="${R2_BASE_URL}/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
-    R2_SIGNATURE_URL="${R2_ARTIFACT_URL}.asc"
-
-    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_ARTIFACT_URL}" >/dev/null 2>&1; then
-      die "Artifact not reachable on R2: ${R2_ARTIFACT_URL} — aborting promotion."
-    fi
-    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_SIGNATURE_URL}" >/dev/null 2>&1; then
-      die "Signature not reachable on R2: ${R2_SIGNATURE_URL} — aborting promotion."
-    fi
-    log "R2: artifact and signature OK."
+    R2_BASE="${R2_ARTIFACT_URL}"
+    for suffix in "" ".asc" ".sha256" ".packages.txt"; do
+      if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_BASE}${suffix}" >/dev/null 2>&1; then
+        die "Sidecar not reachable on R2: ${R2_BASE}${suffix} — aborting promotion."
+      fi
+    done
+    log "R2: artifact + .asc + .sha256 + .packages.txt OK."
 
   elif [[ -n "${R2_BUCKET:-}" ]]; then
     log "Verifying artifact on R2 (rclone)..."
     R2_ARTIFACT_KEY="${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
-    R2_SIGNATURE_KEY="${R2_ARTIFACT_KEY}.asc"
-
-    if ! rclone lsf "r2:${R2_BUCKET}/${R2_ARTIFACT_KEY}" >/dev/null 2>&1; then
-      die "Artifact not found on R2: r2:${R2_BUCKET}/${R2_ARTIFACT_KEY} — aborting promotion."
-    fi
-    if ! rclone lsf "r2:${R2_BUCKET}/${R2_SIGNATURE_KEY}" >/dev/null 2>&1; then
-      die "Signature not found on R2: r2:${R2_BUCKET}/${R2_SIGNATURE_KEY} — aborting promotion."
-    fi
-    log "R2: artifact and signature OK."
+    for suffix in "" ".asc" ".sha256" ".packages.txt"; do
+      if ! rclone lsf "r2:${R2_BUCKET}/${R2_ARTIFACT_KEY}${suffix}" >/dev/null 2>&1; then
+        die "Sidecar not found on R2: r2:${R2_BUCKET}/${R2_ARTIFACT_KEY}${suffix} — aborting promotion."
+      fi
+    done
+    log "R2: artifact + .asc + .sha256 + .packages.txt OK."
 
   else
     die "R2 verification required but neither R2_BASE_URL nor R2_BUCKET is set — aborting promotion."

@@ -39,9 +39,12 @@ compute_variant_name "$BRANCH" "$PROFILE"
 # Deliberately NOT ${PROFILE}/${BRANCH}/${BUILD_DATE}: upload.sh, build-iso.sh,
 # and repack-iso.sh all still expect ${PROFILE}/${BUILD_DATE} with no branch
 # segment, so nesting under branch here would make this script write artifacts
-# none of those (unmodified) downstream consumers would ever find. Branch is
-# still distinguishable via IMAGE_NAME/PACKAGE_LIST_ARTIFACT below, which embed
-# it in the filename itself.
+# none of those (unmodified) downstream consumers would ever find.
+# Which channel/branch a build belongs to is NOT encoded in the filename — it
+# is tracked by the pointer files (latest.txt / <channel>.txt) this script
+# writes and promote-stable.sh maintains, so adding a new channel is just a
+# new <channel>.txt pointer. The branch is still recoverable at build time via
+# BRANCH/VARIANT_NAME for cache hashing and traceability.
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${PROFILE}/${BUILD_DATE}"
 mkdir -p "${OUTPUT_SUBDIR}"
 
@@ -89,7 +92,7 @@ log "Package list hash: ${CURRENT_LIST_HASH:0:12}..."
 
 PACMAN_CONFIG="./image_profiles/${PROFILE}/pacman.conf"
 BASE_SUBVOL="${OS_NAME}_base"
-IMAGE_NAME="${OS_NAME}-${BUILD_DATE}-${BRANCH}-${PROFILE}.zst"
+IMAGE_NAME="${OS_NAME}-${BUILD_DATE}-${PROFILE}.zst"
 IMAGE_FILE="${OUTPUT_SUBDIR}/${IMAGE_NAME}"
 
 log "Building base image for profile: ${PROFILE}"
@@ -202,12 +205,24 @@ pacstrap -cC "$PACMAN_CONFIG" "${SUBVOL_MOUNT}" "${_packages[@]}" \
 # `pacman -Qq` reads /var/lib/pacman/local/ in the chroot, giving the complete
 # list that actually landed in this image (top-level pkgs + all transitive
 # deps) — the reviewable ground-truth for "what ships" checks.
-PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${BRANCH}-${PROFILE}.packages.txt"
+PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${PROFILE}.packages.txt"
 arch-chroot "${SUBVOL_MOUNT}" pacman -Qq > "${PACKAGE_LIST_ARTIFACT}"
 log "Exported resolved package list (${PACKAGE_LIST_ARTIFACT})"
 
-if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" ]]; then
-    log "Applying overlay files..."
+# Apply shared overlay first, then the profile-specific overlay on top.
+# Order matters: a profile's own overlay must be able to override shared
+# defaults (server does this for its 20 server-only files). cosmic/gnome/plasma
+# skip the second copy — their overlay/ is a symlink to ../shared/overlay, so
+# following it would copy the same tree twice. Only real directories are copied.
+if [[ -d "${IMAGE_PROFILES_DIR}/shared/overlay/rootfs" ]]; then
+    log "Applying shared overlay files..."
+    cp -r "${IMAGE_PROFILES_DIR}/shared/overlay/rootfs/"* "${SUBVOL_MOUNT}/" \
+        || die "Shared overlay copy failed"
+fi
+if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" \
+      && "$(readlink -f "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay" 2>/dev/null)" \
+           != "$(readlink -f "${IMAGE_PROFILES_DIR}/shared/overlay" 2>/dev/null)" ]]; then
+    log "Applying ${PROFILE} overlay files..."
     cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${SUBVOL_MOUNT}/" \
         || die "Overlay copy failed"
 fi

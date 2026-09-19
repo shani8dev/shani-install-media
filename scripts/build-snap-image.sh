@@ -303,6 +303,19 @@ detach_btrfs_image "$SNAP_MOUNT" "$LOOP_DEVICE_TMP"
 # ---------------------------------------------------------------------------
 gpg_prepare_keyring
 
+# Export the resolved snap set that actually landed in this image — the
+# reviewable ground-truth for "what ships" checks, matching build-base-image.sh.
+# Snaps are seeded manually (see the assertion step above), so the resolved
+# set is exactly the snaps[] array that was installed.
+SNAP_PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${PROFILE}.snapfs.packages.txt"
+{
+    echo "# Snaps seeded into this image ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+    for snap in "${snaps[@]}"; do
+        echo "$snap"
+    done
+} > "${SNAP_PACKAGE_LIST_ARTIFACT}"
+log "Exported resolved snap package list (${SNAP_PACKAGE_LIST_ARTIFACT})"
+
 pushd "${OUTPUT_SUBDIR}" > /dev/null
 sha256sum "snapfs.zst" > "snapfs.zst.sha256" \
     || die "Checksum generation failed"

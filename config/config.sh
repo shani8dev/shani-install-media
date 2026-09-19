@@ -26,6 +26,16 @@ GPG_KEY_ID="${GPG_KEY_ID:-7B927BFFD4A9EAAA8B666B77DE217F3DA8014792}"
 # mismatch here means deployed machines' zsync2 differential fetch would point
 # at the wrong host.
 R2_BASE_URL="${R2_BASE_URL:-https://downloads.shani.dev}"
+# R2 paths use the BARE profile as the directory token (gnome/, plasma/).
+# build-base-image.sh publishes to ${R2_BASE_URL}/${PROFILE}/... and
+# shani-deploy.sh's download_update() resolves the same token from
+# REMOTE_PROFILE — both sides must stay bare. A branch-prefixed directory
+# (stable-gnome/) does not exist on R2 and would 404, silently falling back
+# to SourceForge on every machine.
+# Which channel/branch a build belongs to is tracked by the pointer files
+# (latest.txt / <channel>.txt), NOT by the filename — build-base-image.sh
+# names artifacts ${OS_NAME}-${BUILD_DATE}-${PROFILE}.zst with no branch
+# segment, so adding a new channel is just a new <channel>.txt pointer.
 
 # Canonical GPG home used by the builder container.
 BUILDER_GNUPGHOME="${GNUPGHOME:-/home/builduser/.gnupg}"
@@ -400,13 +410,32 @@ setup_btrfs_image() {
     img_dir="$(dirname "$img_path")"
     mkdir -p "$img_dir" || die "Failed to create directory: $img_dir"
 
-    # Detach any existing loop device associated with this image file
-    if losetup -j "$img_path" | grep -q "$img_path"; then
-        local existing_loop
-        existing_loop=$(losetup -j "$img_path" | cut -d: -f1)
-        losetup -d "$existing_loop" \
+    # Detach EVERY loop device currently attached to this image file — a
+    # prior crashed run can leave one attached (often still mounted), and a
+    # half-detached state is what makes this step fail intermittently (which
+    # is why a rerun then works: the file has been recreated in the meantime).
+    # Three things here are deliberate, all of them learned the hard way:
+    #   1. Unmount first — `losetup -d` on a mounted loop fails "device is
+    #      busy", so a silent `|| warn` would leave the loop attached.
+    #   2. Detach ALL of them, never just the first — `losetup -j` can return
+    #      several, and a single `cut -d: -f1` hands a newline-joined string
+    #      to `losetup -d`, which then errors on the multi-line arg.
+    #   3. Loop over the output line by line rather than grepping for the
+    #      path — the backing-file column can differ in resolution (symlink,
+    #      relative vs absolute), so a substring grep can miss the stale
+    #      device entirely.
+    while read -r existing_loop; do
+        [[ -n "$existing_loop" ]] || continue
+        log "Detaching stale loop device $existing_loop (from a prior run)"
+        # Unmount anything mounted on this loop before detaching.
+        while read -r mnt; do
+            [[ -n "$mnt" ]] || continue
+            umount -R "$mnt" 2>/dev/null \
+                || warn "Failed to unmount $mnt (loop $existing_loop)"
+        done < <(findmnt --source "$existing_loop" -o TARGET -r --noheadings 2>/dev/null)
+        losetup -d "$existing_loop" 2>/dev/null \
             || warn "Failed to detach existing loop device: $existing_loop"
-    fi
+    done < <(losetup -j "$img_path" 2>/dev/null | cut -d: -f1)
 
     log "Removing existing image file (if any): $img_path"
     rm -f "$img_path"
