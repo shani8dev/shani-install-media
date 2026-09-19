@@ -22,7 +22,15 @@ on:
       build-type:
         description: "Build type"
         required: false
-        default: "iso"
+        # `image` is the only default that works on a fresh CI runner: an ISO
+        # (`iso`) or full chain (`full`) needs a base image named in
+        # cache/output/<profile>/latest.txt, which build-iso.sh requires to
+        # exist locally (or be fetched from R2 via --from-r2). A fresh checkout
+        # has neither — confirmed live: the default `iso` died with
+        # "latest.txt not found. Run build-base-image.sh first, or pass
+        # --from-r2." Select `iso`/`full` manually to build on top of a
+        # published image.
+        default: "image"
         type: choice
         options: [image, iso, full]
 
