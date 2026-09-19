@@ -1,0 +1,266 @@
+name: AI CI Failure Fixer
+#
+# Reacts to a failed "Build ShaniOS Image (Non-AMI)" or "Build ShaniOS AMI"
+# run by handing the failure logs to mini-swe-agent
+# (https://mini-swe-agent.com), which diagnoses the root cause and proposes a
+# fix as a PR — it never pushes to main directly.
+#
+# WHY THIS LIVES IN shani-install-media: GitHub's `workflow_run` trigger only
+# fires for workflows in the SAME repo as the workflow file, and both builds
+# this fixer reacts to ("Build ShaniOS Image (Non-AMI)" and "Build ShaniOS
+# AMI") are defined here. Part of the build logic it may need to fix lives in
+# the sibling shani-pkgbuilds repo (PKGBUILDs), which is why this workflow
+# checks out both repos and can open a fix PR in either.
+#
+# Model: openai/cohere/north-mini-code via BlockRun's free, no-API-key
+# gateway (https://blockrun.ai/api/v1) — the same model and gateway as
+# shani-builder's ai-ci-fixer.yml.
+#
+# Required repo secret (must be added manually in
+# shani8dev/shani-install-media's repo settings before this can run):
+#   CROSS_REPO_PAT     - a fine-grained PAT (or GitHub App token) with
+#                        contents:write + pull-requests:write on
+#                        shani8dev/shani-install-media AND
+#                        shani8dev/shani-pkgbuilds, PLUS actions:read (to
+#                        read the failed run's logs and check for an existing
+#                        fix PR). The default GITHUB_TOKEN is scoped only to
+#                        this repo and cannot push to shani-pkgbuilds.
+#
+# Safety, deliberately: PR-only (never pushes to main), refuses to touch
+# .github/workflows/**, keys/**, secrets, or anything containing "secret"/
+# ".pem" in its path, caps the diff at 15 files, and will not re-open a fix
+# for a run it's already opened one for. If CROSS_REPO_PAT is missing the
+# check job fails loudly (exit 1) rather than silently skipping.
+
+on:
+  workflow_run:
+    workflows: ["Build ShaniOS Image (Non-AMI)", "Build ShaniOS AMI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    outputs:
+      should_fix: ${{ steps.existing.outputs.should_fix }}
+    steps:
+      - name: Verify CROSS_REPO_PAT is provisioned
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::CROSS_REPO_PAT is not set on shani-install-media — the AI CI fixer cannot open PRs. Provision it (see this file's header comment)."
+            exit 1
+          fi
+
+      - name: Check whether a fix attempt already exists for this run
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          BRANCH="ai/fix-ci-${FAILED_RUN_ID}"
+          FOUND=false
+          for repo in shani8dev/shani-install-media shani8dev/shani-pkgbuilds; do
+            if [ -n "$(gh pr list --repo "$repo" --head "$BRANCH" --state all --json number -q '.[0].number' 2>/dev/null)" ]; then
+              FOUND=true
+            fi
+          done
+          if [ "$FOUND" = "true" ]; then
+            echo "A fix attempt for run ${FAILED_RUN_ID} already exists — not duplicating."
+            echo "should_fix=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_fix=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  fix:
+    needs: check
+    if: needs.check.outputs.should_fix == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+      FIX_BRANCH: ai/fix-ci-${{ github.event.workflow_run.id }}
+      GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+    steps:
+      - name: Fetch failure logs from the failed run
+        run: |
+          mkdir -p work
+          gh run view "$FAILED_RUN_ID" --repo "${{ github.repository }}" --log-failed \
+            | tail -n 400 > work/failure-logs.txt
+          echo "--- captured $(wc -l < work/failure-logs.txt) lines ---"
+
+      - name: Checkout shani-install-media
+        uses: actions/checkout@v4
+        with:
+          repository: shani8dev/shani-install-media
+          token: ${{ secrets.CROSS_REPO_PAT }}
+          path: work/shani-install-media
+          fetch-depth: 1
+
+      - name: Checkout shani-pkgbuilds
+        uses: actions/checkout@v4
+        with:
+          repository: shani8dev/shani-pkgbuilds
+          token: ${{ secrets.CROSS_REPO_PAT }}
+          path: work/shani-pkgbuilds
+          fetch-depth: 1
+
+      - name: Write the agent's task
+        run: |
+          cat > work/task.md <<EOF
+          A scheduled Shanios image build failed. Find the root cause and fix it.
+
+          Failed workflow: ${{ github.event.workflow_run.name }}
+          Failed run ID: ${{ github.event.workflow_run.id }}
+
+          ## Failure logs (tail of the failed job)
+          \`\`\`
+          $(cat work/failure-logs.txt)
+          \`\`\`
+
+          ## Repos available to you, checked out here
+          - \`shani-install-media/\` — this repo. It owns the full build/boot
+            pipeline (Btrfs images, ISOs, AMIs) AND the real test harness
+            (\`test-env/\`, driven by \`./run_in_container.sh build.sh test ...\`).
+            Read its AGENTS.md first — the empirical-verification discipline
+            there is what any fix must satisfy.
+          - \`shani-pkgbuilds/\` — PKGBUILDs for every shani-* package,
+            including \`shani-core\` (the base-system metapackage). A failure
+            during pacstrap/dependency resolution usually means a PKGBUILD
+            here depends on something no longer resolvable, not a bug in
+            shani-install-media's own scripts. Has its own AGENTS.md too.
+
+          ## Rules
+          1. Diagnose from the actual logs above — don't guess at a plausible-
+             looking fix without evidence in the log for what broke.
+          2. If the failure is NOT something fixable by editing files in
+             these two repos (an expired/invalid secret, a transient network
+             error, an upstream repo/mirror outage, a GitHub Actions runner
+             being cancelled) — do not invent a code change. Make no edits
+             and clearly state in your final message why this isn't
+             fixable here.
+          3. Never edit anything under \`.github/\`, \`keys/\`, or any path
+             containing "secret" or ending in \`.pem\` in either repo.
+          4. Prefer the smallest correct fix. Don't refactor unrelated code.
+          5. If you change a PKGBUILD's dependencies, verify your reasoning
+             against the actual repo state if you have network access to do
+             so (e.g. would \`pacman -Sp <pkg>\` resolve?) — don't assume.
+          6. When done, leave the working trees of both repos exactly as you
+             want them committed — do not run \`git commit\`/\`git push\`
+             yourself, the workflow handles that after you finish.
+          7. Finish by summarizing what you changed and why in plain text.
+          EOF
+
+      - name: Install mini-swe-agent
+        run: pip install --quiet mini-swe-agent
+
+      - name: Run the agent
+        env:
+          # BlockRun's free gateway needs no real key; litellm's OpenAI
+          # client still requires *a* value to be set.
+          OPENAI_API_KEY: unused
+          OPENAI_API_BASE: https://blockrun.ai/api/v1
+          OPENAI_BASE_URL: https://blockrun.ai/api/v1
+          # Skips mini's interactive first-run setup wizard (it aborts
+          # without a TTY) and litellm's cost lookup, which doesn't have
+          # pricing data for a custom-routed free model.
+          MSWEA_CONFIGURED: "true"
+          MSWEA_COST_TRACKING: ignore_errors
+        working-directory: work
+        run: |
+          mini -y --exit-immediately \
+            -m openai/cohere/north-mini-code \
+            --cost-limit 0 \
+            -t "$(cat task.md)" \
+            -o trajectory.json
+
+      - name: Enforce path denylist and diff-size cap
+        id: guard
+        run: |
+          ok=true
+          for repo in shani-install-media shani-pkgbuilds; do
+            cd "work/$repo"
+            changed=$(git status --porcelain | awk '{print $2}')
+            if echo "$changed" | grep -qE '(^|/)\.github/workflows/|(^|/)keys/|secret|\.pem$'; then
+              echo "::error::Agent touched a denylisted path in $repo — refusing to proceed."
+              ok=false
+            fi
+            n=$(echo "$changed" | grep -c . || true)
+            if [ "$n" -gt 15 ]; then
+              echo "::error::Agent changed $n files in $repo (cap is 15) — refusing to proceed."
+              ok=false
+            fi
+            cd - > /dev/null
+          done
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR for shani-install-media (if changed)
+        if: steps.guard.outputs.ok == 'true'
+        working-directory: work/shani-install-media
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes proposed for shani-install-media."
+            exit 0
+          fi
+          git config user.name "shani-ci-fixer[bot]"
+          git config user.email "ci-fixer@shani.dev"
+          git checkout -b "$FIX_BRANCH"
+          git add -A
+          git commit -m "ai: fix CI failure from run ${FAILED_RUN_ID}"
+          git push origin "$FIX_BRANCH"
+          cat > /tmp/pr-body-media.md <<EOF
+          Automated fix proposed by mini-swe-agent for a failed scheduled build.
+
+          Failed run: ${RUN_URL}
+
+          Review carefully before merging — verify against this repo's
+          AGENTS.md required verification steps; this was NOT run through
+          test-env.
+
+          ---
+          🤖 Generated by mini-swe-agent, triggered from shani-install-media ai-ci-fixer.yml
+          EOF
+          gh pr create --repo shani8dev/shani-install-media \
+            --title "AI CI fix: run ${FAILED_RUN_ID}" \
+            --body-file /tmp/pr-body-media.md
+
+      - name: Open a PR for shani-pkgbuilds (if changed)
+        if: steps.guard.outputs.ok == 'true'
+        working-directory: work/shani-pkgbuilds
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes proposed for shani-pkgbuilds."
+            exit 0
+          fi
+          git config user.name "shani-ci-fixer[bot]"
+          git config user.email "ci-fixer@shani.dev"
+          git checkout -b "$FIX_BRANCH"
+          git add -A
+          git commit -m "ai: fix CI failure from run ${FAILED_RUN_ID}"
+          git push origin "$FIX_BRANCH"
+          cat > /tmp/pr-body-pkgbuilds.md <<EOF
+          Automated fix proposed by mini-swe-agent for a failed scheduled build.
+
+          Failed run: ${RUN_URL}
+
+          Review carefully before merging — this was NOT verified with a
+          real \`makepkg\` build, only proposed by the agent.
+
+          ---
+          🤖 Generated by mini-swe-agent, triggered from shani-install-media ai-ci-fixer.yml
+          EOF
+          gh pr create --repo shani8dev/shani-pkgbuilds \
+            --title "AI CI fix: run ${FAILED_RUN_ID}" \
+            --body-file /tmp/pr-body-pkgbuilds.md
