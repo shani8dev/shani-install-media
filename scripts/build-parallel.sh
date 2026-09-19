@@ -249,7 +249,7 @@ for profile in "${PROFILE_ARRAY[@]}"; do
             ((completed++)) || true
         else
             log "  ✗ ${profile}: ${status}"
-            local profile_log="${TEMP_DIR}/build-${profile}-"*.log
+            profile_log="${TEMP_DIR}/build-${profile}-"*.log
             if ls ${profile_log} >/dev/null 2>&1; then
                 log "  Log file: $(ls -t ${profile_log} | head -1)"
             fi
