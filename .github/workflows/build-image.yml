@@ -47,7 +47,7 @@ jobs:
       pre-commit-version: v4.1.0
 
   build:
-    name: Build (${{ github.event.inputs.build-type || 'iso' }} - ${{ github.event.inputs.profile || 'gnome' }})
+    name: Build (${{ github.event.inputs.build-type || 'image' }} - ${{ github.event.inputs.profile || 'gnome' }})
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 600
@@ -69,5 +69,5 @@ jobs:
       - name: Run build
         run: |
           PROFILE="${{ github.event.inputs.profile || 'gnome' }}"
-          BUILD_TYPE="${{ github.event.inputs.build-type || 'iso' }}"
+          BUILD_TYPE="${{ github.event.inputs.build-type || 'image' }}"
           ./run_in_container.sh build.sh "${BUILD_TYPE}" -p "${PROFILE}"
