@@ -313,6 +313,50 @@ here before (the AMI/packer path).
 evidence behind every line below, see `AUDIT-HISTORY.md`.** This section
 is deliberately just the current-state summary.
 
+- **Two `test-env` harness gaps fixed, both needed to genuinely test
+  `shani-deploy`'s new system-level auto-rollback service under a real
+  `--boot` session (2026-09-19).** Both are test-only, real-hardware
+  behavior is unaffected:
+  1. `systemd-analyze verify` always reported "Unit data.mount not found"
+     for anything `Requires=data.mount` (`mark-boot-in-progress.service`,
+     `mark-boot-success.service`, `check-boot-failure.service`, and the
+     new `shani-auto-rollback.service`) — confirmed live this was NOT a
+     real runtime problem (`/data` is genuinely mounted and active,
+     `systemctl status data.mount` shows it; `systemd-fstab-generator`
+     just refuses to generate a *unit file* for a device-label mount when
+     it detects a container — "is read-only (running in a container?),
+     ignoring mount for /dev/disk/by-label/shani_root" — even under a
+     real `--boot` nspawn session, since nspawn is a container regardless
+     of `--boot`). `systemd-analyze verify` never consults a live
+     manager for dependency resolution, only on-disk unit files, so it
+     never found the transient unit systemd creates for an
+     already-mounted filesystem either. Fixed with a new
+     `_inject_data_mount_unit` (`test-env/test.sh`) that writes a real,
+     static `data.mount` unit file matching what's already
+     bind-mounted — resolves the dependency for static analysis without
+     touching runtime mount behavior at all (verified: `/data` still
+     genuinely mounted and writable after this, real units depending on
+     it still start correctly).
+  2. `shani-deploy --rollback` (and anything else doing
+     `mount .../by-label/shani_root ...`) failed under a full `--boot`
+     session specifically — "`special device /dev/disk/by-label/shani_root
+     does not exist`" — confirmed this symlink is created by `cmd_enter`'s
+     own non-boot `$setup` script, but nothing equivalent existed for a
+     full `--boot`/`probe` session (no real udev for these loop-backed
+     devices under nspawn either way). Fixed with a new
+     `_inject_by_label_unit`, the `--boot`-session equivalent of the
+     existing `_inject_fake_cmdline_unit` pattern. Both new injectors are
+     wired into the single shared `_nspawn_full_boot_args` (used by every
+     "boot this slot" caller: `enter --boot`, `verify-boot`, `desktop`,
+     `probe`), so the fix applies everywhere at once, matching how the
+     cmdline fake unit is already shared. Verified end-to-end with the
+     `probe` command: `shani-auto-rollback.service` now runs correctly
+     under a genuine `--boot` session for both a same-slot failure
+     (`switch_to_sibling_slot()`) and a genuine hard-failure fallback
+     (full repair-from-backup, real UKI regeneration, real boot-entry
+     writes) — see `shani-deploy/AGENTS.md`'s matching entry for the full
+     story of what this harness fix was needed to prove.
+
 - **MOK private key in base image (Critical) — re-verified present
   2026-09-18.** `scripts/build-base-image.sh:179` (line number shifted,
   behavior unchanged) still does

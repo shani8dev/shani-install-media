@@ -1098,6 +1098,82 @@ EOF
   ln -sf "../${unit_name}" "${unit_dir}/sysinit.target.wants/${unit_name}"
 }
 
+# Injects a REAL (not generator-synthesized) data.mount unit file so
+# `systemd-analyze verify` can resolve it as a dependency for
+# mark-boot-in-progress.service/mark-boot-success.service/
+# check-boot-failure.service/shani-auto-rollback.service (all
+# Requires=data.mount) — confirmed live this session that
+# systemd-fstab-generator refuses to generate ANY unit for
+# `LABEL=shani_root ... subvol=@data` under nspawn ("is read-only
+# (running in a container?), ignoring mount for
+# /dev/disk/by-label/shani_root" — its own built-in container-detection
+# skipping device-label lookups it assumes a container can't safely do),
+# even during a genuine --boot session. At RUNTIME this is harmless —
+# `/data` is already bind-mounted by nspawn's own --bind before systemd
+# starts, and systemd's automatic mountinfo-to-transient-unit mechanism
+# creates a live, active data.mount reflecting that reality regardless
+# (confirmed live: `systemctl status data.mount` shows "Loaded: loaded
+# (/proc/self/mountinfo)", "Active: active (mounted)") — so real units
+# depending on it work fine under --boot. The gap is purely in STATIC
+# analysis: systemd-analyze verify never consults a live manager for
+# dependency resolution, only on-disk unit files, so it reports "Unit
+# data.mount not found" even though the live unit genuinely exists and
+# works. This stub closes that gap for the static tool without touching
+# runtime mount behavior at all: `Where=/data` matches what's already
+# mounted, so systemd recognizes it as already-satisfied rather than
+# attempting a real mount syscall that would conflict with the existing
+# nspawn bind-mount.
+_inject_data_mount_unit() {
+  local unit_dir="${NSPAWN_WORK}/merged/etc/systemd/system"
+  mkdir -p "$unit_dir"
+  cat > "${unit_dir}/data.mount" <<EOF
+[Unit]
+Description=TEST-ONLY: real data.mount unit file so systemd-analyze verify can resolve it as a dependency (see comment above _inject_data_mount_unit in test.sh) — /data is already bind-mounted by nspawn itself before systemd starts, this unit performs no mount action of its own at runtime
+
+[Mount]
+What=LABEL=shani_root
+Where=/data
+Type=btrfs
+Options=subvol=@data,noatime,compress=zstd,space_cache=v2,autodefrag
+EOF
+}
+
+# Injects a test-only early-boot unit that creates the
+# /dev/disk/by-label/shani_root and /dev/disk/by-label/shani_boot symlinks
+# real hardware gets for free from udev. Needed because a --boot session
+# has no real udev managing these loop-backed devices' labels — confirmed
+# live via shani-auto-rollback.service genuinely running under a real
+# --boot probe and shani-deploy --rollback's own `mount ... /dev/disk/
+# by-label/shani_root /mnt` failing with "special device ... does not
+# exist" (dmesg: no such symlink). The device nodes themselves ARE already
+# present inside the container at these exact paths (`--bind="$ROOT_LOOP"`/
+# `--bind="$ESP_LOOP"` in both NSPAWN_ENTER_ARGS and
+# NSPAWN_FULL_BOOT_ARGS bind them in unchanged, source path == dest path)
+# — only the conventional by-label symlink is missing. cmd_enter's
+# non-boot $setup already does exactly this same trick for that path; this
+# is the --boot-session equivalent, needed because a full boot has no
+# single pre-exec shell hook to run it from.
+_inject_by_label_unit() {
+  local unit_dir="${NSPAWN_WORK}/merged/etc/systemd/system"
+  local unit_name="shani-test-by-label.service"
+  mkdir -p "$unit_dir" "${unit_dir}/sysinit.target.wants"
+  cat > "${unit_dir}/${unit_name}" <<EOF
+[Unit]
+Description=TEST-ONLY: /dev/disk/by-label/shani_root + shani_boot symlinks (no real udev for these loop-backed devices under nspawn)
+DefaultDependencies=no
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'mkdir -p /dev/disk/by-label && ln -sf ${ROOT_LOOP} /dev/disk/by-label/shani_root && ln -sf ${ESP_LOOP} /dev/disk/by-label/shani_boot'
+
+[Install]
+WantedBy=sysinit.target
+EOF
+  ln -sf "../${unit_name}" "${unit_dir}/sysinit.target.wants/${unit_name}"
+}
+
 # Populates NSPAWN_FULL_BOOT_ARGS — the common systemd-nspawn flag block
 # shared by every "boot this slot with full systemd" invocation. Found
 # duplicated near-verbatim (18 flags, byte-for-byte) in 3 separate places
@@ -1120,6 +1196,8 @@ EOF
 _nspawn_full_boot_args() {
   local machine="$1" slot="$2"
   _inject_fake_cmdline_unit "$slot"
+  _inject_data_mount_unit
+  _inject_by_label_unit
   NSPAWN_FULL_BOOT_ARGS=(
     --quiet
     --register=no
