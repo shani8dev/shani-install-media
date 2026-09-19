@@ -274,6 +274,112 @@ without a distrobox dependency:
   real, correct content from an actively-written console log across
   process boundaries via simple byte-offset polling.
 
+## Fully-automated GUI test harness: `gui --click/--type/--key/...`
+
+`cmd_gui` (host-only, boots root.img/esp.img headless via OVMF+QMP+
+guest-agent, no display window — see its own header comment) now runs an
+**ordered sequence of real UI-driving actions**, not just a single `--exec`
++ final screenshot:
+
+```
+test-env/test.sh gui --click=100,200 --type="hello" --key=ret \
+    --screenshot=out.ppm --exec="gsettings get org.gnome.desktop.interface gtk-theme"
+```
+
+Actions run in the exact order given on the command line (click → type →
+key → screenshot → exec, for the example above). Flags: `--exec=`,
+`--click=X,Y[:button]`, `--doubleclick=X,Y`, `--move=X,Y`, `--type="text"`,
+`--key=COMBO` (`ret`, `tab`, `ctrl+alt+t`, `alt+F4`, ...), `--sleep=SECS`,
+`--screenshot=<file.ppm>` (repeatable), plus the existing `--out=`/`--timeout=`.
+
+**Why QMP `input-send-event` instead of xdotool/ydotool:** it injects real
+HID events at the guest's emulated USB keyboard/tablet
+(`-device usb-kbd -device usb-tablet`, already wired up) — the same path a
+physical keyboard/mouse takes. This makes it **display-server-agnostic by
+construction**: it works identically whether the guest desktop is running
+X11 or Wayland, since the guest OS itself translates the HID reports, not
+us. This is *why* it's the right approach here and not the nspawn+X11/
+Wayland-socket-forwarding path explored earlier in this investigation: that
+path hit a real, confirmed dead end — a headless `gnome-shell --headless`
+compositor crashes on any real GL/EGL-touching Wayland client (root-caused
+to this host's broken NVIDIA EGL vendor file sorting before mesa's), and
+neither `xdotool` (X11-only) nor `ydotool`/`wtype`/`wlrctl` (need
+`/dev/uinput`, confirmed absent in the nspawn container, or a running
+Wayland compositor) are installed in the shanios image at all — confirmed
+live via `pacman -Qi ydotool xdotool wtype` all returning "was not found",
+and `pacman` itself isn't even present in a *booted* shanios instance
+(immutable image — packages are baked in at build time only, not
+installable live). QMP input injection sidesteps this whole class of
+problem: nothing new to install anywhere, works the same for every desktop
+environment this repo tests (GNOME/Plasma/Cosmic), X11 or Wayland.
+
+Coordinates are real framebuffer pixels, resolved against the **current**
+resolution automatically (a screendump is taken to read the PPM header's
+width/height) on every `click`/`move` call — correct even if the desktop
+resizes between actions, at the cost of one extra screendump round-trip per
+click.
+
+**Verified live, this session:**
+- `_qmp_click`/`_qmp_key`/`_qmp_type` (the exact functions shipped in
+  `test.sh`, sourced and called directly) all executed against a real,
+  running QEMU instance with zero QMP protocol errors. `_qmp_click`
+  correctly auto-detected a 1280×800 framebuffer and computed exact
+  normalized abs coordinates (400,300 → abs(10240,12288), matching
+  `x/w*32767` exactly).
+- Sending `_qmp_key esc` produced a **visually confirmed, screendump-
+  captured change** in the guest's own rendered output (OVMF's PXE fallback
+  text changed from `PXE-E16: No valid offer received` to `PXE-E21: Remote
+  boot cancelled` after the Esc keypress) — real proof the HID injection
+  path reaches and affects real guest firmware/OS, not just that the QMP
+  call returns success.
+
+**NOT yet verified: a full real-desktop click/type test (e.g. clicking a
+real GNOME/yad button and confirming the app reacts).** Blocked by two
+separate, pre-existing environment facts, not by anything wrong in the new
+code:
+1. **This host has no `/dev/kvm` at all** (`vmx`/`svm` absent from
+   `/proc/cpuinfo` — no hardware virtualization exposed, likely itself a
+   VM/container without nested-virt). `cmd_gui`/`cmd_qemu` fall back to
+   TCG (pure software emulation), which makes a full GNOME boot
+   impractically slow to iterate on here.
+2. **The test-env's current `disk/esp.img` is a genuinely empty FAT32
+   volume** — confirmed by loop-mounting it read-only via
+   `udisksctl loop-setup -r -f` (no root needed) and finding zero files,
+   not even `\EFI\BOOT\BOOTX64.EFI`. This is why `cmd_gui`/`cmd_qemu` hit
+   OVMF's PXE fallback instead of booting shanios at all: these disk images
+   were only ever taken through `bootstrap` (writes straight to the
+   `@blue`/`@green` subvolumes for nspawn testing) and never through a real
+   `install`+`configure` pass, which is what actually runs
+   `gen-efi.sh`/`finalize_boot_entries` to populate the ESP with a bootable
+   UKI. **`cmd_gui`/`cmd_qemu` appear to have never been exercised
+   end-to-end in this environment before this session.** To get a real
+   bootable image for a full desktop-level UI-automation test: run
+   `test-env/test.sh install -p <profile>` then `configure -p <profile>`
+   (needs the sibling `os-installer-config` checkout, confirmed present at
+   `../os-installer-config`) against a fresh whole-disk image, *not* just
+   `bootstrap`.
+
+## Host-side fix: `run_in_container.sh` now hands build output back to the invoking user
+
+Found while chasing the `esp.img` investigation above: the container
+`run_in_container.sh` launches runs as root (`--privileged`, no `--user` —
+real `losetup`/`mount`/`nspawn`/`cryptsetup` work inside it needs that), so
+everything it writes under the bind-mounted repo root — most importantly
+`test-env/disk/*.img` — came back **root-owned on the host** (confirmed
+live: a freshly bootstrapped `root.img` was `644 root:root`). That silently
+blocks every HOST-ONLY command needing write access to those images
+(`qemu`, `gui`, `iso` — deliberately run outside the container, on real
+host hardware/display) the instant they're run as a normal user: `gui`
+couldn't even open `root.img` for the write-mode boot it needs to perform.
+A plain host-side `chown` after the fact can't fix this either — only root
+can `chown` to an arbitrary UID, and `run_in_container.sh` itself runs
+unprivileged. Fixed by appending a `chown -R $(id -u):$(id -g)
+test-env/disk output` to the container's own command string, run from
+*inside* the container (where it genuinely is root) right before it exits,
+regardless of the user command's own exit code. Verified live: a no-op
+`run_in_container.sh /usr/bin/true` invocation flipped `test-env/disk/{root,esp}.img`
+from `root:root` back to the real invoking user.
+
 ## For changes to `install.sh`/`configure.sh` (in the sibling `os-installer-config` repo)
 
 Those scripts are fully driven by `OSI_*` environment variables — no GUI
