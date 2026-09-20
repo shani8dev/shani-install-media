@@ -2,6 +2,8 @@
 cache/
 keys/mok/MOK*
 keys/gpg/gpg*
+keys/gpg/pubring*
+keys/gpg/trustdb*
 keys/ssh/ssh*
 keys/*/github*
 

@@ -1460,9 +1460,40 @@ _prepare_enter_args() {
 # ------------------------------------------------------------------
 # enter   <blue|green> [--boot] [--local-src=<dir>] [cmd...]
 # ------------------------------------------------------------------
+# _ensure_by_label_dir — guard the nspawn boot commands against a missing
+# /dev/disk/by-label before systemd-nspawn is even invoked.
+#
+# Why this exists: cmd_enter --boot, verify-boot, desktop and probe all build
+# their container's /dev from the host, and the by-label mount path
+# (/dev/disk/by-label/shani_root, used both by the slot's own data.mount and
+# by shani-deploy's by-label mount) is created HERE on the host by `cmd_disk`
+# (see _ensure_disk_attached, ~line 411) as root:root. These four commands do
+# NOT require `disk` to have been run first, so on an unprivileged host user
+# where that dir simply does not exist yet, systemd-nspawn's own setup dies
+# one layer deep with the opaque, non-actionable:
+#
+#     mkdir: cannot create directory '/dev/disk/by-label': Permission denied
+#
+# That message names neither the real prerequisite nor the command that
+# satisfies it. This converts it into a fast, actionable pointer instead of
+# letting the harness fail inside the container setup. Under nspawn with the
+# host kernel only root can create that dir, so a plain unprivileged user
+# hitting the missing dir cannot self-heal — the fix is to run `test disk`
+# first (or the equivalent sudo one-liner below).
+_ensure_by_label_dir() {
+  if [[ ! -d /dev/disk/by-label ]]; then
+    die "/dev/disk/by-label does not exist — systemd-nspawn boot commands need it (root:root). Run 'test disk' first, or: sudo mkdir -p /dev/disk/by-label && sudo chown root:root /dev/disk/by-label"
+  fi
+  if [[ ! -w /dev/disk/by-label && "$(id -u)" != "0" ]]; then
+    die "/dev/disk/by-label is not writable by root — systemd-nspawn boot commands need it (root:root). Run 'test disk' first, or: sudo mkdir -p /dev/disk/by-label && sudo chown root:root /dev/disk/by-label"
+  fi
+  return 0
+}
+
 cmd_enter() {
   _ensure_host_machine_id
   _ensure_dbus
+  _ensure_by_label_dir
   local slot="${1:?Usage: $(basename "$0") enter <blue|green> [--boot] [--local-src=<dir>] [command...]}"
   shift || true
   [[ "$slot" =~ ^(blue|green)$ ]] || die "slot must be 'blue' or 'green'"
@@ -1602,6 +1633,7 @@ cmd_verifyboot() {
 
   _ensure_host_machine_id
   _ensure_dbus
+  _ensure_by_label_dir
 
   _enter_prep "$slot"
   [[ -n "$local_src" ]] && _overlay_local_src "$slot" "$local_src"
@@ -1718,6 +1750,7 @@ cmd_probe() {
 
   _ensure_host_machine_id
   _ensure_dbus
+  _ensure_by_label_dir
   _enter_prep "$slot"
   [[ -n "$local_src" ]] && _overlay_local_src "$slot" "$local_src"
   _nspawn_binds
@@ -1798,6 +1831,7 @@ cmd_desktop() {
 
   _ensure_host_machine_id
   _ensure_dbus
+  _ensure_by_label_dir
   _enter_prep "$slot"
   _nspawn_binds
   _ensure_inhibit_stub
@@ -2624,17 +2658,94 @@ cmd_iso() {
 }
 
 # ------------------------------------------------------------------
+# _resolve_qemu_boot_drives — pick which backing image(s) cmd_qemu/cmd_gui boot
+#
+# Two distinct disk layouts exist in this harness, and only one of them is
+# ever bootable:
+#   install.img — a whole-disk image written by `install` (real
+#     os-installer-config install.sh), then partitioned and populated by
+#     `configure` (real configure.sh). It is the ONLY thing install.sh can
+#     write to — it partitions a whole disk itself, so it can only ever
+#     produce install.img, never the root.img/esp.img pair.
+#   root.img + esp.img — a fabricate-only pair created empty by `cmd_disk`
+#     (a raw Btrfs volume + a blank FAT32 ESP). Nothing in the supported
+#     install+configure/bootstrap flow populates them; they are only ever
+#     used as blank install targets by `cmd_iso` and as the fallback for
+#     qemu/gui when no bootable install.img exists. Booting them via OVMF
+#     therefore lands on firmware PXE, not on shanios.
+#
+# Booting the real install.img when it exists is strictly better: it is the
+# exact artifact a real install produces, so a boot failure there is signal
+# about the image/deploy, not about this harness. Falls back to the empty
+# root.img/esp.img pair only when install.img is absent (or explicitly
+# forbidden), with a warning so the empty-pair case is never silent.
+#
+# Honors SHANIOS_TEST_QEMU_DISK (default auto):
+#   auto    — prefer install.img if it exists, else root.img+esp.img (warn)
+#   install — require install.img; die with a pointer to install+configure
+#   root    — require root.img+esp.img; die with a pointer to `test disk`
+# Sets globals:
+#   QEMU_BOOT_DRIVES — bash array of complete `-drive ...` args for QEMU
+#   QEMU_BOOT_DESC   — short human string naming the booted image set
+_resolve_qemu_boot_drives() {
+  local mode="${SHANIOS_TEST_QEMU_DISK:-auto}"
+  case "$mode" in
+    auto)
+      if [[ -f "$INSTALL_IMG" ]]; then
+        QEMU_BOOT_DRIVES=(-drive if=virtio,format=raw,file="$INSTALL_IMG")
+        QEMU_BOOT_DESC="disk/install.img (whole-disk image from install+configure)"
+      elif [[ -f "$ROOT_IMG" && -f "$ESP_IMG" ]]; then
+        QEMU_BOOT_DRIVES=(-drive if=virtio,format=raw,file="$ROOT_IMG" \
+                         -drive if=virtio,format=raw,file="$ESP_IMG")
+        QEMU_BOOT_DESC="disk/root.img + disk/esp.img (fabricate-only pair)"
+        warn "No bootable disk/install.img found — booting the empty root.img+esp.img pair instead. This pair is created by 'test disk' and nothing in the supported install+configure/bootstrap flow populates it (install.sh partitions a whole disk itself, so it can only ever produce install.img); run 'install -p <profile>' + 'configure -p <profile>' to produce a bootable install.img."
+      else
+        die "No bootable disk image found: neither $INSTALL_IMG nor ($ROOT_IMG and $ESP_IMG). Run 'install -p <profile>' + 'configure -p <profile>' to produce install.img, or 'test disk' to create the fabricate-only root.img/esp.img pair."
+      fi
+      ;;
+    install)
+      [[ -f "$INSTALL_IMG" ]] || die "SHANIOS_TEST_QEMU_DISK=install requires $INSTALL_IMG — run 'install -p <profile>' then 'configure -p <profile>' to produce it."
+      QEMU_BOOT_DRIVES=(-drive if=virtio,format=raw,file="$INSTALL_IMG")
+      QEMU_BOOT_DESC="disk/install.img (whole-disk image from install+configure, forced by SHANIOS_TEST_QEMU_DISK=install)"
+      ;;
+    root)
+      [[ -f "$ROOT_IMG" && -f "$ESP_IMG" ]] || die "SHANIOS_TEST_QEMU_DISK=root requires $ROOT_IMG and $ESP_IMG — run 'test disk' to create the fabricate-only pair."
+      QEMU_BOOT_DRIVES=(-drive if=virtio,format=raw,file="$ROOT_IMG" \
+                       -drive if=virtio,format=raw,file="$ESP_IMG")
+      QEMU_BOOT_DESC="disk/root.img + disk/esp.img (fabricate-only pair, forced by SHANIOS_TEST_QEMU_DISK=root)"
+      ;;
+    *)
+      die "Invalid SHANIOS_TEST_QEMU_DISK value '$mode' — expected one of: auto (default), install, root."
+      ;;
+  esac
+}
+
+# ------------------------------------------------------------------
 # qemu   (was 07-boot-qemu.sh) — HOST-ONLY
 #
-# Boots disk/root.img + disk/esp.img exactly like real hardware would:
-#   - esp.img contains /EFI/BOOT/BOOTX64.EFI (shim) -> grubx64.efi
-#     (systemd-boot, renamed — see update_bootloader() in gen-efi.sh) -> the
-#     UKI for whichever slot loader.conf points at. OVMF's firmware boot
-#     manager finds this via the standard "removable media" fallback path,
-#     same as booting an installer USB stick — no NVRAM boot-entry setup
-#     needed for this to work.
-#   - root.img is the real Btrfs filesystem (LABEL=shani_root) — the kernel
-#     cmdline baked into the UKI points root= / rootflags=subvol=@<slot> at it.
+# Boots the real bootable disk image via OVMF, exactly like real hardware
+# would. Which image is booted is resolved by _resolve_qemu_boot_drives
+# (env SHANIOS_TEST_QEMU_DISK, default auto):
+#   install.img — the whole-disk image a real `install`+`configure` flow
+#     produces: install.sh partitions it itself and configure.sh runs
+#     gen-efi.sh/finalize_boot_entries to lay down the ESP + signed UKI inside
+#     it. The only layout in this harness that is actually bootable.
+#   root.img + esp.img — the fabricate-only pair `cmd_disk` creates empty;
+#     nothing in the supported flow populates it, so booting it lands on
+#     firmware PXE, not on shanios. Used only as a fallback or as an install
+#     target for `cmd_iso`.
+  #
+  # For whichever image set is booted, the chain that makes it bootable is:
+  #   - the ESP (inside install.img for the whole-disk case, or in the
+  #     separate esp.img for the pair case) contains
+  #     /EFI/BOOT/BOOTX64.EFI (shim) -> grubx64.efi (systemd-boot, renamed —
+  #     see update_bootloader() in gen-efi.sh) -> the UKI for whichever slot
+  #     loader.conf points at. OVMF's firmware boot manager finds this via the
+  #     standard "removable media" fallback path, same as booting an installer
+  #     USB stick — no NVRAM boot-entry setup needed for this to work.
+  #   - the root filesystem (the Btrfs volume inside install.img, or the
+  #     separate root.img for the pair case, LABEL=shani_root) is where the
+  #     kernel cmdline baked into the UKI points root= / rootflags=subvol=@<slot>.
 #
 # This is a genuine UEFI boot of the real bootloader/kernel/UKI shani-deploy
 # produced — not a simulation. If it doesn't boot, that's signal about the
@@ -2674,11 +2785,7 @@ cmd_qemu() {
     exit 1
   fi
 
-  [[ -f "$ROOT_IMG" && -f "$ESP_IMG" ]] || {
-    echo "Expected $ROOT_IMG and $ESP_IMG — run this first:" >&2
-    echo "  ./run_in_container.sh build.sh test disk   (from the repo root)" >&2
-    exit 1
-  }
+  _resolve_qemu_boot_drives
 
   # Locate OVMF firmware + a per-VM copy of the vars file (writable NVRAM store
   # — bootctl's `set-default` EFI-var write and any MOK enrollment land here;
@@ -2704,9 +2811,9 @@ cmd_qemu() {
   local -a display_args=(-display "${QEMU_DISPLAY:-gtk}")
   if [[ -n "$vnc_ws_port" ]]; then
     display_args=(-vnc ":0,websocket=${vnc_ws_port}")
-    echo "==> Booting root.img + esp.img via OVMF — VNC on :5900, websocket on ${vnc_ws_port} (open the 'watch' UI, or point any VNC client at localhost:5900)"
+    echo "==> Booting $QEMU_BOOT_DESC via OVMF — VNC on :5900, websocket on ${vnc_ws_port} (open the 'watch' UI, or point any VNC client at localhost:5900)"
   else
-    echo "==> Booting root.img + esp.img via OVMF (close the window / send SIGTERM to stop)"
+    echo "==> Booting $QEMU_BOOT_DESC via OVMF (close the window / send SIGTERM to stop)"
   fi
 
   exec qemu-system-x86_64 \
@@ -2716,8 +2823,7 @@ cmd_qemu() {
       "${kvm_args[@]}" \
       -drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
       -drive if=pflash,format=raw,file="$vars_copy" \
-      -drive if=virtio,format=raw,file="$ROOT_IMG" \
-      -drive if=virtio,format=raw,file="$ESP_IMG" \
+      "${QEMU_BOOT_DRIVES[@]}" \
       -device virtio-gpu-pci \
       "${display_args[@]}" \
       -device virtio-net-pci,netdev=net0 \
@@ -3170,8 +3276,9 @@ PYEOF
 # ------------------------------------------------------------------
 # gui   (headless real-desktop verification) — HOST-ONLY
 #
-# Boots disk/root.img + disk/esp.img exactly like `cmd_qemu` (same real
-# UKI/kernel/bootloader), but with `-display none` instead of a GTK window,
+# Boots the same resolved image set as `cmd_qemu` (see its header — same
+  # real UKI/kernel/bootloader, resolved by _resolve_qemu_boot_drives), but
+  # with `-display none` instead of a GTK window,
 # plus a QMP control socket alongside the qemu-guest-agent one `cmd_qemu`
 # already wires up. This is the answer to "can we verify a GUI app or a
 # desktop theme change actually renders, without a distrobox dependency":
@@ -3199,11 +3306,7 @@ cmd_gui() {
   command -v python3 >/dev/null 2>&1 \
     || die "python3 is required for gui's QMP/guest-agent control (pacman -S python / apt install python3)."
 
-  [[ -f "$ROOT_IMG" && -f "$ESP_IMG" ]] || {
-    echo "Expected $ROOT_IMG and $ESP_IMG — run this first:" >&2
-    echo "  ./run_in_container.sh build.sh test disk   (from the repo root)" >&2
-    exit 1
-  }
+  _resolve_qemu_boot_drives
 
   # Actions run in the exact order given on the command line — a UI test is
   # a script (click, then type, then screenshot), so order must survive
@@ -3265,7 +3368,7 @@ cmd_gui() {
   }
   trap _gui_cleanup EXIT
 
-  log "Booting headless (no display window, QMP+guest-agent control only)..."
+  log "Booting headless ($QEMU_BOOT_DESC, no display window — QMP+guest-agent control only)..."
   qemu-system-x86_64 \
       -machine q35 \
       -smp 4 \
@@ -3273,8 +3376,7 @@ cmd_gui() {
       "${kvm_args[@]}" \
       -drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
       -drive if=pflash,format=raw,file="$vars_copy" \
-      -drive if=virtio,format=raw,file="$ROOT_IMG" \
-      -drive if=virtio,format=raw,file="$ESP_IMG" \
+      "${QEMU_BOOT_DRIVES[@]}" \
       -device virtio-gpu-pci \
       -display none \
       -device virtio-net-pci,netdev=net0 \

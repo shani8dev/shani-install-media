@@ -45,22 +45,22 @@ directly by the dispatcher at the bottom:
 
 | `build.sh test` command | Implemented by | What it does |
 |---|---|---|
-| `disk` | `test.sh`'s `cmd_disk` | Creates two sparse loop-backed images standing in for the real GPT disk (`esp.img` FAT32, `root.img` Btrfs — see `os-installer-config/bits/part.sfdisk`). A faster, fabricate-only pair — **`bootstrap` no longer uses this** (it creates its own `install.img` via the real `install.sh` instead); only relevant if you specifically want a pre-partitioned pair for something else. Auto-installs `dosfstools` first if `mkfs.fat` is missing from the builder image — see "Requirements" below. Self-heals stale/duplicate loop-device attachments left over from a previous `run_in_container.sh` session before recreating both images — see "Loop-device robustness" below |
+| `disk` | `test.sh`'s `cmd_disk` | Creates two sparse loop-backed images standing in for the real GPT disk (`esp.img` FAT32, `root.img` Btrfs — see `os-installer-config/bits/part.sfdisk`). A faster, fabricate-only pair — **`bootstrap` no longer uses this** (it creates its own `install.img` via the real `install.sh` instead); only relevant if you specifically want a pre-partitioned pair for something else. Both images are created **empty** and nothing in the supported install+configure/bootstrap flow ever populates them — `qemu`/`gui` fall back to this pair (with a warning) only when `install.img` is absent, and `iso` attaches it as a blank install target. Auto-installs `dosfstools` first if `mkfs.fat` is missing from the builder image — see "Requirements" below. Self-heals stale/duplicate loop-device attachments left over from a previous `run_in_container.sh` session before recreating both images — see "Loop-device robustness" below |
 | `ca [extra-host ...]` | `test.sh`'s `cmd_ca` | Generates a throwaway CA + a leaf cert for `downloads.shani.dev`, plus one more per extra hostname given — see "The local mirror" below |
-| `bootstrap -p <profile> [-d latest\|stable\|<date>] [--encrypted]` | `test.sh`'s `cmd_bootstrap` | Runs the REAL `install.sh`+`configure.sh` (calls `cmd_install`/`cmd_configure` directly — real partitioning, optional LUKS, Btrfs subvolumes, image extraction, UKI generation/signing, boot-entry write), then one genuinely test-only step: trust-anchoring this session's throwaway CA into both `@blue`/`@green` slots. Requires `ca` to have been run first |
+| `bootstrap -p <profile> [-d latest\|stable\|<date>] [--encrypted]` | `test.sh`'s `cmd_bootstrap` | Runs the REAL `install.sh`+`configure.sh` (calls `cmd_install`/`cmd_configure` directly — real partitioning, optional LUKS, Btrfs subvolumes, image extraction, UKI generation/signing, boot-entry write), then one genuinely test-only step: trust-anchoring this session's throwaway CA into both `@blue`/`@green` slots. Requires `ca` to have been run first. As a side effect of its real install+configure pass it produces `disk/install.img` — the bootable whole-disk image `qemu`/`gui` prefer |
 | `serve [port] [docroot] [cert-host]` | `test.sh`'s `cmd_serve` | Serves a docroot (default `OUTPUT_DIR`) as-is over real HTTPS as a stand-in for a CA'd hostname (default `downloads.shani.dev`) — see "The local mirror" below for standing up a second instance for a second hostname |
 | `enter <blue\|green> [--boot] [--local-src=<dir>]` | `test.sh`'s `cmd_enter` | Enters a slot via `systemd-nspawn`, looking exactly like a booted ShaniOS system to `shani-deploy`/`shani-update`. `--local-src=/opt/shani-deploy/scripts` overlays the sibling `shani-deploy` checkout's CURRENT scripts (and its `systemd/{system,user}/` units) over the package-installed ones — see "Testing edited scripts" below |
 | `verify-boot [blue\|green] [seconds] [--local-src=<dir>]` | `test.sh`'s `cmd_verifyboot` | Headless boot smoke test: full `systemd --boot`, console captured to `disk/boot-<slot>-console.log`, then reports whether the target/failed units look healthy. No display or TTY needed — CI-friendly. `--local-src` works exactly as it does for `enter` — **use it whenever verifying a unit-file change**, since a bootstrapped image's baked-in units can be stale relative to the repo's current working tree otherwise |
-| `install -p <profile> [-d latest\|stable\|<date>] [--encrypted]` | `test.sh`'s `cmd_install` | Runs the REAL, unmodified `os-installer-config/scripts/install.sh` against a fresh whole-disk loop image (partitioning, optional LUKS, Btrfs subvolumes, image extraction) — see "install / configure" below |
-| `configure -p <profile> [--encrypted]` | `test.sh`'s `cmd_configure` | Runs the REAL, unmodified `os-installer-config/scripts/configure.sh` (locale/hostname/user/Secure Boot/UKI) against `install`'s result — see "install / configure" below |
+| `install -p <profile> [-d latest\|stable\|<date>] [--encrypted]` | `test.sh`'s `cmd_install` | Runs the REAL, unmodified `os-installer-config/scripts/install.sh` against a fresh whole-disk loop image (partitioning, optional LUKS, Btrfs subvolumes, image extraction) — see "install / configure" below. Writes `disk/install.img` (default 24G, override with `INSTALL_DISK_SIZE`): the only layout `install.sh` can produce (it partitions a whole disk itself) and the only one that's actually bootable via OVMF, since `qemu`/`gui` prefer it |
+| `configure -p <profile> [--encrypted]` | `test.sh`'s `cmd_configure` | Runs the REAL, unmodified `os-installer-config/scripts/configure.sh` (locale/hostname/user/Secure Boot/UKI) against `install`'s result — see "install / configure" below. Populates `disk/install.img`'s ESP with the signed UKI and boot entries (`gen-efi.sh`/`finalize_boot_entries`) — what makes `install.img` bootable for `qemu`/`gui` |
 | `upgrade [--local-src=<dir>] [extra shani-deploy args]` | `test.sh`'s `cmd_upgrade` | Calls `shani-deploy` **directly** (`--force --channel latest --skip-self-update`) — a real, complete deploy: download, SHA256+GPG verify, extract, `gen-efi` UKI generation/signing, boot-entry write. Does NOT go through `shani-update` (which needs a real display to open its progress terminal) |
 | `update-check [--local-src=<dir>] [extra shani-update args]` | `test.sh`'s `cmd_updatecheck` | Exercises `shani-update.sh` **itself**: its GUI-dialog fallback chain (fails over — no display here) then a genuine console-approval prompt, fed `y` via an allocated pty (`script`). Proves shani-update's own dialog/prompt/decision logic; its `shani-deploy` hand-off (and its `--rollback` path) still needs a real display, so this does **not** complete an actual deploy — use `upgrade` for that |
 | `reboot` | `test.sh`'s `cmd_reboot` | Re-enters whichever slot `/data/current-slot` now points at |
 | `rollback [--local-src=<dir>]` | `test.sh`'s `cmd_rollback` | Calls `shani-deploy --rollback` directly, same direct-call reasoning as `upgrade` — `shani-update`'s `--rollback` also routes through the display-needing terminal wrapper |
 | `cycle -p <profile>` | `test.sh`'s inline `cycle` case | `ca` (if missing) → `bootstrap` → `serve` (background) → `upgrade` → `reboot` in one go |
-| `qemu [--vnc[=port]]` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test`. Also wires up a virtio-serial channel for `qemu-guest-agent` (every profile ships it via `shani-video-guest`), matching what a real libvirt-managed VM provides. `--vnc[=port]` (default 5700) serves the real framebuffer over VNC-over-websocket instead of opening a local GTK window — confirmed live: QEMU's own `websocket=` vnc suboption opens both raw VNC (5900) and the websocket bridge, no separate `websockify` needed — open it via `watch`'s Desktop panel, or any VNC client at `localhost:5900` |
+| `qemu [--vnc[=port]]` | `test.sh`'s `cmd_qemu` | A genuine UEFI boot (via OVMF) of the real bootloader/kernel/UKI `shani-deploy` produced — **host-only**, run `test-env/test.sh qemu` directly, not through `build.sh test`. Which image it boots is resolved by `_resolve_qemu_boot_drives` (env `SHANIOS_TEST_QEMU_DISK`, default `auto`): prefers `disk/install.img` (produced by `install`+`configure`/`bootstrap` — the only bootable layout), falling back to the empty `disk/root.img`+`disk/esp.img` pair with a warning. Also wires up a virtio-serial channel for `qemu-guest-agent` (every profile ships it via `shani-video-guest`), matching what a real libvirt-managed VM provides. `--vnc[=port]` (default 5700) serves the real framebuffer over VNC-over-websocket instead of opening a local GTK window — confirmed live: QEMU's own `websocket=` vnc suboption opens both raw VNC (5900) and the websocket bridge, no separate `websockify` needed — open it via `watch`'s Desktop panel, or any VNC client at `localhost:5900` |
 | `watch [--port=N]` | `test.sh`'s `cmd_watch` | **Host-only** local dashboard (default `http://127.0.0.1:8090/`) to actually *see* a boot instead of grepping log files afterward: live-tails whichever `*-console.log` is newest (from `desktop` or `verify-boot`), plus a noVNC panel for a `qemu --vnc` session. Pure stdlib `python3 http.server`, nothing leaves `127.0.0.1` |
-| `iso -p <profile> [-d latest\|stable\|<date>]` | `test.sh`'s `cmd_iso` | A genuine UEFI boot (via OVMF) of a real, unmodified installer ISO from `OUTPUT_DIR` — **host-only**, run `test-env/test.sh iso -p <profile>` directly. Boots to the real live-installer `systemd-boot` menu; the GUI installer itself is interactive and not automated. If `disk/root.img`+`disk/esp.img` already exist, they're attached as an optional install target |
+| `iso -p <profile> [-d latest\|stable\|<date>]` | `test.sh`'s `cmd_iso` | A genuine UEFI boot (via OVMF) of a real, unmodified installer ISO from `OUTPUT_DIR` — **host-only**, run `test-env/test.sh iso -p <profile>` directly. Boots to the real live-installer `systemd-boot` menu; the GUI installer itself is interactive and not automated. `cmd_iso` is the one caller that still uses `disk/root.img`+`disk/esp.img` as blank install targets only — it never resolves them via `_resolve_qemu_boot_drives`, and the empty pair is fine here since the live installer writes its own target |
 | `clean` | `test.sh`'s `cmd_clean` | Unmounts everything (nspawn overlays, the ESP, the top-level Btrfs mount) and detaches root.img/esp.img's loop devices. Leaves the images themselves in place |
 | `verify` | `test.sh`'s `cmd_verify` | Runs integrity checks against the built image — verifies checksums, signatures, and package consistency |
 | `pacstrap -p <profile> [pkg ...]` | `test.sh`'s `cmd_pacstrap` | Real `pacstrap` smoke test against a throwaway root using that profile's actual `image_profiles/<profile>/pacman.conf` — proves the builder's keyring genuinely satisfies that profile's `SigLevel` (e.g. `Required DatabaseOptional`) against real packages and real signatures, not just that the config file parses. Defaults to `base`; pass extra package names to pull in more of a profile's real dependency set (`shani-core`, `flatpak`, `podman`, etc.) for a deeper check. This is the standard way to verify any `pacman.conf`/signing change before trusting it — see "What this does NOT simulate" below for why it's the right layer for that, instead of driving each shipped runtime directly |
@@ -72,6 +72,25 @@ re-attaches or reuses root.img/esp.img's loop devices on the *host* —
 nothing ever detaches them again on its own. Across a long testing session
 this accumulates loop devices indefinitely; only `clean`, a manual
 `losetup -d`, or a reboot releases them.
+
+### Disk layouts: `install.img` vs. `root.img`+`esp.img`
+
+Two different disk artifacts live under `test-env/disk/`, and only one of
+them is ever actually bootable. `cmd_qemu`/`cmd_gui` resolve which one to
+boot through the shared `_resolve_qemu_boot_drives()` helper (env
+`SHANIOS_TEST_QEMU_DISK`, default `auto`):
+
+| Image | Created by | Populated by | Bootable via OVMF? | Used by |
+|---|---|---|---|---|
+| `disk/install.img` (whole disk, default 24G) | `install` | `install` (partitioning, LUKS, subvolumes, extraction) + `configure` (Secure Boot, UKI, boot entries) — i.e. `bootstrap` runs both | **Yes** — the only bootable layout | `qemu`, `gui` (preferred), `bootstrap`/`install`/`configure` themselves |
+| `disk/root.img` (Btrfs) + `disk/esp.img` (FAT32) | `disk` — both created **empty** | **Nothing** in the supported flow. `bootstrap` writes straight to the `@blue`/`@green` subvolumes on `root.img` for nspawn testing and never touches the ESP; `install.sh` partitions a whole disk itself so it can only ever produce `install.img` | **No** — booting it lands on firmware PXE, not on shanios | `qemu`/`gui` (fallback only, with a warning, when `install.img` is absent), `iso` (as a blank install target — the live installer writes its own) |
+
+`SHANIOS_TEST_QEMU_DISK=install|root|auto` (default `auto`) pins the choice:
+`auto` prefers `install.img` when present and falls back to the empty pair
+with a warning; `install`/`root` require the named image(s) and die with a
+pointer to the right command if they're missing. `cmd_iso` is the one caller
+that bypasses this helper entirely — it always uses `root.img`+`esp.img`,
+and only as blank install targets for the live installer.
 
 ### Loop-device robustness
 
@@ -472,6 +491,96 @@ paper over them:
   libvirt-managed VM always provides this channel, and without it the boot
   blocked on "Timed out waiting for device
   /dev/virtio-ports/org.qemu.guest_agent.0".
+
+## Running GUI apps from the test harness (X11/Wayland forwarding)
+
+`cmd_enter`/`cmd_desktop` boot a slot headlessly; there is no desktop to see.
+To actually *render* a GTK app (yad dialogs, gnome-terminal, the
+`shani-update` progress window) against the host's real display, the harness
+forwards the host's X11 or Wayland socket through both layers:
+
+1. **Docker layer** (`run_in_container.sh`) — `X11_FORWARD_ARGS` /
+   `WAYLAND_FORWARD_ARGS`, conditional on the host actually having a socket
+   (`$DISPLAY` / `$WAYLAND_DISPLAY`). Binds `/tmp/.X11-unix` (X11) or just
+   the one Wayland file (not the whole `$XDG_RUNTIME_DIR`) into the
+   container.
+2. **nspawn layer** (`test.sh` `_nspawn_binds()`) — builds `X11_BIND` /
+   `WAYLAND_BIND` and wires them into `NSPAWN_ENTER_ARGS` and
+   `NSPAWN_FULL_BOOT_ARGS`, so the socket reaches the booted slot too.
+
+This is the standard, long-established way to run a container GUI on the
+host's real display (see systemd/systemd#12671). It needs no GPU/EGL for a
+plain 2D dialog, and required no changes to any real (non-test) code.
+
+### Prerequisites (host-side, one-time)
+
+- X11 only: run `xhost +local:` on the host **before** starting the
+  harness. This is a host-wide access-control change — restore with
+  `xhost -` when you're done.
+- A real session on the host with MIT-MAGIC-COOKIE auth (e.g. Xorg on a
+  vt, `$XAUTHORITY` set). The harness reads it from the env as usual.
+- No Wayland here — `WAYLAND_DISPLAY` unset, so the Wayland path is a no-op.
+
+### Running a GUI app inside a slot
+
+```bash
+# --local-src overlays the sibling shani-deploy checkout's current scripts
+# onto the slot's /usr/local/bin, so you're testing the real edited code.
+./run_in_container.sh build.sh test enter blue \
+    --local-src=/opt/shani-deploy/scripts \
+    -- bash -c 'shani-update --health --terminal'
+```
+
+To *see* the result, screenshot it from inside the slot — ImageMagick's
+`import` is already in the image:
+
+```bash
+import -window root /data/screenshot.png
+```
+
+`/data` is bind-mounted out through the existing `SHANIOS_TEST_EXTRA_BINDS`
+mechanism, so the PNG appears on the host. Bind your own scratch scripts the
+same way:
+
+```bash
+SHANIOS_TEST_EXTRA_BINDS="/host/path/my-script.sh:/usr/local/bin/my-script.sh"
+```
+
+### What this harness proved (and the bugs it caught)
+
+Rendering real dialogs end-to-end is the only way to find yad bugs — reading
+`show_dialog()`'s source cannot. Confirmed live against the real yad 15.0
+build in the slot:
+
+- **`--image-on-top` was never a yad flag.** Every yad invocation failed to
+  parse its command line ("Unknown option --image-on-top", exit 255) *before*
+  ever opening a display, and the backend-detection logic treated rc=255 as a
+  "bad backend, try next" — so every shani-update dialog had **never actually
+  rendered via yad, on any real system, ever**, silently falling through to
+  notify-send. Removed; `--image=`/`--on-top` already provide the functionality.
+- **Three yad icon crashes** (broken SVG rasterizer via glycin-svg bwrap
+  child exits 1 → `gtkiconhelper.c:495` assertion → SIGABRT):
+  `show_dialog`'s `--window-icon`, `_run_gui_progress`'s
+  `--window-icon="software-update-available"`, and `_run_tray`'s
+  `--image="software-update-available"`. Removed all three; `--image=`
+  survives where it's needed.
+- **`_acquire_lock` failed in headless slots** — `mkdir "$LOCK_FILE"` died when
+  `$XDG_RUNTIME_DIR` didn't exist. Added `mkdir -p "${LOCK_FILE%/*}"`.
+- **`gnome-terminal --wait` needs a D-Bus session bus** — launches fine, then
+  exits ~1s later once activation fails. `_launch_terminal_tail` now waits
+  1.5s and checks the terminal PID is still alive; `_run_gui_progress`
+  re-shows the graphical view on a failed launch.
+
+### Reusable GUI-verification helper
+
+`test-env/.verify-bin/` holds scratch scripts used for empirical verification
+(`alert-fallback-unit.sh`, `termargs3.sh`, `yadaudit.sh`, …). They are bound
+into slots via `SHANIOS_TEST_EXTRA_BINDS` exactly like any other script.
+`alert-fallback-unit.sh` is a host-side, deterministic unit test of
+`show_alert`/`show_dialog`'s fallback paths (stubbed yad + notify-send, clean
+minimal PATH so the host's own `/usr/bin/zenity` can't leak in and give a
+false rc=1) — the full nspawn harness is flaky in this environment, and the
+*positive* paths (real yad dialog rendering) were already verified live.
 
 ## Requirements
 

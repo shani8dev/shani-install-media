@@ -175,11 +175,35 @@ LATEST_RELEASE=$(cat "${LATEST_TXT}")
 log "Current latest release: ${LATEST_RELEASE}"
 
 # ---------------------------------------------------------------------------
-# Step 2: Extract build date and verify artifacts before promoting
+# Step 2: Canonicalize the artifact name — image filenames carry NO channel
+# segment. build-base-image.sh names artifacts
+# ${OS_NAME}-${BUILD_DATE}-${PROFILE}.zst (e.g. shanios-20260918-gnome.zst);
+# which channel a build belongs to is tracked only by the pointer files
+# (latest.txt / <channel>.txt). A channel-qualified name in latest.txt
+# (legacy output from the branch-qualified-filename era, e.g.
+# shanios-20260918-stable-gnome.zst) would make every verification URL below
+# 404, because no such artifact is published — normalize it to the canonical
+# name the pipeline actually ships. Anything that is not a shanios artifact
+# name at all is a hard error.
 # ---------------------------------------------------------------------------
-BUILD_DATE_DIR=$(echo "${LATEST_RELEASE}" | grep -oE '[0-9]{8}' | head -1)
+# "|| true" keeps the errexit + pipefail combination from aborting the script
+# silently on a date-less name — the die below must be the one to report it.
+BUILD_DATE_DIR=$(echo "${LATEST_RELEASE}" | grep -oE '[0-9]{8}' | head -1 || true)
 if [[ -z "$BUILD_DATE_DIR" ]]; then
   die "Could not extract build date from latest release filename: ${LATEST_RELEASE}"
+fi
+
+CANONICAL_IMAGE="${OS_NAME}-${BUILD_DATE_DIR}-${PROFILE}.zst"
+if [[ "${LATEST_RELEASE}" != "${CANONICAL_IMAGE}" ]]; then
+  if [[ "${LATEST_RELEASE}" =~ ^${OS_NAME}-[0-9]{8}-[a-z0-9_-]+\.zst$ ]]; then
+    log "latest.txt names ${LATEST_RELEASE} — channel-qualified/non-canonical; normalizing to ${CANONICAL_IMAGE} (the channel lives in pointer files, not image names)."
+    LATEST_RELEASE="${CANONICAL_IMAGE}"
+    # Keep the local pointer file in sync so the stable pointer (Step 3)
+    # publishes the canonical name, not the legacy channel-qualified one.
+    printf '%s\n' "${LATEST_RELEASE}" > "${LATEST_TXT}"
+  else
+    die "latest.txt does not name a valid shanios artifact: ${LATEST_RELEASE}"
+  fi
 fi
 
 # SourceForge verification — artifact + every sidecar that upload.sh ships

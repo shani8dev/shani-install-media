@@ -1,6 +1,6 @@
 # Shanios Install Media Builder
 
-A fully automated build system for **Shanios** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, kiosk, and headless Server profiles. Image/ISO builds run inside a Docker container so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
+A fully automated build system for **Shanios** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, kiosk, and headless Server profiles. Image/ISO builds run inside a container (Docker or Podman — `run_in_container.sh` auto-detects the runtime) so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
 
 Also builds and publishes **AWS AMIs** from an already-built base image — see [Building an AWS AMI](#aws-ami-builds-build-amiyml) below.
 
@@ -532,6 +532,12 @@ genuine UEFI boot via QEMU/OVMF. Uses the same `run_in_container.sh` and
 builder image as every other `build.sh` command — see
 [`test-env/README.md`](test-env/README.md) for the full command list.
 
+> ⚠️ **No `/dev/kvm` on this host** — QEMU boots run under software
+> emulation (TCG) and are very slow. Prefer the nspawn-based commands
+> (`disk`, `ca`, `bootstrap`, `enter`, `upgrade`, `reboot`, `rollback`)
+> for anything that doesn't specifically need a full firmware boot; reserve
+> a full QEMU boot for a final check, not the default verification step.
+
 ```bash
 ./build.sh image -p plasma
 ./build.sh release -p plasma latest
@@ -558,9 +564,15 @@ The container runs `--privileged --cap-add SYS_ADMIN --device=/dev/fuse` because
 
 ## GitHub Actions
 
-This repo has one workflow of its own (`build-ami.yml`, AWS AMI builds —
-see below); the image/ISO build and promotion workflows live in
-shani-builder and are described here for reference.
+This repo has five workflows of its own: `build-ami.yml` (AWS AMI builds
+— see below), `build-image.yml` (shellcheck/py_compile lint via
+`shani-ci-commons` `lint.yml`), `build.yml` (profile image builds via
+`shani-ci-commons` `build.yml`), `notify-telegram.yml` (manual-dispatch
+Telegram notification via `shani-ci-commons` `notify-telegram.yml`), and
+`ai-ci-fixer.yml` (auto-retry on failed builds). The image/ISO build and
+promotion workflows that drive `run_in_container.sh`/`build.sh` inside
+the shared build container live in **shani-builder** and are described
+below for reference.
 
 ### Image/ISO builds (`build-image.yml`, `promote-stable.yml`)
 
@@ -762,13 +774,48 @@ already-published base image rather than assembling one from scratch.
 
 ---
 
-## Related Repositories
+## Design rules & known gaps
 
-| Repository | Description |
-|------------|-------------|
-| [shani-builder](https://github.com/shani8dev/shani-builder) | Docker build environment and automated package builder |
-| [shani-pkgbuilds](https://github.com/shani8dev/shani-pkgbuilds) | PKGBUILD sources for Shanios custom packages |
-| [shani-repo](https://github.com/shani8dev/shani-repo) | Published Arch-compatible package repository (`https://repo.shani.dev`) |
+**Supply-chain discipline:** Every download this pipeline does — the
+builder image, packages inside the container, the base image, the ISO,
+an AMI — should be checksum- and signature-verified with a **hard
+failure** on mismatch, matching the existing ISO path's policy
+(`scripts/build-iso.sh`). A soft-fail "warn and continue" on a
+missing/mismatched signature has been a real, shipped bug here before
+(the AMI/packer SHA-256 sidecar path was one).
+
+**Before claiming a package/service is "missing":** a profile's
+`package-list.txt` only lists top-level meta-packages. The real
+dependency and its `systemctl enable` are one layer down, in
+`shani-pkgbuilds`'s `depends=()` and `<pkg>.install`'s
+`post_install`/`post_upgrade`. See
+`shani-pkgbuilds/AGENTS.md`'s "Where services actually get enabled" and
+this repo's own "Before claiming a package/service is missing" section
+in `AGENTS.md` for the full five-layer chain.
+
+**Known gaps:**
+- `image_profiles/kiosk/` has never been committed — a fresh clone is
+  missing it entirely.
+- Base ShaniOS image is never version-pinned for AMI builds
+  (reproducibility): `packer/scripts/00-bootstrap-shanios.sh:69-82`
+  always resolves `latest.txt`.
+- Builder host AMI floats to "most recent" (minor, reproducibility):
+  `packer/templates/shanios-ami.pkr.hcl:36-43` has no pinned AMI ID.
+
+---
+
+## Related Repositories & Ownership
+
+| Repository | Relationship | This repo's role |
+|------------|-------------|-----------------|
+| [shani-builder](https://github.com/shani8dev/shani-builder) | Docker build environment + package builder | Consumer of the Docker image; hosts the `build-image.yml`/`promote-stable.yml` workflows that drive this repo's builds |
+| [shani-pkgbuilds](https://github.com/shani8dev/shani-pkgbuilds) | PKGBUILD sources | Consumer — packages `shani-settings`, `shani-keyring`, `shani-deploy` |
+| [shani-repo](https://github.com/shani8dev/shani-repo) | Published package database | Publish target for `shani-builder`'s `pkg-builder.sh` |
+| [shani-deploy](https://github.com/shani8dev/shani-deploy) | Blue-green deploy/rollback/health scripts | **Owner:** this repo packages and tests `shani-deploy`'s scripts, but the source of truth lives there. A fix belongs in `shani-deploy`, not a local patched copy here. |
+| [os-installer-config](https://github.com/shani8dev/os-installer-config) | `install.sh`/`configure.sh` | **Owner:** this repo only tests them (`build.sh test install`/`configure`). A fix belongs in that repo. |
+| [shani-keyring](https://github.com/shani8dev/shani-keyring) | Pacman trust root | Source of the `[shani]` repo signing key, baked into every image |
+| [shani-settings](https://github.com/shani8dev/shani-settings) | `/etc`+`/usr` config overlay | Baked into desktop profile images |
+| [shani-ci-commons](https://github.com/shani8dev/shani-ci-commons) | Shared CI templates | This repo's `build.yml`, `lint.yml`, `notify-telegram.yml` workflows reference it via `uses:` |
 
 ---
 

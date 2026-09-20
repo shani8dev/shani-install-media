@@ -334,30 +334,46 @@ click.
   call returns success.
 
 **NOT yet verified: a full real-desktop click/type test (e.g. clicking a
-real GNOME/yad button and confirming the app reacts).** Blocked by two
-separate, pre-existing environment facts, not by anything wrong in the new
-code:
-1. **This host has no `/dev/kvm` at all** (`vmx`/`svm` absent from
-   `/proc/cpuinfo` — no hardware virtualization exposed, likely itself a
-   VM/container without nested-virt). `cmd_gui`/`cmd_qemu` fall back to
-   TCG (pure software emulation), which makes a full GNOME boot
-   impractically slow to iterate on here.
-2. **The test-env's current `disk/esp.img` is a genuinely empty FAT32
-   volume** — confirmed by loop-mounting it read-only via
-   `udisksctl loop-setup -r -f` (no root needed) and finding zero files,
-   not even `\EFI\BOOT\BOOTX64.EFI`. This is why `cmd_gui`/`cmd_qemu` hit
-   OVMF's PXE fallback instead of booting shanios at all: these disk images
-   were only ever taken through `bootstrap` (writes straight to the
-   `@blue`/`@green` subvolumes for nspawn testing) and never through a real
-   `install`+`configure` pass, which is what actually runs
-   `gen-efi.sh`/`finalize_boot_entries` to populate the ESP with a bootable
-   UKI. **`cmd_gui`/`cmd_qemu` appear to have never been exercised
-   end-to-end in this environment before this session.** To get a real
-   bootable image for a full desktop-level UI-automation test: run
-   `test-env/test.sh install -p <profile>` then `configure -p <profile>`
-   (needs the sibling `os-installer-config` checkout, confirmed present at
-   `../os-installer-config`) against a fresh whole-disk image, *not* just
-   `bootstrap`.
+  real GNOME/yad button and confirming the app reacts).** Blocked by two
+  separate, pre-existing environment facts, not by anything wrong in the new
+  code:
+  1. **This host has no `/dev/kvm` at all** (`vmx`/`svm` absent from
+    `/proc/cpuinfo` — no hardware virtualization exposed, likely itself a
+    VM/container without nested-virt). `cmd_gui`/`cmd_qemu` fall back to
+    TCG (pure software emulation), which makes a full GNOME boot
+    impractically slow to iterate on here.
+  2. **The test-env's current `disk/esp.img` is a genuinely empty FAT32
+    volume** — confirmed by loop-mounting it read-only via
+    `udisksctl loop-setup -r -f` (no root needed) and finding zero files,
+    not even `\EFI\BOOT\BOOTX64.EFI`. This is why `cmd_gui`/`cmd_qemu` hit
+    OVMF's PXE fallback instead of booting shanios at all: these disk images
+    were only ever taken through `bootstrap` (writes straight to the
+    `@blue`/`@green` subvolumes for nspawn testing) and never through a real
+    `install`+`configure` pass, which is what actually runs
+    `gen-efi.sh`/`finalize_boot_entries` to populate the ESP with a bootable
+    UKI. **`cmd_gui`/`cmd_qemu` appear to have never been exercised
+    end-to-end in this environment before this session.** To get a real
+    bootable image for a full desktop-level UI-automation test: run
+    `test-env/test.sh install -p <profile>` then `configure -p <profile>`
+    (needs the sibling `os-installer-config` checkout, confirmed present at
+    `../os-installer-config`) against a fresh whole-disk image, *not* just
+    `bootstrap`.
+
+  **Reconciled with the boot-path change (2026-09-19):** `cmd_qemu`/
+  `cmd_gui` no longer boot `disk/esp.img` unconditionally — they resolve
+  their backing image through the shared `_resolve_qemu_boot_drives()`
+  helper (env `SHANIOS_TEST_QEMU_DISK`, default `auto`), which **prefers
+  `disk/install.img`** (the whole-disk image `install`+`configure`/
+  `bootstrap` actually produce and populate with a signed UKI) and only
+  falls back to the empty `root.img`+`esp.img` pair when `install.img` is
+  absent, emitting a warning so the empty-pair case is never silent. The
+  empty-pair hazard itself is **not removed** — `disk` still creates both
+  images blank and nothing in the supported flow populates them, so
+  `SHANIOS_TEST_QEMU_DISK=root` (or an absent `install.img` under `auto`)
+  still boots to firmware PXE exactly as documented above; the fix is that
+  the default path no longer lands there by accident. `cmd_iso` still uses
+  `root.img`+`esp.img` directly as blank install targets (the live
+  installer writes its own), bypassing the helper entirely.
 
 ## Host-side fix: `run_in_container.sh` now hands build output back to the invoking user
 
