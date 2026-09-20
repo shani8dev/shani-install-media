@@ -27,3 +27,10 @@ jobs:
       docker-image: "docker.io/shrinivasvkumbhar/shani-builder"
       build-command: "build.sh image -p ${{ github.event.inputs.profile || 'gnome' }}"
       runtime: "docker"
+
+  security:
+    name: Security
+    uses: shani8dev/shani-ci-commons/.github/workflows/security.yml@main
+    with:
+      scan-type: all
+    needs: build
