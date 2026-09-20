@@ -564,14 +564,17 @@ The container runs `--privileged --cap-add SYS_ADMIN --device=/dev/fuse` because
 
 ## GitHub Actions
 
-This repo has four workflows of its own: `build-ami.yml` (AWS AMI builds
-— see below), `build-image.yml` (shellcheck/py_compile lint via
-`shani-ci-commons` `lint.yml`), `build.yml` (profile image builds via
-`shani-ci-commons` `build.yml`), and
+This repo has two workflows of its own: `build-ami.yml` (AWS AMI builds
+— see below) and
 `ai-ci-fixer.yml` (auto-retry on failed builds). A duplicate
 `notify-telegram.yml` was removed 2026-09-20 — the `TELEGRAM_*` secrets it
 needs live in **shani-builder**, whose copy of that workflow should be
-used for a manual-dispatch notification. The image/ISO build and
+used for a manual-dispatch notification. The local build workflows
+`build-image.yml` and `build.yml` were removed on the same day — both
+duplicated shani-builder's `Build Image and Upload` pipeline (and
+`build.yml`'s container-build step never ran at all: it lacked the
+`build-type` input the shared workflow gates on, so the job only
+checked out the repo). The image/ISO build and
 promotion workflows that drive `run_in_container.sh`/`build.sh` inside
 the shared build container live in **shani-builder** and are described
 below for reference.
@@ -810,14 +813,14 @@ in `AGENTS.md` for the full five-layer chain.
 
 | Repository | Relationship | This repo's role |
 |------------|-------------|-----------------|
-| [shani-builder](https://github.com/shani8dev/shani-builder) | Docker build environment + package builder | Consumer of the Docker image; hosts the `build-image.yml`/`promote-stable.yml` workflows that drive this repo's builds |
+| [shani-builder](https://github.com/shani8dev/shani-builder) | Docker build environment + package builder | Consumer of the Docker image; hosts the `Build Image and Upload`/`promote-stable.yml` workflows that drive this repo's builds (the local duplicates were removed 2026-09-20) |
 | [shani-pkgbuilds](https://github.com/shani8dev/shani-pkgbuilds) | PKGBUILD sources | Consumer — packages `shani-settings`, `shani-keyring`, `shani-deploy` |
 | [shani-repo](https://github.com/shani8dev/shani-repo) | Published package database | Publish target for `shani-builder`'s `pkg-builder.sh` |
 | [shani-deploy](https://github.com/shani8dev/shani-deploy) | Blue-green deploy/rollback/health scripts | **Owner:** this repo packages and tests `shani-deploy`'s scripts, but the source of truth lives there. A fix belongs in `shani-deploy`, not a local patched copy here. |
 | [os-installer-config](https://github.com/shani8dev/os-installer-config) | `install.sh`/`configure.sh` | **Owner:** this repo only tests them (`build.sh test install`/`configure`). A fix belongs in that repo. |
 | [shani-keyring](https://github.com/shani8dev/shani-keyring) | Pacman trust root | Source of the `[shani]` repo signing key, baked into every image |
 | [shani-settings](https://github.com/shani8dev/shani-settings) | `/etc`+`/usr` config overlay | Baked into desktop profile images |
-| [shani-ci-commons](https://github.com/shani8dev/shani-ci-commons) | Shared CI templates | This repo's `build.yml` and `build-image.yml` workflows reference it via `uses:` |
+| [shani-ci-commons](https://github.com/shani8dev/shani-ci-commons) | Shared CI templates | This repo's `build-ami.yml` workflow references it via `uses:` |
 
 ---
 

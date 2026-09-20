@@ -1,14 +1,15 @@
 name: AI CI Failure Fixer
 #
-# Reacts to a failed "Build ShaniOS Image (Non-AMI)" or "Build ShaniOS AMI"
-# run by handing the failure logs to mini-swe-agent
-# (https://mini-swe-agent.com), which diagnoses the root cause and proposes a
-# fix as a PR — it never pushes to main directly.
+# Reacts to a failed "Build ShaniOS AMI" run by handing the failure logs to
+# mini-swe-agent (https://mini-swe-agent.com), which diagnoses the root cause
+# and proposes a fix as a PR — it never pushes to main directly.
 #
 # WHY THIS LIVES IN shani-install-media: GitHub's `workflow_run` trigger only
-# fires for workflows in the SAME repo as the workflow file, and both builds
-# this fixer reacts to ("Build ShaniOS Image (Non-AMI)" and "Build ShaniOS
-# AMI") are defined here. Part of the build logic it may need to fix lives in
+# fires for workflows in the SAME repo as the workflow file, and the AMI build
+# ("Build ShaniOS AMI") this fixer reacts to is defined here. The image/ISO
+# build ("Build Image and Upload") lives in shani-builder and has its own
+# fixer there; the duplicate local build workflows were removed 2026-09-20 to
+# avoid double-building. Part of the build logic it may need to fix lives in
 # the sibling shani-pkgbuilds repo (PKGBUILDs), which is why this workflow
 # checks out both repos and can open a fix PR in either.
 #
@@ -34,7 +35,7 @@ name: AI CI Failure Fixer
 
 on:
   workflow_run:
-    workflows: ["Build ShaniOS Image (Non-AMI)", "Build ShaniOS AMI"]
+    workflows: ["Build ShaniOS AMI"]
     types: [completed]
 
 permissions:

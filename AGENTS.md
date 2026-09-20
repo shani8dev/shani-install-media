@@ -579,13 +579,18 @@ is deliberately just the current-state summary.
   across the shani ecosystem, so `README.md:775-777`'s reference is now
   accurate.
 - **6 profiles:** cosmic, gnome, kiosk, plasma, server, shared.
-- **CI status.** 4 workflow files: `build-ami.yml` (Packer AMI builds,
+- **CI status.** 2 workflow files: `build-ami.yml` (Packer AMI builds,
   triggered on pushes touching `packer/**` — runs `packer init`/`packer
   validate templates/`, then a real `packer build` against AWS to produce a
-  genuine AMI), `build-image.yml` (shellcheck/py_compile lint via
-  `shani-ci-commons` `lint.yml`), `build.yml` (profile image builds via
-  `shani-ci-commons` `build.yml`), and `ai-ci-fixer.yml` (auto-retry on
-  failed builds). `notify-telegram.yml` was removed 2026-09-20 — it was a
+  genuine AMI), and `ai-ci-fixer.yml` (auto-retry on failed builds;
+  watches only `Build ShaniOS AMI` — the image/ISO builds live in
+  shani-builder). The local build workflows `build-image.yml` and
+  `build.yml` were removed 2026-09-20 — both duplicated shani-builder's
+  `Build Image and Upload` pipeline (the `build-image.yml` one was a
+  keyless duplicate; `build.yml`'s `Container build` step was a silent
+  no-op because it never passed `build-type` to the shared workflow, so
+  every build step was `skipped`). `notify-telegram.yml` was removed
+  2026-09-20 — it was a
   duplicate of shani-builder's (only the default display name differed) and
   the `TELEGRAM_*` secrets it needs live there, not here; use that repo's
   copy for a manual-dispatch notification.
