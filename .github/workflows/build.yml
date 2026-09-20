@@ -32,5 +32,9 @@ jobs:
     name: Security
     uses: shani8dev/shani-ci-commons/.github/workflows/security.yml@main
     with:
-      scan-type: all
+      # shani-install-media tracks no keyring files, so the keyring-checksum
+      # branch of security.yml (which runs tests/test-check-keyring-sync.sh
+      # from the caller repo root — a file only shani-pkgbuilds carries) was
+      # failing with exit 127. Secrets-scan only is the correct scope here.
+      scan-type: secrets
     needs: build
