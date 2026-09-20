@@ -584,8 +584,11 @@ is deliberately just the current-state summary.
   validate templates/`, then a real `packer build` against AWS to produce a
   genuine AMI), `build-image.yml` (shellcheck/py_compile lint via
   `shani-ci-commons` `lint.yml`), `build.yml` (profile image builds via
-  `shani-ci-commons` `build.yml`), and `notify-telegram.yml` (manual-dispatch
-  Telegram notification via `shani-ci-commons` `notify-telegram.yml`).
+  `shani-ci-commons` `build.yml`), and `ai-ci-fixer.yml` (auto-retry on
+  failed builds). `notify-telegram.yml` was removed 2026-09-20 — it was a
+  duplicate of shani-builder's (only the default display name differed) and
+  the `TELEGRAM_*` secrets it needs live there, not here; use that repo's
+  copy for a manual-dispatch notification.
   `build-ami.yml` is a *different* verification path from `test-env`'s local
   loop-disk harness used elsewhere in this file — a `packer` template
   change is only truly verified by this workflow (or a manual

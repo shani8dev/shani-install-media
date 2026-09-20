@@ -564,12 +564,14 @@ The container runs `--privileged --cap-add SYS_ADMIN --device=/dev/fuse` because
 
 ## GitHub Actions
 
-This repo has five workflows of its own: `build-ami.yml` (AWS AMI builds
+This repo has four workflows of its own: `build-ami.yml` (AWS AMI builds
 — see below), `build-image.yml` (shellcheck/py_compile lint via
 `shani-ci-commons` `lint.yml`), `build.yml` (profile image builds via
-`shani-ci-commons` `build.yml`), `notify-telegram.yml` (manual-dispatch
-Telegram notification via `shani-ci-commons` `notify-telegram.yml`), and
-`ai-ci-fixer.yml` (auto-retry on failed builds). The image/ISO build and
+`shani-ci-commons` `build.yml`), and
+`ai-ci-fixer.yml` (auto-retry on failed builds). A duplicate
+`notify-telegram.yml` was removed 2026-09-20 — the `TELEGRAM_*` secrets it
+needs live in **shani-builder**, whose copy of that workflow should be
+used for a manual-dispatch notification. The image/ISO build and
 promotion workflows that drive `run_in_container.sh`/`build.sh` inside
 the shared build container live in **shani-builder** and are described
 below for reference.
@@ -815,7 +817,7 @@ in `AGENTS.md` for the full five-layer chain.
 | [os-installer-config](https://github.com/shani8dev/os-installer-config) | `install.sh`/`configure.sh` | **Owner:** this repo only tests them (`build.sh test install`/`configure`). A fix belongs in that repo. |
 | [shani-keyring](https://github.com/shani8dev/shani-keyring) | Pacman trust root | Source of the `[shani]` repo signing key, baked into every image |
 | [shani-settings](https://github.com/shani8dev/shani-settings) | `/etc`+`/usr` config overlay | Baked into desktop profile images |
-| [shani-ci-commons](https://github.com/shani8dev/shani-ci-commons) | Shared CI templates | This repo's `build.yml`, `lint.yml`, `notify-telegram.yml` workflows reference it via `uses:` |
+| [shani-ci-commons](https://github.com/shani8dev/shani-ci-commons) | Shared CI templates | This repo's `build.yml` and `build-image.yml` workflows reference it via `uses:` |
 
 ---
 
