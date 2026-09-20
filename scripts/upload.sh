@@ -7,7 +7,8 @@
 #   all    both of the above
 #
 # All uploads are mirrored to Cloudflare R2 if R2_BUCKET is set.
-# After upload, old dated R2 folders are pruned (keeps 2 latest + stable pin).
+# After upload, old dated folders are pruned on both SourceForge FRS and
+# Cloudflare R2 (keeps 2 latest + latest/stable/ISO pin).
 #
 # Usage:
 #   ./upload.sh -p <profile> [--no-sf] [--no-r2] [--verify-only] [image|iso|all]
@@ -104,6 +105,106 @@ r2_cleanup() {
   done
 
   log "R2: cleanup complete."
+}
+
+# Prune old dated SourceForge FRS folders, keeping the 2 most recent and
+# any folder pinned by latest.txt, stable.txt, iso-latest.txt, or
+# iso-stable.txt. Mirrors r2_cleanup above, but the SF restricted shell
+# blocks rm/ls/cat, so listing uses sftp, pins are read from the public CDN,
+# and deletion is rsync --delete from an empty local dir + sftp rmdir.
+sf_cleanup() {
+  [[ "${NO_SF}" == "true" ]] && { log "SF: skipping cleanup (--no-sf)"; return 0; }
+
+  log "SF: cleaning up old build folders under ${PROFILE}/ (keeping 2 latest + pinned by latest/stable + ISO folders)..."
+
+  # Helper: extract 8-digit build date from a pointer file on the SF CDN.
+  _sf_pin_from_pointer() {
+    local file="$1"
+    local content
+    content=$(curl -fsSL --max-time 20 \
+      "https://downloads.sourceforge.net/project/shanios/${PROFILE}/${file}" 2>/dev/null || true)
+    if [[ -n "$content" ]]; then
+      local date
+      date=$(echo "$content" | grep -oE '[0-9]{8}' | head -n1 || true)
+      if [[ -n "$date" ]]; then
+        log "SF: ${file} pins build date: ${date}"
+        echo "$date"
+      else
+        log "SF: ${file} exists but contains no 8-digit date — pin skipped."
+      fi
+    fi
+  }
+
+  local stable_date latest_date iso_date iso_stable_date
+  stable_date="$(_sf_pin_from_pointer stable.txt)"
+  latest_date="$(_sf_pin_from_pointer latest.txt)"
+  iso_date="$(_sf_pin_from_pointer iso-latest.txt)"
+  iso_stable_date="$(_sf_pin_from_pointer iso-stable.txt)"
+
+  # List dated build folders on SourceForge via sftp (the restricted shell
+  # blocks ls). sftp emits "sftp> " prompts and banner lines — keep only
+  # pure YYYYMMDD folder names.
+  local all_dates=()
+  while IFS= read -r folder; do
+    folder="${folder// /}"
+    [[ "$folder" =~ ^[0-9]{8}$ ]] && all_dates+=("$folder")
+  done < <(timeout 60 sftp -b - -o ConnectTimeout=15 -o BatchMode=yes \
+      librewish@frs.sourceforge.net <<SFEOF 2>/dev/null \
+      | grep -v '^sftp>' | awk '{print $NF}' | grep -E '^[0-9]{8}$' | sort -r || true
+ls -la /home/frs/project/shanios/${PROFILE}/
+exit
+SFEOF
+)
+
+  if [[ ${#all_dates[@]} -eq 0 ]]; then
+    log "SF: no dated build folders found, nothing to clean up."
+    return 0
+  fi
+
+  # Deduplicating keep-list helper
+  local keep=()
+  _sf_add_keep() {
+    local d="$1"
+    [[ -z "$d" ]] && return
+    [[ " ${keep[*]:-} " =~ (^|[[:space:]])"${d}"([[:space:]]|$) ]] && return
+    keep+=("$d")
+  }
+
+  # Always keep the 2 most recent dated folders
+  _sf_add_keep "${all_dates[0]:-}"
+  _sf_add_keep "${all_dates[1]:-}"
+
+  # Pin folders referenced by pointer files
+  _sf_add_keep "$stable_date"
+  _sf_add_keep "$latest_date"
+  _sf_add_keep "$iso_date"
+  _sf_add_keep "$iso_stable_date"
+
+  log "SF: keeping folders: ${keep[*]:-}"
+
+  # Deleting a folder needs an empty local dir for rsync --delete to drain
+  # the remote tree; the empty shell of the dated folder is then removed
+  # with sftp rmdir.
+  local empty_dir
+  empty_dir="$(mktemp -d)"
+  for d in "${all_dates[@]}"; do
+    if [[ ! " ${keep[*]:-} " =~ (^|[[:space:]])"${d}"([[:space:]]|$) ]]; then
+      log "SF: deleting old build folder ${PROFILE}/${d}/"
+      if ! rsync -r --delete -e "ssh -o ConnectTimeout=15" \
+          "${empty_dir}/" "librewish@frs.sourceforge.net:/home/frs/project/shanios/${PROFILE}/${d}/" 2>/dev/null; then
+        log "Warning: SF cleanup failed to drain ${PROFILE}/${d} (non-fatal)"
+      else
+        timeout 60 sftp -b - -o ConnectTimeout=15 -o BatchMode=yes \
+            librewish@frs.sourceforge.net <<SFEOF >/dev/null 2>&1 || true
+rmdir /home/frs/project/shanios/${PROFILE}/${d}
+exit
+SFEOF
+      fi
+    fi
+  done
+  rm -rf "${empty_dir}"
+
+  log "SF: cleanup complete."
 }
 
 sf_upload() {
@@ -321,10 +422,11 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
 fi  # end uploads
 
 # ---------------------------------------------------------------------------
-# R2 cleanup (skipped in verify-only mode — that mode must be read-only)
+# Cleanup (skipped in verify-only mode — that mode must be read-only)
 # ---------------------------------------------------------------------------
 if [[ "${VERIFY_ONLY}" != "true" ]]; then
   r2_cleanup
+  sf_cleanup
 fi
 
 # ---------------------------------------------------------------------------
