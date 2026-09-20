@@ -19,11 +19,6 @@ on:
         description: "Root volume GiB (server=20, desktop=40)"
         required: false
         default: "20"
-      promote_stable:
-        description: "Promote to stable after build"
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: ami-build-${{ github.ref }}
@@ -46,15 +41,14 @@ jobs:
     steps:
       - name: Notify Telegram — Build Started
         if: github.event_name == 'workflow_dispatch'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && exit 0
-          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg sha "${{ github.sha }}" '{text: ("🏗️ **ShaniOS AMI Build Started**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nSHA: `" + $sha + "`")}')
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --argjson msg "$MSG" '{chat_id: $chat, text: $msg.text, parse_mode: "Markdown"}')" || true
+        uses: shani8dev/shani-ci-commons/.github/actions/send-telegram@main
+        with:
+          status: started
+          message: |-
+            **ShaniOS AMI Build Started**
+            Profile: `${{ env.SHANIOS_PROFILE }}`
+            Branch: `${{ github.ref_name }}`
+            SHA: `${{ github.sha }}`
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -136,28 +130,26 @@ jobs:
 
       - name: Notify Telegram — Build Failed
         if: failure() && github.event_name == 'workflow_dispatch'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && exit 0
-          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("❌ **ShaniOS AMI Build Failed**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\n[View logs](" + $run_url + ")")}')
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --argjson msg "$MSG" '{chat_id: $chat, text: $msg.text, parse_mode: "Markdown"}')" || true
+        uses: shani8dev/shani-ci-commons/.github/actions/send-telegram@main
+        with:
+          status: failure
+          message: |-
+            **ShaniOS AMI Build Failed**
+            Profile: `${{ env.SHANIOS_PROFILE }}`
+            Branch: `${{ github.ref_name }}`
+            [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
       - name: Notify Telegram — Build Succeeded
         if: success() && github.event_name == 'workflow_dispatch'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && exit 0
-          AMI_ID="${{ steps.ami.outputs.ami_id }}"
-          MSG=$(jq -n --arg profile "${{ env.SHANIOS_PROFILE }}" --arg ref "${{ github.ref_name }}" --arg ami "$AMI_ID" --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '{text: ("✅ **ShaniOS AMI Build Complete**\nProfile: `" + $profile + "`\nBranch: `" + $ref + "`\nAMI ID: `" + $ami + "`\n[View logs](" + $run_url + ")")}')
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg chat "$TELEGRAM_CHAT_ID" --argjson msg "$MSG" '{chat_id: $chat, text: $msg.text, parse_mode: "Markdown"}')" || true
+        uses: shani8dev/shani-ci-commons/.github/actions/send-telegram@main
+        with:
+          status: success
+          message: |-
+            **ShaniOS AMI Build Complete**
+            Profile: `${{ env.SHANIOS_PROFILE }}`
+            Branch: `${{ github.ref_name }}`
+            AMI ID: `${{ steps.ami.outputs.ami_id }}`
+            [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
       - name: Job summary
         if: success()
