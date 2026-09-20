@@ -430,32 +430,73 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Post-upload SourceForge verification (base image modes only)
+# Remote SHA-256 verification against the SourceForge CDN
 # ---------------------------------------------------------------------------
-if [[ "${NO_SF}" == "false" && "${VERIFY_ONLY}" != "true" && "$MODE" != "iso" ]]; then
-  log "Verifying uploaded base image artifact on SourceForge..."
-  BASE_ZST=""
-  for _f in "${OUTPUT_SUBDIR}"/*.zst; do
-    [[ "$_f" == *flatpakfs.zst || "$_f" == *snapfs.zst ]] && continue
-    [[ -f "$_f" ]] && { BASE_ZST="$_f"; break; }
+# verify_remote_sha256 <label> <local_file> [hard]
+#   Fetches <local_file>.sha256 from the SF CDN for PROFILE/RESOLVED_DATE
+#   and compares it against the local file's hash. Returns 0 on verified,
+#   1 if the sidecar could not be fetched (CDN lag), 2 on mismatch.
+#   With `hard`, a mismatch is fatal via die() (verify-only gate mode).
+verify_remote_sha256() {
+  local label="$1" local_file="$2" hard="${3:-}"
+  local base remote_url remote_sha local_sha remote_hash attempt
+
+  base="$(basename "${local_file}")"
+  remote_url="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${RESOLVED_DATE}/${base}.sha256"
+
+  remote_sha=""
+  for attempt in 1 2 3; do
+    remote_sha=$(curl -fsSL --max-time 30 --connect-timeout 10 \
+      --user-agent "shanios-verify/1.0" "${remote_url}" 2>/dev/null || true)
+    [[ -n "$remote_sha" ]] && break
+    sleep 3
   done
 
-  if [[ -n "$BASE_ZST" ]]; then
-    REMOTE_SHA256_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${RESOLVED_DATE}/$(basename "${BASE_ZST}").sha256"
-    REMOTE_SHA256=$(curl -fsSL --max-time 30 --connect-timeout 10 \
-      --user-agent "shanios-verify/1.0" "${REMOTE_SHA256_URL}" 2>/dev/null || true)
+  if [[ -z "$remote_sha" ]]; then
+    log "Warning: Could not fetch remote .sha256 for ${label} — CDN propagation may still be in progress."
+    return 1
+  fi
 
-    if [[ -z "$REMOTE_SHA256" ]]; then
-      log "Warning: Could not fetch remote .sha256 — CDN propagation may still be in progress."
+  local_sha=$(sha256sum "${local_file}" | awk '{print $1}')
+  remote_hash=$(echo "$remote_sha" | awk '{print $1}')
+  if [[ "$local_sha" == "$remote_hash" ]]; then
+    log "✅ Verification passed: remote SHA-256 for ${label} matches local artifact."
+    return 0
+  fi
+
+  if [[ "$hard" == "hard" ]]; then
+    die "Verification FAILED: SHA-256 mismatch for ${label} — local: ${local_sha}, remote: ${remote_hash}."
+  fi
+  log "Warning: SHA-256 mismatch for ${label} — local: ${local_sha}, remote: ${remote_hash}."
+  return 2
+}
+
+# ---------------------------------------------------------------------------
+# Remote verification (also the whole body of --verify-only, which skips
+# uploads and cleanup above and lands here to compare instead)
+# ---------------------------------------------------------------------------
+if [[ "${NO_SF}" == "false" ]]; then
+  _verify_hard=""
+  [[ "${VERIFY_ONLY}" == "true" ]] && _verify_hard="hard"
+
+  if [[ "$MODE" == "image" || "$MODE" == "all" ]]; then
+    BASE_ZST=""
+    for _f in "${OUTPUT_SUBDIR}"/*.zst; do
+      [[ "$_f" == *flatpakfs.zst || "$_f" == *snapfs.zst ]] && continue
+      [[ -f "$_f" ]] && { BASE_ZST="$_f"; break; }
+    done
+
+    if [[ -n "$BASE_ZST" ]]; then
+      verify_remote_sha256 "base image" "${BASE_ZST}" "$_verify_hard" || true
     else
-      LOCAL_SHA256=$(sha256sum "${BASE_ZST}" | awk '{print $1}')
-      REMOTE_HASH=$(echo "$REMOTE_SHA256" | awk '{print $1}')
-      if [[ "$LOCAL_SHA256" == "$REMOTE_HASH" ]]; then
-        log "✅ Verification passed: remote SHA-256 matches local artifact."
-      else
-        log "Warning: SHA-256 mismatch — local: ${LOCAL_SHA256}, remote: ${REMOTE_HASH}."
-      fi
+      log "Warning: No base image .zst found in ${OUTPUT_SUBDIR} to verify."
     fi
+  fi
+
+  if [[ "$MODE" == "iso" || "$MODE" == "all" ]]; then
+    for _iso in "${OUTPUT_SUBDIR}"/signed_*.iso; do
+      [[ -f "$_iso" ]] && verify_remote_sha256 "signed ISO" "$_iso" "$_verify_hard" || true
+    done
   fi
 fi
 
