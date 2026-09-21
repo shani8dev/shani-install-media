@@ -10,14 +10,17 @@ com.heroicgameslauncher.hgl
 com.valvesoftware.Steam
 com.valvesoftware.Steam.CompatibilityTool.Boxtron
 com.valvesoftware.Steam.Utility.steamtinkerlaunch
-org.freedesktop.Platform.VulkanLayer.MangoHud
-org.freedesktop.Platform.VulkanLayer.gamescope
-org.freedesktop.Platform.VulkanLayer.vkBasalt
+# VulkanLayer extensions are multi-branch on Flathub; bare IDs fail `flatpak
+# install` in non-interactive mode. Pin refs matching the
+# org.freedesktop.Platform 25.08 runtime the gaming apps use.
+runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/25.08
+runtime/org.freedesktop.Platform.VulkanLayer.gamescope/x86_64/25.08
+runtime/org.freedesktop.Platform.VulkanLayer.vkBasalt/x86_64/25.08
 com.github.Matoking.protontricks
 com.vysp3r.ProtonPlus
 com.valvesoftware.Steam.CompatibilityTool.Proton-GE
 com.obsproject.Studio
-org.freedesktop.Platform.VulkanLayer.OBSVkCapture
+runtime/org.freedesktop.Platform.VulkanLayer.OBSVkCapture/x86_64/25.08
 com.obsproject.Studio.Plugin.OBSVkCapture
 com.obsproject.Studio.Plugin.Gstreamer
 com.obsproject.Studio.Plugin.GStreamerVaapi

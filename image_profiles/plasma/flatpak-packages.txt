@@ -13,15 +13,20 @@ io.github.antimicrox.antimicrox
 org.openrgb.OpenRGB
 org.freedesktop.Piper
 io.github.benjamimgois.goverlay
-org.freedesktop.Platform.VulkanLayer.MangoHud
-org.freedesktop.Platform.VulkanLayer.gamescope
-org.freedesktop.Platform.VulkanLayer.vkBasalt
+# VulkanLayer extensions are multi-branch on Flathub; bare IDs fail `flatpak
+# install` in non-interactive mode. Pin refs matching the
+# org.freedesktop.Platform 25.08 runtime the gaming apps use.
+runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/25.08
+runtime/org.freedesktop.Platform.VulkanLayer.gamescope/x86_64/25.08
+runtime/org.freedesktop.Platform.VulkanLayer.vkBasalt/x86_64/25.08
 org.virt_manager.virt_manager.Extension.Qemu
 org.virt_manager.virt-manager
 it.mijorus.gearlever
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
-org.kde.KStyle.Kvantum
+# Kvantum is a multi-branch extension of org.kde.Platform; 6.10 is its
+# newest KDE-6 branch available on Flathub.
+runtime/org.kde.KStyle.Kvantum/x86_64/6.10
 org.kde.kolourpaint
 org.kde.kompare
 org.kde.kate

@@ -106,6 +106,17 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
     packages+=("$pkg")
 done < "$FLATPAK_PACKAGE_LIST"
 
+# Normalize each entry to its base ID. The list may contain fully-qualified
+# refs (e.g. runtime/org.freedesktop.Platform.VulkanLayer.MangoHud/x86_64/25.08)
+# to disambiguate multi-branch extension runtimes; base-name comparisons in
+# the runtime-removal pass must recognize those, or the pass would uninstall
+# the very extensions it is meant to converge.
+packages_base=()
+for pkg in "${packages[@]}"; do
+    pkg_base="${pkg#runtime/}"
+    packages_base+=("${pkg_base%%/*}")
+done
+
 if [[ ${#packages[@]} -eq 0 ]]; then
     log "Flatpak package list is empty for profile '${PROFILE}'. Exiting..."
     exit 0
@@ -284,8 +295,8 @@ while IFS= read -r pkg || [[ -n "$pkg" ]]; do
         base_app="${pkg_base%.*}"              # e.g., from "org.gnome.Loupe.HEIC" derive "org.gnome.Loupe"
     fi
 
-    if printf '%s\n' "${packages[@]}" | grep -Fxq "$pkg_base" || \
-       printf '%s\n' "${packages[@]}" | grep -Fxq "$base_app"; then
+    if printf '%s\n' "${packages_base[@]}" | grep -Fxq "$pkg_base" || \
+       printf '%s\n' "${packages_base[@]}" | grep -Fxq "$base_app"; then
         log "Keeping runtime $pkg because required package ($pkg_base or $base_app) is in the package list"
         keep=1
     fi
