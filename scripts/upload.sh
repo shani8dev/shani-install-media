@@ -34,7 +34,13 @@ r2_upload() {
 }
 
 # Prune old dated R2 folders, keeping the 2 most recent and any folder
-# pinned by latest.txt, stable.txt, or containing a signed ISO.
+# pinned by latest.txt, stable.txt, iso-latest.txt, or iso-stable.txt.
+# (The "containing a signed ISO" wording that used to be here was never
+# implemented — the code pins folders by pointer file only, which is the
+# stronger guarantee: it keeps exactly the folder a pointer references,
+# whether or not an ISO actually lives there. Adding a new channel is
+# just a new <channel>.txt pointer; a folder with no matching pointer is
+# eligible for deletion regardless of contents.)
 r2_cleanup() {
   [[ "${NO_R2}" == "true" ]] && { log "R2: skipping cleanup (--no-r2)"; return 0; }
   [[ -z "${R2_BUCKET:-}" ]]  && return 0
