@@ -685,6 +685,15 @@ is deliberately just the current-state summary.
 - **`promote-stable.sh` connect-timeout config drift — FIXED.** All 7 curl
   calls now honor `config/config.sh`'s `NETWORK_CONNECT_TIMEOUT` (was 6 of
   7 hardcoded).
+- **`promote-stable.sh` could never succeed — FIXED 2026-09-24.** It
+  required `<image>.zst.packages.txt`; the build publishes
+  `<os>-<date>-<profile>.packages.txt` (validate-image.sh has the right
+  name), so every promotion aborted on a 404. Also: with `--no-sf` a failed
+  R2 upload printed "SUCCESS" (now fatal), and `--expect=<file>` refuses
+  unless `latest.txt` names the build shani-testbed's `gate` tested
+  (`promote-stable.yml` runs the gate first). Careful when testing it:
+  `R2_BUCKET=` empty is reset to `shanios` by the script — run it from a
+  scratch copy on a machine with no rclone remote, or it really promotes.
 - **Inconsistent customization-script shebangs — FIXED.** The three
   profile customization scripts were actually 0-byte files, not merely
   missing a shebang; each now contains just a shebang line. Worth knowing:

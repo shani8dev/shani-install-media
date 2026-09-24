@@ -101,6 +101,16 @@ fi
 # Build the user command string with proper bash quoting
 USER_CMD=$(printf '%q ' "$CMD" "$@")
 
+# downloads.shani.dev -> 127.0.0.1 is for the local `test serve` mirror only
+# (see "Run the container" below). Anything that must reach the REAL R2 -
+# `test gate`, `--from-r2`, promote-stable/upload and every non-test
+# command - gets no mapping: with it, nothing listens on the loopback and
+# every download fails with "Failed to connect ... after 0 ms".
+MIRROR_HOST_ARGS=()
+if [[ "${1:-}" == test && "${2:-}" != gate && "${SHANIOS_TEST_REAL_R2:-0}" != 1 && " $* " != *" --from-r2 "* ]]; then
+    MIRROR_HOST_ARGS=(--add-host="downloads.shani.dev:127.0.0.1")
+fi
+
 # ---------------------------------------------------------------------------
 # Build the setup prefix that runs inside the container before the user command.
 # Order: pacman SigLevel patch → SSH key → GPG key → rclone config → user cmd
@@ -431,7 +441,7 @@ fi
     -v /sys/fs/cgroup:/sys/fs/cgroup \
     -v /lib/modules:/lib/modules:ro \
     -v /dev:/dev \
-    --add-host="downloads.shani.dev:127.0.0.1" \
+    "${MIRROR_HOST_ARGS[@]}" \
     "${X11_FORWARD_ARGS[@]}" \
     "${WAYLAND_FORWARD_ARGS[@]}" \
     -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \

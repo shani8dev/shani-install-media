@@ -280,8 +280,14 @@ check_dependencies_install() {
 
     if [[ ${#missing_pkgs[@]} -gt 0 ]] && command -v pacman >/dev/null 2>&1; then
         log "install/configure need packages not in the builder image: ${missing_pkgs[*]} — installing"
-        pacman -Sy --needed --noconfirm "${missing_pkgs[@]}" \
-            || warn "pacman install of one or more packages failed — see errors above"
+        # three tries: a fresh container syncs the databases every time, and
+        # one mirror/DNS timeout used to fail a whole multi-hour test run
+        local try
+        for try in 1 2 3; do
+            pacman -Sy --needed --noconfirm "${missing_pkgs[@]}" && break
+            warn "pacman install failed (try ${try}/3)$( ((try < 3)) && echo ' — retrying in 20s')"
+            ((try < 3)) && sleep 20
+        done
     fi
 
     for entry in "${deps[@]}"; do

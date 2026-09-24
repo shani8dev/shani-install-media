@@ -6,7 +6,13 @@
 # SourceForge and mirrors it to Cloudflare R2.
 #
 # Usage:
-#   ./promote-stable.sh -p <profile> [--no-sf] [--no-r2]
+#   ./promote-stable.sh -p <profile> [--no-sf] [--no-r2] [--expect=<file.zst>] [--expect-iso=<YYYYMMDD>]
+#
+# --expect: promote only if latest.txt still names exactly this artifact —
+# the one shani-testbed's `gate` just tested (its gate-<profile>.passed).
+# A build published between the gate and the promotion is refused, never
+# promoted untested. --expect-iso does the same for iso-latest.txt (the
+# ISO folder the gate fresh-installed from).
 #
 set -Eeuo pipefail
 
@@ -27,15 +33,21 @@ r2_upload() {
   [[ -z "${R2_BUCKET:-}" ]]  && return 0
 
   log "R2: mirroring $(basename "${src}") → r2:${R2_BUCKET}/${dest_subpath}"
-  rclone copy --progress "${src}" "r2:${R2_BUCKET}/${dest_subpath}" \
-    || log "Warning: R2 mirror failed for ${src} (SourceForge upload unaffected)"
+  # With --no-sf, R2 is the only destination: a failed copy there means
+  # nothing was promoted, so it must not end in "SUCCESS".
+  if ! rclone copy --progress "${src}" "r2:${R2_BUCKET}/${dest_subpath}"; then
+    [[ "${NO_SF}" == "true" ]] && die "R2 upload of $(basename "${src}") failed and SourceForge is skipped (--no-sf) — nothing was promoted."
+    log "Warning: R2 mirror failed for ${src} (SourceForge upload unaffected)"
+  fi
 }
 
 usage() {
-  echo "Usage: $(basename "$0") -p <profile> [--no-sf] [--no-r2]"
+  echo "Usage: $(basename "$0") -p <profile> [--no-sf] [--no-r2] [--expect=<file.zst>]"
   echo "  -p <profile>         Profile name (e.g. gnome, plasma)"
   echo "  --no-sf              Skip SourceForge download, verification, and upload"
   echo "  --no-r2              Skip Cloudflare R2 verification and mirror"
+  echo "  --expect=<file.zst>  Refuse unless latest.txt names exactly this (tested) artifact"
+  echo "  --expect-iso=<date>  Refuse unless iso-latest.txt names exactly this (tested) ISO folder"
   echo ""
   echo "This script will:"
   echo "  1. Download the current latest.txt from SourceForge (skipped with --no-sf)"
@@ -53,12 +65,16 @@ usage() {
 PROFILE=""
 NO_SF="${NO_SF:-false}"
 NO_R2="${NO_R2:-false}"
+EXPECT="${EXPECT:-}"
+EXPECT_ISO="${EXPECT_ISO:-}"
 
 _CLEAN_ARGS=()
 for arg in "$@"; do
   case "$arg" in
     --no-sf) NO_SF=true ;;
     --no-r2) NO_R2=true ;;
+    --expect=*) EXPECT="${arg#--expect=}" ;;
+    --expect-iso=*) EXPECT_ISO="${arg#--expect-iso=}" ;;
     *)       _CLEAN_ARGS+=("$arg") ;;
   esac
 done
@@ -206,16 +222,24 @@ if [[ "${LATEST_RELEASE}" != "${CANONICAL_IMAGE}" ]]; then
   fi
 fi
 
+if [[ -n "${EXPECT}" && "${LATEST_RELEASE}" != "${EXPECT}" ]]; then
+  die "latest.txt names ${LATEST_RELEASE}, but the tested artifact is ${EXPECT} — refusing to promote an untested build."
+fi
+if [[ -n "${EXPECT}" ]]; then log "latest.txt matches the tested artifact (${EXPECT})."; fi
+
 # SourceForge verification — artifact + every sidecar that upload.sh ships
+# The package list is named after the image WITHOUT .zst
+# (<os>-<date>-<profile>.packages.txt, build-base-image.sh / validate-image.sh);
+# checking "<image>.zst.packages.txt" made every promotion abort on a 404.
+RELEASE_FILES=("${LATEST_RELEASE}" "${LATEST_RELEASE}.asc" "${LATEST_RELEASE}.sha256" "${LATEST_RELEASE%.zst}.packages.txt")
 if [[ "${NO_SF}" == "false" ]]; then
   log "Verifying artifact on SourceForge..."
-  SF_ARTIFACT_URL="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
-  SF_BASE="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
+  SF_BASE="https://downloads.sourceforge.net/project/shanios/${PROFILE}/${BUILD_DATE_DIR}"
   # Checksum + signature are mandatory; the resolved package list is the
   # reviewable ground-truth of what shipped, so it must be present too.
-  for suffix in "" ".asc" ".sha256" ".packages.txt"; do
-    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_BASE}${suffix}" >/dev/null 2>&1; then
-      die "Sidecar not reachable on SourceForge: ${SF_BASE}${suffix} — aborting promotion."
+  for f in "${RELEASE_FILES[@]}"; do
+    if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${SF_BASE}/${f}" >/dev/null 2>&1; then
+      die "Sidecar not reachable on SourceForge: ${SF_BASE}/${f} — aborting promotion."
     fi
   done
   log "SourceForge: artifact + .asc + .sha256 + .packages.txt OK."
@@ -227,21 +251,19 @@ fi
 if [[ "${NO_R2}" == "false" ]]; then
   if [[ -n "${R2_BASE_URL:-}" ]]; then
     log "Verifying artifact on R2 (HTTP)..."
-    R2_ARTIFACT_URL="${R2_BASE_URL}/${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
-    R2_BASE="${R2_ARTIFACT_URL}"
-    for suffix in "" ".asc" ".sha256" ".packages.txt"; do
-      if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_BASE}${suffix}" >/dev/null 2>&1; then
-        die "Sidecar not reachable on R2: ${R2_BASE}${suffix} — aborting promotion."
+    R2_BASE="${R2_BASE_URL}/${PROFILE}/${BUILD_DATE_DIR}"
+    for f in "${RELEASE_FILES[@]}"; do
+      if ! curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_BASE}/${f}" >/dev/null 2>&1; then
+        die "Sidecar not reachable on R2: ${R2_BASE}/${f} — aborting promotion."
       fi
     done
     log "R2: artifact + .asc + .sha256 + .packages.txt OK."
 
   elif [[ -n "${R2_BUCKET:-}" ]]; then
     log "Verifying artifact on R2 (rclone)..."
-    R2_ARTIFACT_KEY="${PROFILE}/${BUILD_DATE_DIR}/${LATEST_RELEASE}"
-    for suffix in "" ".asc" ".sha256" ".packages.txt"; do
-      if ! rclone lsf "r2:${R2_BUCKET}/${R2_ARTIFACT_KEY}${suffix}" >/dev/null 2>&1; then
-        die "Sidecar not found on R2: r2:${R2_BUCKET}/${R2_ARTIFACT_KEY}${suffix} — aborting promotion."
+    for f in "${RELEASE_FILES[@]}"; do
+      if ! rclone lsf "r2:${R2_BUCKET}/${PROFILE}/${BUILD_DATE_DIR}/${f}" >/dev/null 2>&1; then
+        die "Sidecar not found on R2: r2:${R2_BUCKET}/${PROFILE}/${BUILD_DATE_DIR}/${f} — aborting promotion."
       fi
     done
     log "R2: artifact + .asc + .sha256 + .packages.txt OK."
@@ -265,7 +287,12 @@ log "Created stable.txt with content: $(cat "${STABLE_TXT}")"
 # (e.g. when the ISO was built separately via iso-only on a different day).
 ISO_LATEST_TXT="${PROFILE_DIR}/iso-latest.txt"
 ISO_STABLE_TXT="${PROFILE_DIR}/iso-stable.txt"
-if [[ -s "${ISO_LATEST_TXT}" ]]; then
+if [[ -n "${EXPECT}" && -z "${EXPECT_ISO}" ]]; then
+  # gated promotion (--expect) without a tested ISO: the gate skipped its
+  # ISO install, so iso-stable.txt keeps pointing where it did
+  log "Step 3: No tested ISO (--expect without --expect-iso) — iso-stable.txt not promoted."
+  rm -f "${ISO_STABLE_TXT}"
+elif [[ -s "${ISO_LATEST_TXT}" ]]; then
   log "Step 3: Also promoting iso-latest.txt → iso-stable.txt..."
   cp "${ISO_LATEST_TXT}" "${ISO_STABLE_TXT}" || die "Failed to create iso-stable.txt"
   log "Created iso-stable.txt with content: $(cat "${ISO_STABLE_TXT}")"
@@ -294,6 +321,13 @@ else
     log "Warning: iso-latest.txt not found on any remote — iso-stable.txt not promoted."
     log "         Run 'build.sh iso-only' and upload before promoting stable if you want ISO pinning."
   fi
+fi
+
+if [[ -n "${EXPECT_ISO}" ]]; then
+  _iso_latest="$(tr -d '[:space:]' < "${ISO_LATEST_TXT}" 2>/dev/null || true)"
+  [[ "${_iso_latest}" == "${EXPECT_ISO}" ]] \
+    || die "iso-latest.txt names '${_iso_latest:-nothing}', but the tested ISO is ${EXPECT_ISO} — refusing to promote an untested ISO."
+  log "iso-latest.txt matches the tested ISO (${EXPECT_ISO})."
 fi
 
 # ---------------------------------------------------------------------------
