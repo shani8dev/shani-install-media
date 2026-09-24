@@ -6,7 +6,12 @@
 # SourceForge and mirrors it to Cloudflare R2.
 #
 # Usage:
-#   ./promote-stable.sh -p <profile> [--no-sf] [--no-r2] [--expect=<file.zst>] [--expect-iso=<YYYYMMDD>]
+#   ./promote-stable.sh -p <profile> [--only=image|iso] [--no-sf] [--no-r2] [--expect=<file.zst>] [--expect-iso=<YYYYMMDD>]
+#
+# --only=image: latest.txt -> stable.txt only. --only=iso: iso-latest.txt ->
+# iso-stable.txt only. They are separate artifacts (built on different days)
+# with separate gate results, so one failing must not hold back the other.
+# Default: both.
 #
 # --expect: promote only if latest.txt still names exactly this artifact —
 # the one shani-testbed's `gate` just tested (its gate-<profile>.passed).
@@ -48,6 +53,7 @@ usage() {
   echo "  --no-r2              Skip Cloudflare R2 verification and mirror"
   echo "  --expect=<file.zst>  Refuse unless latest.txt names exactly this (tested) artifact"
   echo "  --expect-iso=<date>  Refuse unless iso-latest.txt names exactly this (tested) ISO folder"
+  echo "  --only=image|iso     Promote only the base image (stable.txt) or only the ISO (iso-stable.txt)"
   echo ""
   echo "This script will:"
   echo "  1. Download the current latest.txt from SourceForge (skipped with --no-sf)"
@@ -67,6 +73,7 @@ NO_SF="${NO_SF:-false}"
 NO_R2="${NO_R2:-false}"
 EXPECT="${EXPECT:-}"
 EXPECT_ISO="${EXPECT_ISO:-}"
+ONLY="${ONLY:-}"
 
 _CLEAN_ARGS=()
 for arg in "$@"; do
@@ -75,6 +82,7 @@ for arg in "$@"; do
     --no-r2) NO_R2=true ;;
     --expect=*) EXPECT="${arg#--expect=}" ;;
     --expect-iso=*) EXPECT_ISO="${arg#--expect-iso=}" ;;
+    --only=*) ONLY="${arg#--only=}" ;;
     *)       _CLEAN_ARGS+=("$arg") ;;
   esac
 done
@@ -90,6 +98,12 @@ done
 shift $((OPTIND - 1))
 
 [[ -z "$PROFILE" ]] && usage
+case "${ONLY}" in
+  "")    PROMOTE_IMAGE=true;  PROMOTE_ISO=true ;;
+  image) PROMOTE_IMAGE=true;  PROMOTE_ISO=false ;;
+  iso)   PROMOTE_IMAGE=false; PROMOTE_ISO=true ;;
+  *)     die "--only must be image or iso (got '${ONLY}')" ;;
+esac
 
 # Guard: nothing to do if both destinations are skipped
 if [[ "${NO_SF}" == "true" && "${NO_R2}" == "true" ]]; then
@@ -114,6 +128,7 @@ R2_BASE_URL="${R2_BASE_URL:-https://downloads.shani.dev}"
 # Ensure profile directory exists
 mkdir -p "${PROFILE_DIR}"
 
+if [[ "${PROMOTE_IMAGE}" == "true" ]]; then
 # ---------------------------------------------------------------------------
 # Step 1: Obtain latest.txt
 #   --no-sf        → fetch from R2
@@ -281,38 +296,48 @@ fi
 log "Step 3: Creating stable.txt locally..."
 cp "${LATEST_TXT}" "${STABLE_TXT}" || die "Failed to create stable.txt"
 log "Created stable.txt with content: $(cat "${STABLE_TXT}")"
+else
+  log "Base image: not promoted (--only=iso) — stable.txt untouched."
+fi
 
 # Also promote iso-latest.txt → iso-stable.txt if it exists.
 # iso-latest.txt may point to a different dated folder than latest.txt
 # (e.g. when the ISO was built separately via iso-only on a different day).
 ISO_LATEST_TXT="${PROFILE_DIR}/iso-latest.txt"
 ISO_STABLE_TXT="${PROFILE_DIR}/iso-stable.txt"
-if [[ -n "${EXPECT}" && -z "${EXPECT_ISO}" ]]; then
-  # gated promotion (--expect) without a tested ISO: the gate skipped its
-  # ISO install, so iso-stable.txt keeps pointing where it did
-  log "Step 3: No tested ISO (--expect without --expect-iso) — iso-stable.txt not promoted."
-  rm -f "${ISO_STABLE_TXT}"
-elif [[ -s "${ISO_LATEST_TXT}" ]]; then
-  log "Step 3: Also promoting iso-latest.txt → iso-stable.txt..."
-  cp "${ISO_LATEST_TXT}" "${ISO_STABLE_TXT}" || die "Failed to create iso-stable.txt"
-  log "Created iso-stable.txt with content: $(cat "${ISO_STABLE_TXT}")"
+if [[ "${PROMOTE_ISO}" != "true" ]]; then
+  log "ISO: not promoted (--only=image) — iso-stable.txt untouched."
 else
-  log "Step 3: No iso-latest.txt found locally — fetching from remotes..."
+  # Always from the remotes, like latest.txt in step 1 (a local copy can be
+  # stale): rclone, then public R2 over HTTP, then SourceForge. The local
+  # file only when both remotes are skipped.
+  rm -f "${ISO_STABLE_TXT}"
   _fetched_iso=false
-  if [[ "${NO_R2}" == "false" ]] && [[ -n "${R2_BUCKET:-}" ]]; then
-    if rclone copy "r2:${R2_BUCKET}/${PROFILE}/iso-latest.txt" "${PROFILE_DIR}" 2>/dev/null \
+  if [[ "${NO_SF}" == "true" && "${NO_R2}" == "true" ]]; then
+    [[ -s "${ISO_LATEST_TXT}" ]] && _fetched_iso=true
+  else
+    rm -f "${ISO_LATEST_TXT}"
+    if [[ "${NO_R2}" == "false" && -n "${R2_BUCKET:-}" ]] && command -v rclone >/dev/null 2>&1 \
+        && rclone copy "r2:${R2_BUCKET}/${PROFILE}/iso-latest.txt" "${PROFILE_DIR}" 2>/dev/null \
         && [[ -s "${ISO_LATEST_TXT}" ]]; then
       _fetched_iso=true
     fi
-  fi
-  if [[ "${_fetched_iso}" == "false" && "${NO_SF}" == "false" ]]; then
-    curl -fsSL \
-      --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
-      --max-time "$NETWORK_TIMEOUT" --connect-timeout "$NETWORK_CONNECT_TIMEOUT" \
-      --user-agent "shanios-promote/1.0" \
-      --output "${ISO_LATEST_TXT}" \
-      "https://sourceforge.net/projects/${PROJECT_NAME}/files/${PROFILE}/iso-latest.txt/download" \
-      2>/dev/null && [[ -s "${ISO_LATEST_TXT}" ]] && _fetched_iso=true || true
+    if [[ "${_fetched_iso}" == "false" && "${NO_R2}" == "false" && -n "${R2_BASE_URL:-}" ]] \
+        && curl -fsSL --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+             --max-time "$NETWORK_TIMEOUT" --connect-timeout "$NETWORK_CONNECT_TIMEOUT" \
+             --output "${ISO_LATEST_TXT}" "${R2_BASE_URL}/${PROFILE}/iso-latest.txt" 2>/dev/null \
+        && [[ -s "${ISO_LATEST_TXT}" ]]; then
+      _fetched_iso=true
+    fi
+    if [[ "${_fetched_iso}" == "false" && "${NO_SF}" == "false" ]]; then
+      curl -fsSL \
+        --retry "$CURL_RETRIES" --retry-delay "$CURL_RETRY_DELAY" \
+        --max-time "$NETWORK_TIMEOUT" --connect-timeout "$NETWORK_CONNECT_TIMEOUT" \
+        --user-agent "shanios-promote/1.0" \
+        --output "${ISO_LATEST_TXT}" \
+        "https://sourceforge.net/projects/${PROJECT_NAME}/files/${PROFILE}/iso-latest.txt/download" \
+        2>/dev/null && [[ -s "${ISO_LATEST_TXT}" ]] && _fetched_iso=true || true
+    fi
   fi
   if [[ "${_fetched_iso}" == "true" ]]; then
     cp "${ISO_LATEST_TXT}" "${ISO_STABLE_TXT}" || die "Failed to create iso-stable.txt"
@@ -323,7 +348,20 @@ else
   fi
 fi
 
-if [[ -n "${EXPECT_ISO}" ]]; then
+if [[ "${PROMOTE_ISO}" == "true" && "${ONLY}" == "iso" && ! -s "${ISO_STABLE_TXT}" ]]; then
+  die "--only=iso but no iso-latest.txt could be obtained — nothing to promote."
+fi
+if [[ "${PROMOTE_ISO}" == "true" && -s "${ISO_STABLE_TXT}" && "${NO_R2}" == "false" && -n "${R2_BASE_URL:-}" ]]; then
+  # the ISO folder iso-stable.txt will name must really hold a signed ISO
+  _iso_d="$(tr -d '[:space:]' < "${ISO_STABLE_TXT}")"
+  _iso_f="signed_${OS_NAME}-${PROFILE}-${_iso_d:0:4}.${_iso_d:4:2}.${_iso_d:6:2}-x86_64.iso"
+  for f in "${_iso_f}" "${_iso_f}.sha256" "${_iso_f}.asc"; do
+    curl -fsSL --head --max-time 20 --connect-timeout "$NETWORK_CONNECT_TIMEOUT" "${R2_BASE_URL}/${PROFILE}/${_iso_d}/${f}" >/dev/null 2>&1 \
+      || die "ISO file not reachable on R2: ${R2_BASE_URL}/${PROFILE}/${_iso_d}/${f} — aborting ISO promotion."
+  done
+  log "R2: ${_iso_f} + .sha256 + .asc OK."
+fi
+if [[ "${PROMOTE_ISO}" == "true" && -n "${EXPECT_ISO}" ]]; then
   _iso_latest="$(tr -d '[:space:]' < "${ISO_LATEST_TXT}" 2>/dev/null || true)"
   [[ "${_iso_latest}" == "${EXPECT_ISO}" ]] \
     || die "iso-latest.txt names '${_iso_latest:-nothing}', but the tested ISO is ${EXPECT_ISO} — refusing to promote an untested ISO."
@@ -336,9 +374,11 @@ fi
 if [[ "${NO_SF}" == "false" ]]; then
   log "Step 4: Uploading stable.txt to SourceForge..."
   log "Uploading to: ${REMOTE_PATH}"
-  rsync -e ssh -avz --progress "${STABLE_TXT}" "${REMOTE_PATH}" \
-    || die "Upload of stable.txt failed"
-  if [[ -s "${ISO_STABLE_TXT}" ]]; then
+  if [[ "${PROMOTE_IMAGE}" == "true" ]]; then
+    rsync -e ssh -avz --progress "${STABLE_TXT}" "${REMOTE_PATH}" \
+      || die "Upload of stable.txt failed"
+  fi
+  if [[ "${PROMOTE_ISO}" == "true" && -s "${ISO_STABLE_TXT}" ]]; then
     rsync -e ssh -avz --progress "${ISO_STABLE_TXT}" "${REMOTE_PATH}" \
       || die "Upload of iso-stable.txt failed"
   fi
@@ -350,16 +390,17 @@ fi
 # Step 5: Mirror stable.txt to Cloudflare R2
 # ---------------------------------------------------------------------------
 log "Step 5: Mirroring stable.txt to Cloudflare R2..."
-r2_upload "${STABLE_TXT}" "${PROFILE}"
-if [[ -s "${ISO_STABLE_TXT}" ]]; then
+if [[ "${PROMOTE_IMAGE}" == "true" ]]; then r2_upload "${STABLE_TXT}" "${PROFILE}"; fi
+if [[ "${PROMOTE_ISO}" == "true" && -s "${ISO_STABLE_TXT}" ]]; then
   r2_upload "${ISO_STABLE_TXT}" "${PROFILE}"
 fi
 
 log ""
 log "========================================="
-log "SUCCESS: Promoted latest to stable!"
+log "SUCCESS: Promoted to stable (${ONLY:-image + iso})"
 log "========================================="
-log "Release: ${LATEST_RELEASE}"
+if [[ "${PROMOTE_IMAGE}" == "true" ]]; then log "Image:   ${LATEST_RELEASE}"; fi
+if [[ "${PROMOTE_ISO}" == "true" && -s "${ISO_STABLE_TXT}" ]]; then log "ISO:     $(cat "${ISO_STABLE_TXT}")"; fi
 log "Profile: ${PROFILE}"
 # Use if/then instead of [[ ]] && log — when the condition is false the [[ ]]
 # returns exit 1, and if it is the last statement it becomes the script exit
