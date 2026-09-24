@@ -17,6 +17,7 @@ set -Eeuo pipefail
 # Subshell error isolation — report which step failed
 error_function() {
     local rc=$?
+    (( rc == 0 )) && return 0   # EXIT trap: runs on success too
     echo "[ERROR] Build step failed with exit code $rc" >&2
     echo "[ERROR] Check output above for the failed step" >&2
     return $rc
@@ -31,11 +32,17 @@ source "${SCRIPT_DIR}/../config/config.sh"
 # ---------------------------------------------------------------------------
 PROFILE=""
 FROM_R2=false
+# --base=latest|stable (with --from-r2): which published image the ISO
+# embeds. `build.sh iso` passes stable: the ISO then only ever ships a base
+# image that already passed the release gate.
+ISO_BASE=latest
 
 _CLEAN_ARGS=()
 for arg in "$@"; do
   case "$arg" in
     --from-r2) FROM_R2=true ;;
+    --base=latest|--base=stable) ISO_BASE="${arg#--base=}" ;;
+    --base=*) die "--base must be latest or stable (got '${arg#--base=}')" ;;
     *)         _CLEAN_ARGS+=("$arg") ;;
   esac
 done
@@ -193,14 +200,16 @@ if [[ "$FROM_R2" == "true" ]]; then
   # Public base URL — same domain used by shani-deploy.sh and torrent webseeds
   R2_PUBLIC_BASE="https://downloads.shani.dev"
 
-  # Fetch latest.txt via rclone (authenticated; tiny file, no resume needed)
-  log "Fetching latest.txt from R2 (r2:${R2_BUCKET}/${PROFILE}/latest.txt)..."
-  rclone copyto "r2:${R2_BUCKET}/${PROFILE}/latest.txt" "${OUTPUT_SUBDIR}/latest.txt" \
-    || die "Failed to download latest.txt from R2. Has an image been uploaded yet?"
+  # Fetch the pointer via rclone (authenticated; tiny file, no resume
+  # needed). It is stored as the dated folder's latest.txt either way: below,
+  # that file just means "the image this ISO embeds".
+  log "Fetching ${ISO_BASE}.txt from R2 (r2:${R2_BUCKET}/${PROFILE}/${ISO_BASE}.txt)..."
+  rclone copyto "r2:${R2_BUCKET}/${PROFILE}/${ISO_BASE}.txt" "${OUTPUT_SUBDIR}/latest.txt" \
+    || die "Failed to download ${ISO_BASE}.txt from R2 - no image published on the ${ISO_BASE} channel yet?"
 
-  [[ -s "${OUTPUT_SUBDIR}/latest.txt" ]] || die "Downloaded latest.txt is empty."
+  [[ -s "${OUTPUT_SUBDIR}/latest.txt" ]] || die "Downloaded ${ISO_BASE}.txt is empty."
   r2_base_image=$(<"${OUTPUT_SUBDIR}/latest.txt")
-  log "Latest image on R2: ${r2_base_image}"
+  log "${ISO_BASE^} image on R2: ${r2_base_image} (the image this ISO embeds)"
 
   # Extract the 8-digit build date from the filename (POSIX-compatible grep)
   r2_date=$(echo "${r2_base_image}" | grep -oE '[0-9]{8}' | head -1)

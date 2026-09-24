@@ -58,6 +58,12 @@
 #   └─ release.sh -p <profile> <latest|stable>
 #   └─ upload.sh -p <profile> all
 #
+# iso-release  flatpak → snap → iso around the STABLE image → repack → upload iso
+#   The biweekly ISO build: the Flatpak/Snap layers are built here (they are
+#   only ever published inside an ISO), and the ISO embeds the image stable.txt
+#   names - one that already passed the release gate - never latest.txt.
+#   Publishes only ISO artifacts and iso-latest.txt; latest.txt is untouched.
+#
 # promote-stable  (standalone, run after iso-only is live)
 #   └─ downloads latest.txt from SF/R2
 #   └─ verifies artifact + .asc exist on SF/R2
@@ -91,6 +97,8 @@ Commands:
   all            image → release latest → upload image
   full           image → flatpak → snap → iso → repack → release latest → upload all
   iso-only       Download base image from R2, build ISO → repack → upload iso
+  iso-release    Biweekly ISO: Flatpak/Snap layers + ISO around the STABLE
+                 image from R2 → repack → upload iso (latest.txt untouched)
   publish        release → upload (requires -p <profile> <type>)
 
 Options:
@@ -257,6 +265,27 @@ case "$COMMAND" in
   # Pass --fresh to ignore any cached ISOs from previous dates and always
   # run a clean build under today's BUILD_DATE folder.
   # -------------------------------------------------------------------------
+  iso-release)
+    _split_args "$@"
+    _ISO2_PROFILE="$(_get_profile "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}")"
+    [[ -z "$_ISO2_PROFILE" ]] && die "Profile (-p) is required for the 'iso-release' command."
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_ISO2_PROFILE}/flatpak-packages.txt" ]]; then
+      log "flatpak-packages.txt found — building Flatpak image..."
+      ./scripts/build-flatpak-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+    else
+      log "No flatpak-packages.txt for profile '${_ISO2_PROFILE}' — skipping Flatpak build."
+    fi
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_ISO2_PROFILE}/snap-packages.txt" ]]; then
+      log "snap-packages.txt found — building Snap image..."
+      ./scripts/build-snap-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+    else
+      log "No snap-packages.txt for profile '${_ISO2_PROFILE}' — skipping Snap build."
+    fi
+    ./scripts/build-iso.sh    "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" --from-r2 --base=stable
+    ./scripts/repack-iso.sh   "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+    ./scripts/upload.sh       "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" iso
+    ;;
+
   iso-only)
     _split_args "$@"
     _ISO_PROFILE="$(_get_profile "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}")"
