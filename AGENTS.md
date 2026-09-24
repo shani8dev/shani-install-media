@@ -396,6 +396,16 @@ regardless of the user command's own exit code. Verified live: a no-op
 `run_in_container.sh /usr/bin/true` invocation flipped `test-env/disk/{root,esp}.img`
 from `root:root` back to the real invoking user.
 
+**Correction (2026-09-24): that chown must not reach the slot overlays.**
+As first written (`chown -R test-env/disk`) it also recursed into
+`test-env/disk/nspawn-overlay-*/upper`, the slots' copied-up system files:
+all of them became host-user-owned with setuid stripped (`sudo`,
+`dbus-daemon-launch-helper`, a user-owned `/etc/shadow`), and cupsd's
+retry loop over its "insecure" notifier wrote a 107 GB log into the slot.
+It now skips `nspawn-overlay-*`. See shani-testbed/AGENTS.md for the rest,
+including the removal of the never-bootable `root.img`/`esp.img` pair:
+`install.img` (GPT: ESP + btrfs) is the only disk now.
+
 ## For changes to `install.sh`/`configure.sh` (in the sibling `os-installer-config` repo)
 
 Those scripts are fully driven by `OSI_*` environment variables — no GUI

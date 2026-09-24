@@ -203,7 +203,12 @@ fi
 # regardless of the user command's own exit code, and its own failure is
 # swallowed (`|| true`) so a permissions hiccup here never masks the real
 # command's result.
-CHOWN_OUTPUT_CMD=" ; _rc=\$?; chown -R $(id -u):$(id -g) \"${CONTAINER_WORK_DIR}/test-env/disk\" \"${CONTAINER_WORK_DIR}/output\" 2>/dev/null || true; exit \$_rc"
+# NOT into test-env/disk/nspawn-overlay-*: their upper layers hold the slots'
+# own copied-up system files, which must stay root-owned. A blanket chown -R
+# gave all 331k of them to the host user and stripped setuid (sudo,
+# dbus-daemon-launch-helper), and cupsd's "insecure permissions" retry loop
+# then wrote a 107 GB error_log into the slot (found 2026-09-24).
+CHOWN_OUTPUT_CMD=" ; _rc=\$?; find \"${CONTAINER_WORK_DIR}/test-env/disk\" -mindepth 1 -maxdepth 1 ! -name 'nspawn-overlay-*' -exec chown -R $(id -u):$(id -g) {} + 2>/dev/null; chown $(id -u):$(id -g) \"${CONTAINER_WORK_DIR}/test-env/disk\" 2>/dev/null; chown -R $(id -u):$(id -g) \"${CONTAINER_WORK_DIR}/output\" 2>/dev/null || true; exit \$_rc"
 
 FINAL_CMD="${IMPORT_KEYS_CMD}${USER_CMD}${CHOWN_OUTPUT_CMD}"
 
@@ -288,6 +293,12 @@ HOST_TESTBED_DIR="${SHANIOS_TEST_TESTBED_HOST_DIR:-$(realpath -m "${HOST_WORK_DI
 TESTBED_MOUNT_ARGS=()
 if [[ -x "${HOST_TESTBED_DIR}/testbed" ]]; then
     TESTBED_MOUNT_ARGS=(-v "${HOST_TESTBED_DIR}:/opt/shani-testbed:ro")
+fi
+# Sibling shani-pkgbuilds (read-only), for the harness's --local-pkg: test a
+# locally built, unpublished package in a real slot. Same convention.
+HOST_PKGBUILDS_DIR="${SHANIOS_TEST_PKGBUILDS_HOST_DIR:-$(realpath -m "${HOST_WORK_DIR}/../shani-pkgbuilds")}"
+if [[ -d "${HOST_PKGBUILDS_DIR}" && "$(realpath -m "${HOST_PKGBUILDS_DIR}")" != "$(realpath -m "${HOST_WORK_DIR}")" ]]; then
+    TESTBED_MOUNT_ARGS+=(-v "${HOST_PKGBUILDS_DIR}:/opt/shani-pkgbuilds:ro")
 fi
 
 # SHANIOS_NO_PULL=1 skips the refresh (the MCP server sets it: an agent

@@ -26,3 +26,6 @@ test-env/disk/*
 # outright regardless of what ends up inside it — not just the test-env/disk
 # case above, in case some other future path lands there instead.
 /shani-install-media/
+
+# screenshots from `build.sh test desktop` (outside disk/, meant to be viewed)
+test-env/shots/
