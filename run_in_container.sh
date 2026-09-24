@@ -382,6 +382,10 @@ TEST_ENV_FORWARD_ARGS=()
 for _var in $(compgen -v SHANIOS_TEST_); do
     TEST_ENV_FORWARD_ARGS+=(-e "${_var}=${!_var}")
 done
+# harness knobs its usage documents without the SHANIOS_TEST_ prefix
+for _var in INSTALL_DISK_SIZE QEMU_MEM; do
+    [[ -n "${!_var:-}" ]] && TEST_ENV_FORWARD_ARGS+=(-e "${_var}=${!_var}")
+done
 
 # ---------------------------------------------------------------------------
 # X11 forwarding: bind the HOST's real X11 socket through so a GUI app run
