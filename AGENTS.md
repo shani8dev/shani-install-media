@@ -435,6 +435,130 @@ here before (the AMI/packer path).
 evidence behind every line below, see `AUDIT-HISTORY.md`.** This section
 is deliberately just the current-state summary.
 
+- **Server profile could never build: `Packages-Extras` listed two packages
+  no configured repo has — FIXED (2026-09-23).** `amazon-ssm-agent` is
+  AUR-only (stale 3.1.x) and `amazon-ec2-utils` isn't in the AUR at all;
+  neither is in `[shani]`/`[core]`/`[extra]`, the only repos
+  `image_profiles/server/pacman.conf` configures. `build-base-image.sh`
+  installs Base+Desktop+Extras in ONE `pacstrap` call, so "target not
+  found" killed every server build (added in `a4a4170`, 2026-09-18; CI only
+  builds gnome/plasma, and there is no server image in `cache/output/`).
+  Verified with a real resolve against the live repos using the server
+  `pacman.conf` in the builder container (`pacman --dbpath <tmp> -Sp` over
+  the list filtered exactly as `build-base-image.sh` filters it): before,
+  `error: target not found` for both; after, rc=0 with 563 packages
+  resolved. Both were removed with a comment; `server-customization.sh` and
+  `packer/scripts/01-configure-aws.sh` already treat `amazon-ssm-agent` as
+  optional. **Still needs a human:** to actually ship them, add PKGBUILDs to
+  `shani-pkgbuilds` so they land in `[shani]`, then re-list them.
+- **Server profile: `openresolv` → `systemd-resolvconf` (2026-09-23).** The
+  server profile runs systemd-resolved (the `etc/resolv.conf` →
+  `stub-resolv.conf` symlink in its overlay) but shipped openresolv as its
+  `resolvconf`. Verified in a booted `archlinux:latest` container with real
+  systemd-resolved and a dummy `wg0`: with openresolv,
+  `resolvconf -a wg0` (what `wg-quick`'s `DNS=` does; `wireguard-tools` is
+  in the server set) printed "run `resolvconf -u` to update" and
+  `resolvectl dns wg0` stayed **empty**, so VPN DNS was silently dropped.
+  With `systemd-resolvconf` (`resolvconf` → `resolvectl`), `resolvectl dns
+  wg0` = `10.9.0.1`. The stub symlink stayed intact in both cases, so this
+  is about DNS reaching resolved, not about clobbering the file. The real
+  server set still resolves with it (563 packages, no `openresolv` pulled
+  in by anything else). Checked against the ArchWiki (systemd-resolved):
+  stub mode is the recommended mode, and `systemd-resolvconf` is the
+  documented way to serve `resolvconf`-using VPN/DHCP clients. It only works
+  while `systemd-resolved.service` runs (true on server; desktop profiles
+  keep NetworkManager + openresolv, untouched), and its `resolvconf`
+  compatibility is "limited" (`resolvectl(1)`), so clients other than
+  `wg-quick` need their own check. The wiki's warning that the symlink
+  can't be *created* inside `arch-chroot` doesn't apply here: the overlay
+  `cp -r` runs from outside (tested: `cp -r` replaces the `filesystem`
+  package's regular file with the symlink), and a real `arch-chroot`
+  (arch-install-scripts 31) over both the absolute target ShaniOS uses and
+  the wiki's relative `../run/...` form gave working in-chroot DNS, left the
+  symlink intact, and touched nothing on the host. Not verified: a full
+  `bootstrap -p server` (no server image exists to bootstrap from yet, see
+  the entry above).
+- **`systemd-vmspawn` works on this host WITHOUT `/dev/kvm` — verified
+  (2026-09-23).** Inside a privileged `archlinux:latest` container booted
+  with systemd as PID 1 (vmspawn needs a system D-Bus, and `openssh` for its
+  default vsock SSH setup), plus `qemu-base edk2-ovmf swtpm`:
+  `systemd-vmspawn --kvm=no --tpm=yes --secure-boot=no --register=no
+  --console=read-only -i <copy of the ISO>` booted the real
+  `shanios-gnome-2026.08.21` ISO through OVMF → systemd-boot menu →
+  Linux 7.1.8 → live-session login prompt, with the swtpm TPM detected as
+  `/dev/tpm0`. That took about 4 minutes of container uptime, package
+  install included, so a software-emulated UEFI boot is minutes here, not
+  hours. This is the missing tool for the real UEFI tests nspawn can't do:
+  the `+3-0` hard-failure fallback (`shani-deploy/AGENTS.md`), TPM2/pcrlock
+  enrollment, and booting a rebuilt ISO. The same boot also exposed 3 dead
+  D-Bus alias links (next entry).
+- **ISO airootfs: dead/broken systemd enablement cleaned up — FIXED
+  (2026-09-23).** Mapped every `iso_profiles/shared/airootfs/etc/systemd/system/*.wants/`
+  link to its owning package (`pacman -F`) and resolved the real ISO
+  package set (`pacman -Sp` against `iso_profiles/gnome/pacman.conf`, 416
+  packages). (1) **`sysinit.target.wants/systemd-timesyncd.service` was a
+  symlink to itself**, so the live ISO never started timesyncd. Proven in a
+  booted `archlinux:latest` container: with the old link,
+  `systemctl is-enabled` still said "enabled" but `sysinit.target` pulled it
+  in 0 times; with the link re-pointed at
+  `/usr/lib/systemd/system/systemd-timesyncd.service`, 1 time. (2) Removed
+  15 links to units no ISO package provides (apparmor, bluez, cloud-init ×4,
+  cups, firewalld, ModemManager, NetworkManager ×2, reflector, sshd,
+  switcheroo-control, a nonexistent `vboxclient.service`), all inherited
+  from archiso `releng`. (3) Removed `choose-mirror.service`,
+  `livecd-talk.service`, `livecd-alsa-unmuter.service` and their links:
+  their `/usr/local/bin/{choose-mirror,livecd-sound}` scripts were never
+  shipped, `espeakup`/`alsa-utils` aren't installed, and no boot entry
+  passes the `mirror=`/`accessibility=on` options that gate them. After:
+  all 11 remaining links map to an installed package, 0 dead. **Not
+  done:** an ISO build + QEMU boot (no `/dev/kvm`). The change only
+  removes files mkarchiso copies verbatim, plus one symlink target. If
+  live-ISO screen-reader support is ever wanted, add releng's scripts
+  **and** `espeakup`/`alsa-utils` together. `etc/ssh/sshd_config` in the
+  airootfs is also dead (no openssh in the ISO) but was left alone.
+  **Follow-up from the vmspawn boot above:** every live boot logged
+  "Failed to preset all unit: Unit dbus-org.freedesktop.ModemManager1.service
+  is an unresolvable alias" (and nm-dispatcher). Cause: dead
+  `etc/systemd/system/dbus-org.{freedesktop.ModemManager1,freedesktop.nm-dispatcher,bluez}.service`
+  alias links for packages the ISO doesn't install. Removed; the
+  `network1`/`resolve1` aliases are systemd's own and stay. Next step to
+  close this out: rebuild the ISO and boot it with vmspawn.
+- **Harness review — duplication and drift in `test-env/test.sh` (full read,
+  2026-09-23; refactor staged, applied only when no harness run has the file
+  open, since bash reads a script as it executes).** Real defects, not just
+  tidiness: (a) **`probe` hard-kills a live systemd on btrfs.** Only
+  `desktop` has the 30s graceful-shutdown guard, the one added after a hard
+  kill left both slots missing; `probe` just `kill`s. (b) **`--local-src`
+  overlays leak into later runs:** they're copied into the persistent
+  `nspawn-overlay-<slot>/upper`, so a later run *without* `--local-src`
+  still boots the old overlaid scripts/units (hit live: a "baseline" probe
+  still had `OnFailure=` from the previous run). (c) `desktop` lacks
+  `--local-src` although the docs list it. (d) `watch`'s usage/header/this
+  file describe a console-log panel the code no longer has (VNC only).
+  (e) `cycle` runs `upgrade` without `--local-src`. Duplicates:
+  `--local-src` parsing ×5, `--boot` prep block ×4, reached-target
+  heuristic ×2, leader-PID wait ×2, overlay copy/ALLOW_NEW/warn ×2,
+  upgrade/update-check/rollback bodies ×3, `--encrypted` parsing ×3 + OSI
+  encryption env ×2, host→leaf-cert naming ×3, QEMU base args + KVM
+  detection ×3, QMP/QGA Python client ×5 across 9 heredocs (`gui move`
+  re-implements `_qmp_click`), `cmd_clean` re-implementing
+  `_detach_all_loops`; in `run_in_container.sh`, the two optional
+  sibling-checkout mount blocks. Images: `root.img`/`esp.img` only serve
+  `qemu`/`gui`'s PXE-bound fallback and `iso`'s optional blank target;
+  proposal (not applied): make `install.img` the single disk and let ISO
+  boots use `test-env/vmspawn.sh`, which keeps its overlay/NVRAM/TPM
+  inside a throwaway container. Also: an agent this session listed/read
+  under `test-env/disk/` and `cache/` despite the rule below; no harm, but
+  don't repeat it.
+- **`cmd_pacstrap` ignores extra package names (harness bug, 2026-09-23).**
+  `test-env/test.sh`'s `cmd_pacstrap` hard-codes `pacstrap -cC "$conf"
+  "$target" base`, even though this file's "Testing pacman.conf/signing
+  changes" section and `test-env/README.md` both document
+  `pacstrap -p <profile> [extra-pkg ...]`. Found by running
+  `pacstrap -p server <full server list>`: it installed only `base` (137
+  packages). The extra-package slice described above has therefore never
+  actually been exercised.
+
 - **Two `test-env` harness gaps fixed, both needed to genuinely test
   `shani-deploy`'s new system-level auto-rollback service under a real
   `--boot` session (2026-09-19).** Both are test-only, real-hardware

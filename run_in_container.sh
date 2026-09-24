@@ -117,11 +117,26 @@ fi
 # argument — docker run -e VAR=value lands in the process's argv, which
 # /proc/<pid>/cmdline exposes to every local user via `ps aux`, not just root.
 if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+    # Pinned host keys, not ssh-keyscan + StrictHostKeyChecking=no (which
+    # accepted whatever answered). frs.sourceforge.net's keys were checked
+    # against SourceForge's published fingerprints ("SSH Key Fingerprints",
+    # sourceforge.net/p/forge/documentation) on 2026-09-23; github.com's are
+    # the same pinned set as shani-builder/pkg/pkg-builder.sh setup_ssh().
+    # If SourceForge rotates its keys, uploads fail closed until this list
+    # is updated from that page.
+    PINNED_KNOWN_HOSTS=(
+        'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+        'github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg='
+        'github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk='
+        'frs.sourceforge.net ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA2uifHZbNexw6cXbyg1JnzDitL5VhYs0E65Hk/tLAPmcmm5GuiGeUoI/B0eUSNFsbqzwgwrttjnzKMKiGLN5CWVmlN1IXGGAfLYsQwK6wAu7kYFzkqP4jcwc5Jr9UPRpJdYIK733tSEmzab4qc5Oq8izKQKIaxXNe7FgmL15HjSpatFt9w/ot/CHS78FUAr3j3RwekHCm/jhPeqhlMAgC+jUgNJbFt3DlhDaRMa0NYamVzmX8D47rtmBbEDU3ld6AezWBPUR5Lh7ODOwlfVI58NAf/aYNlmvl2TZiauBCTa7OPYSyXJnIPbQXg6YQlDknNCr0K769EjeIlAfY87Z4tw=='
+        'frs.sourceforge.net ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCwsY6sZT4MTTkHfpRzYjxG7mnXrGL74RCT2cO/NFvRrZVNB5XNwKNn7G5fHbYLdJ6UzpURDRae1eMg92JG0+yo='
+        'frs.sourceforge.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOQD35Ujalhh+JJkPvMckDlhu4dS7WH6NsOJ15iGCJLC'
+    )
     IMPORT_KEYS_CMD+='mkdir -p ~/.ssh && \
-echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && \
-ssh-keyscan -H github.com sourceforge.net >> ~/.ssh/known_hosts 2>/dev/null && \
-chmod 644 ~/.ssh/known_hosts && \
-printf "Host *\n    StrictHostKeyChecking no\n    BatchMode yes\n" > ~/.ssh/config && '
+echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa && '
+    IMPORT_KEYS_CMD+="printf '%s\\n' $(printf "'%s' " "${PINNED_KNOWN_HOSTS[@]}")> ~/.ssh/known_hosts && "
+    IMPORT_KEYS_CMD+='chmod 644 ~/.ssh/known_hosts && \
+printf "Host *\n    StrictHostKeyChecking yes\n    BatchMode yes\n" > ~/.ssh/config && '
 fi
 
 # GPG private key — needed for signing images and ISOs.
@@ -265,7 +280,23 @@ fi
 # intent below — every single invocation of this script would just hang
 # forever instead. 30s is generous for a real pull of this image while still
 # failing fast on a genuinely wedged connection.
-timeout 30 "${CONTAINER_RUNTIME}" pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} (timed out or offline) — using cached image"
+# The test harness lives in the sibling shani-testbed repo; test-env/test.sh
+# (a shim) execs it from /opt/shani-testbed inside the container. Same
+# optional, no-op-if-missing convention as the checkouts above; override with
+# SHANIOS_TEST_TESTBED_HOST_DIR.
+HOST_TESTBED_DIR="${SHANIOS_TEST_TESTBED_HOST_DIR:-$(realpath -m "${HOST_WORK_DIR}/../shani-testbed")}"
+TESTBED_MOUNT_ARGS=()
+if [[ -x "${HOST_TESTBED_DIR}/testbed" ]]; then
+    TESTBED_MOUNT_ARGS=(-v "${HOST_TESTBED_DIR}:/opt/shani-testbed:ro")
+fi
+
+# SHANIOS_NO_PULL=1 skips the refresh (the MCP server sets it: an agent
+# driving many short commands shouldn't pay up to 30s per call).
+if [[ "${SHANIOS_NO_PULL:-0}" == "1" ]] && "${CONTAINER_RUNTIME}" image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
+    :
+else
+    timeout 30 "${CONTAINER_RUNTIME}" pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} (timed out or offline) — using cached image"
+fi
 
 # ---------------------------------------------------------------------------
 # Run the container
@@ -395,6 +426,7 @@ fi
     -v "${HOST_WORK_DIR}:${CONTAINER_WORK_DIR}" \
     "${OSI_MOUNT_ARGS[@]}" \
     "${DEPLOY_MOUNT_ARGS[@]}" \
+    "${TESTBED_MOUNT_ARGS[@]}" \
     -v "${HOST_PACMAN_CACHE}:${CONTAINER_PACMAN_CACHE}" \
     -v "${HOST_FLATPAK_DATA}:${CONTAINER_FLATPAK_DATA}" \
     -v "${HOST_SNAPD_DATA}:${CONTAINER_SNAPD_DATA}" \

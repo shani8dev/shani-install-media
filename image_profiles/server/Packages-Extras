@@ -1,5 +1,10 @@
 # Packages-Extras — optional packages
 # Installed last. Cloud integration packages for AWS AMI builds.
 cloud-init
-amazon-ssm-agent
-amazon-ec2-utils
+# amazon-ssm-agent and amazon-ec2-utils are NOT in [shani]/[core]/[extra]
+# (ssm-agent is AUR-only, ec2-utils isn't even in the AUR), and
+# build-base-image.sh installs this whole list in one pacstrap call, so
+# listing them here made every server build die with "target not found".
+# server-customization.sh and packer/scripts/01-configure-aws.sh already
+# treat amazon-ssm-agent as optional. To ship them, add PKGBUILDs to
+# shani-pkgbuilds so they land in [shani], then list them here again.
