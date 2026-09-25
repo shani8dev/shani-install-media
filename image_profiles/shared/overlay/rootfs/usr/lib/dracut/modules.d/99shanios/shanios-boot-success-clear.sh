@@ -9,7 +9,7 @@
 # This hook is the success counterpart to shanios-boot-failure-hook.sh.
 # pre-pivot is only reached if dracut successfully mounted the root filesystem.
 # If root mount failed, this hook never runs and the marker written by the
-# pre-mount hook persists across reboot for shani-update to detect.
+# pre-mount hook persists across reboot for shani-auto-rollback.sh to detect.
 #
 # Ordering note:
 #   shanios-overlay-etc.sh (pre-pivot 50) runs before this hook and mounts

@@ -11,15 +11,18 @@
 #   Btrfs subvolume mount is attempted. A companion pre-pivot hook
 #   (shanios-boot-success-clear.sh) deletes the marker if mount succeeds and
 #   the system reaches pivot_root. If mount fails, pre-pivot is never reached,
-#   the marker persists across reboot, and shani-update detects a hard failure.
+#   the marker persists across reboot, and shani-auto-rollback.sh detects a
+#   hard failure.
 #
 #   This write-then-clear-on-success pattern is necessary because dracut has
 #   no "on mount failure" hook — pre-mount runs unconditionally.
 #
 # The file persists across reboots intentionally: mark-boot-in-progress does
-# NOT clear it. shani-update defers to shani-deploy --rollback when it sees
-# boot_hard_failure, because automated recovery requires mounting the Btrfs
-# root which itself failed — a human must act.
+# NOT clear it. The marker is the only evidence a hard failure happened, so
+# it is what shani-auto-rollback.sh acts on (it runs unattended, with no
+# session/display, and calls shani-deploy --rollback for the two confirmed
+# failure shapes). A marker whose content is not a valid slot name is
+# deliberately left for manual recovery rather than acted on.
 
 type getarg > /dev/null 2>&1 || return 0   # not in dracut environment
 
@@ -48,7 +51,8 @@ fi
 # success, so persistence only means the current attempt failed.
 ATTEMPTED_SLOT=$(getarg rootflags | sed 's/.*subvol=@//;s/,.*//')
 # Validate — if rootflags has no subvol=@ or sed returns garbage, use "unknown"
-# as a sentinel. shani-update handles unknown gracefully via its fallback logic.
+# as a sentinel. shani-auto-rollback.sh refuses to guess on an unknown slot
+# and leaves it for manual recovery (shani-health / shani-deploy --rollback).
 case "$ATTEMPTED_SLOT" in
     blue|green) ;;
     *) ATTEMPTED_SLOT="unknown" ;;
