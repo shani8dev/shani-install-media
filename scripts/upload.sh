@@ -305,6 +305,27 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
   if [[ "$MODE" == "image" || "$MODE" == "all" ]]; then
     log "--- Uploading base image artifacts from ${OUTPUT_SUBDIR} ---"
 
+    # A published build is immutable: a DIFFERENT build under the same
+    # dated name (two builds on one UTC date) would replace it - possibly
+    # the image stable.txt points at. Re-uploading the same build (same
+    # .sha256) stays allowed; anything else needs FORCE_REUPLOAD=1.
+    for f in "${OUTPUT_SUBDIR}"/*.zst; do
+      [[ -f "$f" ]] || continue
+      [[ "$f" == *flatpakfs.zst || "$f" == *snapfs.zst ]] && continue
+      _pub="https://downloads.shani.dev/${R2_SUBPATH}/$(basename "$f")"
+      if curl -fsI --max-time 20 "$_pub" >/dev/null 2>&1; then
+        _remote_sum=$(curl -fsS --max-time 20 "${_pub}.sha256" 2>/dev/null | awk '{print $1}')
+        _local_sum=$(awk '{print $1}' "${f}.sha256" 2>/dev/null || sha256sum "$f" | awk '{print $1}')
+        if [[ -n "$_remote_sum" && "$_remote_sum" == "$_local_sum" ]]; then
+          log "$(basename "$f") is already published (same sha256) - re-uploading the same build"
+        elif [[ "${FORCE_REUPLOAD:-0}" == "1" ]]; then
+          log "WARNING: replacing the published $(basename "$f") with a different build (FORCE_REUPLOAD=1)"
+        else
+          die "$(basename "$f") is already published and this is a different build - refusing to replace a release (FORCE_REUPLOAD=1 to override)"
+        fi
+      fi
+    done
+
     if ls "${OUTPUT_SUBDIR}"/*.zst 1>/dev/null 2>&1; then
       sf_upload "base image" \
         --exclude="flatpakfs.zst" --exclude="snapfs.zst" \
