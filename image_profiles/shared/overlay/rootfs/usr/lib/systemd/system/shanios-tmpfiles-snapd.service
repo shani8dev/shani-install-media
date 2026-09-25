@@ -1,10 +1,10 @@
 [Unit]
-Description=Ensure /var/lib/snapd/snap exists and /snap symlink is in place
+Description=Ensure /var/lib/snapd/snap and the snap-confine AppArmor dir exist, /snap symlink in place
 Documentation=man:tmpfiles.d(5)
 DefaultDependencies=no
 After=var-lib-snapd.mount
 RequiresMountsFor=/var/lib/snapd
-Before=snapd.service
+Before=snapd.service apparmor.service
 
 [Service]
 Type=oneshot
