@@ -153,7 +153,7 @@ detaching each other's loop devices — `_ensure_disk_attached`/
 regression in the harness itself, not something to work around by hand
 every time.
 
-## Testing shani-deploy/gen-efi/shani-update changes for real
+## Testing shani-deploy/gen-efi changes for real
 
 `run_in_container.sh` bind-mounts the sibling `shani-deploy` checkout
 read-only at `/opt/shani-deploy` (same optional, no-op-if-missing
@@ -162,8 +162,9 @@ convention as `/opt/os-installer-config` below; override with
 to `enter`/`upgrade`/`verify-boot`/`desktop` to overlay that checkout's
 *current* scripts and systemd units onto the slot — not a hand-copied
 snapshot that drifts, and not whatever got baked into the image at build
-time. `upgrade` calls `shani-deploy` directly (not through `shani-update`,
-which needs a real display to open its progress terminal) with `--force
+time. `upgrade` calls `shani-deploy` directly (not through the retired
+`shani-update` wrapper, which needed a real display to open its progress
+terminal) with `--force
 --channel latest --skip-self-update`, so it drives a REAL, complete deploy
 (download → SHA256+GPG verify → extract → UKI generation/signing →
 boot-entry write), not just a dry-run of the approval flow:

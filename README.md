@@ -527,7 +527,7 @@ Central release pointers at `cache/output/<profile>/`:
 
 `./build.sh test <command>` installs, boots, updates, and rolls back a real
 `.zst` from `cache/output/` on loop-mounted disks — the real, unmodified
-`shani-deploy`/`shani-update` packaged binaries, a real Btrfs receive, and a
+`shani-deploy` packaged binaries, a real Btrfs receive, and a
 genuine UEFI boot via QEMU/OVMF. Uses the same `run_in_container.sh` and
 builder image as every other `build.sh` command — see
 [`test-env/README.md`](test-env/README.md) for the full command list.
