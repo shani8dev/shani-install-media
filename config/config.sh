@@ -21,7 +21,7 @@ ISO_PROFILES_DIR="$(realpath ./iso_profiles)"
 IMAGE_PROFILES_DIR="$(realpath ./image_profiles)"
 GPG_KEY_ID="${GPG_KEY_ID:-7B927BFFD4A9EAAA8B666B77DE217F3DA8014792}"
 
-# Must match the R2_BASE_URL constant hardcoded in shani-deploy.sh/shani-update.sh —
+# Must match the R2_BASE_URL constant hardcoded in shani-deploy.sh —
 # it's baked into the .zsync control file's embedded URL at build time, so a
 # mismatch here means deployed machines' zsync2 differential fetch would point
 # at the wrong host.

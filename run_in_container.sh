@@ -269,7 +269,7 @@ fi
 # ---------------------------------------------------------------------------
 # Sibling shani-deploy checkout (optional) — bind-mounted read-only so
 # test-env/test.sh's --local-src=<dir> (cmd_enter/cmd_upgrade/cmd_verifyboot/
-# cmd_desktop) can overlay the REAL, CURRENT shani-deploy/shani-update/
+# cmd_desktop) can overlay the REAL, CURRENT shani-deploy/shani-auto-rollback/
 # gen-efi/check-boot-failure scripts (and their systemd units) onto a slot,
 # instead of only ever exercising whatever got baked into the bootstrapped
 # image at build time. Same conditional/optional pattern as the
@@ -330,7 +330,7 @@ fi
 # `test upgrade`/`test cycle` container. --add-host's mapping of
 # downloads.shani.dev to 127.0.0.1 just pointed at that OTHER container's own
 # empty loopback — confirmed live: the R2 fetch always failed, silently
-# falling through to shani-update.sh's hardcoded SourceForge fallback
+# falling through to shani-deploy.sh's hardcoded SourceForge fallback
 # (BASE_URL), which is NOT overridden by --add-host and reaches the REAL
 # public internet. --network=host makes every container share the host's
 # actual network stack, so `serve`'s bind on 0.0.0.0:443 and `--add-host`'s
