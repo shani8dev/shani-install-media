@@ -52,6 +52,23 @@ thousands of files, partly permission-restricted), not source.
   skipped one for this reason.
 - A real built image usually already exists under `cache/output/<profile>/`
   — check there before spending 30+ minutes on `./build.sh image`.
+- **`cache/pacman_cache/` is a ~6.0G pacman package cache (4343 files) and the
+  largest in the workspace — reuse it, and know it is not private to this
+  repo.** `run_in_container.sh` already mounts it at `/var/cache/pacman`, so
+  every `./run_in_container.sh build.sh test …` run installs from it. It
+  covers the full KDE Plasma stack (`kwin`, `plasma-workspace`,
+  `plasma-desktop`, `dolphin`, `konsole`, `yakuake`, `kvantum`, `breeze-gtk`,
+  `kde-gtk-config`) plus `xorg-server-xvfb`, `xdotool`, `imagemagick` and
+  `fish`. The sibling `shani-pkgbuilds/cache/pacman_cache/pkg` (~3.2G) is
+  complementary — this one has `xorg-server-xvfb`/`xdotool` and that one does
+  not, so **mount both** when some other harness needs the union (symlink the
+  two `pkg/` dirs together; do not copy). Measured 2026-09-26: mounting the
+  caches cut a from-scratch Plasma install from ~2G of downloads to 681 MiB.
+  Anything that runs `pacman -S` in an ad-hoc container should mount it too.
+- When verifying changes here, run the whole `suite`/harness sequence in
+  **one** container invocation rather than one per step, and mount any output
+  path you want to keep — a `--rm` container discards whatever it wrote to
+  its own `/tmp`.
 
 ## If you have Superpowers / oh-my-opencode / ultrawork / similar available
 
