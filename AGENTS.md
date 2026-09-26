@@ -463,6 +463,66 @@ here before (the AMI/packer path).
 evidence behind every line below, see `AUDIT-HISTORY.md`.** This section
 is deliberately just the current-state summary.
 
+- **Install hooks that shell out to `grep`/`awk`/`vercmp` fail during the
+  single-transaction `pacstrap`, and it is harmless — confirmed present,
+  benign (2026-09-27).** `build-base-image.sh:202` installs
+  `Packages-Base` + `Packages-Desktop` + `Packages-Extras` in ONE
+  `pacstrap` call, and alpm runs each package's `.INSTALL` immediately
+  after unpacking that package. A hook that calls a tool from a package not
+  yet unpacked finds nothing on the target's disk. Reproduced against a real
+  `pacstrap -p gnome` with the full package list: 10 failures, and
+  `pacstrap` still exits 0. Mapped to the owning hook, all ten:
+
+  | package | hook | missing |
+  |---|---|---|
+  | systemd | `.INSTALL:22` | `grep` |
+  | fontconfig | `.INSTALL:2` | `vercmp` (ships with pacman) |
+  | fish | `.INSTALL:2,3` | `grep` |
+  | zsh | `.INSTALL:4,5` | `grep` |
+  | shani-settings | `plymouth-set-default-theme:299` | `grep` |
+  | shani-settings | `.INSTALL:10,12` | `grep` |
+  | shani-settings | `.INSTALL:16` | `awk` |
+
+  **They are non-fatal and silently degrading, not aborting.** For
+  `shani-settings` all three lines still ran — `.INSTALL` does not run under
+  `errexit` — so the log shows three separate errors rather than one abort,
+  and the script continues to its next statement. Reading the actual lines:
+
+  - `systemd:22` is `grep -qe '^/usr/bin/systemd-home-fallback-shell$' etc/shells`
+    guarding an append, so the consequence is that `/etc/shells` ends up
+    without `systemd-home-fallback-shell`. That entry only matters to
+    `systemd-homed`, which Shanios does not use.
+  - `fontconfig:2` is a `vercmp` version comparison for the font cache;
+    nothing is lost, because that is not what populates the cache.
+  - `shani-settings.install:10,12,16` read `UID_MIN`/`UID_MAX` out of
+    `/etc/login.defs` with `grep` and filter `/etc/passwd` with `awk`, to
+    feed the `usermod -a -G sambashare` loop. With both empty the user list
+    is never computed, so **no account is added to `sambashare` during the
+    initial install**. Harmless *at first install specifically*, because a
+    fresh image has no regular accounts yet — users are created later by
+    `os-installer-config/configure.sh` — and on any real upgrade `grep` and
+    `awk` are long since on disk, so the hook does its job. The case that
+    would genuinely matter is re-running that hook on a populated system
+    from a root that really lacks `grep`/`awk`, which is not how this image
+    is built.
+
+  **Do not "fix" this by patching the individual hooks.** The real shape of
+  the problem is that one transaction cannot guarantee hook ordering. If it
+  ever does matter, the fix is to split the install so the packages
+  providing hook tools land first — not to edit five `.install` files.
+  Fixing `shani-settings.install` alone would also be wrong: it would mask
+  the same class for the next package that needs a tool later in the list.
+
+  **Verification note for anyone repeating this.** The target directory
+  must be on an **exec-capable** mount. A first attempt into `/tmp`
+  produced 97 `call to execv failed (Permission denied)` errors — a
+  completely different signature, caused by the container's own root being
+  `noexec`, not by anything in Shanios. On the exec-capable bind mount the
+  same install shows 0 execv failures and only the 10 real ones above. Note
+  also that `cmd_pacstrap` ignores extra package names (separate known issue
+  below), so it installs only `base` and cannot reproduce this; drive
+  `pacstrap` directly with the concatenated profile list.
+
 - **Server profile could never build: `Packages-Extras` listed two packages
   no configured repo has — FIXED (2026-09-23).** `amazon-ssm-agent` is
   AUR-only (stale 3.1.x) and `amazon-ec2-utils` isn't in the AUR at all;

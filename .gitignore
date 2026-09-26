@@ -29,3 +29,11 @@ test-env/disk/*
 
 # screenshots from `build.sh test desktop` (outside disk/, meant to be viewed)
 test-env/shots/
+
+# A stray pacstrap target. The real build installs into a btrfs subvolume, but
+# an ad-hoc `pacstrap` run to reproduce install-hook behaviour creates a whole
+# root filesystem. Point one at this directory and it lands in the repo: ~9G,
+# every file owned by root, so plain `rm` fails and it needs sudo. Reproduce
+# into a scratch dir outside the repo instead. Guarded here so an accident
+# cannot become a commit.
+hookroot*/
