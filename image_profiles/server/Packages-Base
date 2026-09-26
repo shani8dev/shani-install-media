@@ -109,3 +109,14 @@ elfutils
 subversion
 mercurial
 shani-deploy
+
+# Virtual providers, pinned here for the same reason as the desktop profiles:
+# only a package named on the pacstrap command line settles provider
+# selection, and --noconfirm does not answer provider prompts.
+#
+# iptables   provides libxtables.so, wanted by iproute2, which `base` needs.
+# exim       provides smtp-forwarder, wanted by arpwatch (shani-tools-network).
+# No oci-runtime pin: this profile has no podman or buildah, so nothing asks.
+# cronie is already listed above, so the `cron` virtual is unambiguous here.
+iptables
+exim

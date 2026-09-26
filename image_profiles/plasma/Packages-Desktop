@@ -16,3 +16,13 @@ shani-chronoa
 desktop-entry-hider
 pipewire-jack
 noto-fonts
+
+# Plasma-only virtual providers.
+#
+# qt6-multimedia-backend: qt6-multimedia depends on it, and the KDE apps in
+# shani-desktop-plasma (dolphin, konsole, spectacle, kio, ...) pull qt6-multimedia
+# in. ffmpeg is the backend with the codec support this image expects.
+# cron: kcron depends on the virtual `cron`; cronie is the implementation
+# shani-tools-extra already ships, so naming it here settles the choice.
+qt6-multimedia-ffmpeg
+cronie

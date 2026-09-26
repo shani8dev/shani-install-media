@@ -16,3 +16,11 @@ shani-chronoa
 desktop-entry-hider
 pipewire-jack
 noto-fonts
+
+# tesseract (via gnome-shell-extension-shani-circle-to-search) depends on the
+# virtual `tessdata`, which ~128 tesseract-data-* packages provide -- hence the
+# enormous provider list. tesseract-data-osd does NOT provide it, so naming
+# osd does not disambiguate anything. Pin the one language pack this image
+# needs; a provider named in a metapackage's depends=() does not settle this
+# (see Packages-Base).
+tesseract-data-eng

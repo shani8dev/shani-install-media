@@ -10,3 +10,23 @@ shani-tools
 shani-deploy
 dracut
 openresolv
+
+# Virtual providers, pinned here so the build is non-interactive.
+#
+# These have to be listed at THIS level, not in a metapackage's depends=().
+# A provider reached through a metapackage still prompts: the Plasma build
+# listed cronie via shani-tools-extra and pacman still asked "2 providers
+# available for cron", because only a package named on the pacstrap command
+# line counts as a chosen provider. --noconfirm does not help either; it
+# answers install confirmations, not provider selection, so with no tty the
+# prompt reads EOF and silently takes the default.
+#
+# iptables   provides libxtables.so, which iproute2 depends on, which `base`
+#            depends on -- so the prompt is unavoidable without this line.
+# crun       provides oci-runtime, wanted by podman and buildah (shani-core).
+# exim       provides smtp-forwarder, wanted by arpwatch
+#            (shani-tools-network). It is also what cronie's smtp-server
+#            resolves to, so this covers both.
+iptables
+crun
+exim
