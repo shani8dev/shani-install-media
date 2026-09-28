@@ -28,10 +28,16 @@ page through the rest.
 - `Supply-chain discipline`
 - `Host-side fix:` (`run_in_container.sh`)
 
-**On-demand reference — do not page through speculatively:**
+**Current known issues — read this before you start:**
 - `Audit-verified known issues (confirmed present)` — ~386 lines. **Grep it
   for the subsystem you are changing.** Per-bug
   verification methodology lives in `AUDIT-HISTORY.md`.
+
+  This section mixes fixed history with issues that are **still open**,
+  including Critical security ones. Grep it for `not fixed`,
+  `still open`, and your subsystem name before you touch anything.
+
+**Background reference — skippable, pure survey material:**
 - `Before claiming a package/service is "missing"` — a diagnostic checklist
   worth reading whenever something looks absent, since it is a known trap.
 
