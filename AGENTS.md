@@ -5,6 +5,39 @@ This file applies to any AI coding assistant working in this repository
 before editing, and follow the verification steps before calling any change
 done.
 
+## Start here (fast path)
+
+This file covers both the rules for changing build/boot logic and a dated
+record of every defect found here. Read what your change touches; don't
+page through the rest.
+
+**Always read these first:**
+- `What this repo is` and `Empirical verification (mandatory)`
+- `Environment facts that affect what you can test here` — KVM, caches, and
+  what can/can't be tested on this host
+- `Required verification for a change to build/boot logic`
+- `MANDATORY: Full Test Harness Sequence (non-negotiable)` — not skippable
+- `Boundaries`
+- `Cross-repo impact — check before calling a fix complete`
+
+**Read when your change touches them:**
+- `Testing shani-deploy/gen-efi changes for real`
+- `Testing pacman.conf/signing changes` (the `cmd_pacstrap` section)
+- `Verifying GUI/desktop changes` and the automated `gui` harness
+- the install.sh/configure.sh section (sibling `os-installer-config`)
+- `Supply-chain discipline`
+- `Host-side fix:` (`run_in_container.sh`)
+
+**On-demand reference — do not page through speculatively:**
+- `Audit-verified known issues (confirmed present)` — ~386 of this file's
+  923 lines. **Grep it for the subsystem you are changing.** Per-bug
+  verification methodology lives in `AUDIT-HISTORY.md`.
+- `Before claiming a package/service is "missing"` — a diagnostic checklist
+  worth reading whenever something looks absent, since it is a known trap.
+
+**Never skip:** the full harness. A build that "looks right" is not a booted
+image.
+
 ## What this repo is
 
 The fully automated build system for Shanios — builds Btrfs system images,
