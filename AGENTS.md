@@ -29,8 +29,8 @@ page through the rest.
 - `Host-side fix:` (`run_in_container.sh`)
 
 **On-demand reference — do not page through speculatively:**
-- `Audit-verified known issues (confirmed present)` — ~386 of this file's
-  923 lines. **Grep it for the subsystem you are changing.** Per-bug
+- `Audit-verified known issues (confirmed present)` — ~386 lines. **Grep it
+  for the subsystem you are changing.** Per-bug
   verification methodology lives in `AUDIT-HISTORY.md`.
 - `Before claiming a package/service is "missing"` — a diagnostic checklist
   worth reading whenever something looks absent, since it is a known trap.
