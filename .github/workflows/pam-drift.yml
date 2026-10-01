@@ -1,0 +1,36 @@
+name: PAM drift
+
+# The image ships its own /etc/pam.d/system-auth (shared overlay) - a fork of
+# pambase's, adding `auth sufficient pam_u2f.so` so a FIDO2/U2F key can log in.
+# pambase's upgrades never touch our copy, so nothing else would notice them
+# diverge. Moved here from shani-settings with the file (2026-10-01).
+on:
+  push:
+    paths:
+      - 'image_profiles/shared/overlay/rootfs/etc/pam.d/**'
+      - 'scripts/check-pam-drift.sh'
+      - '.github/workflows/pam-drift.yml'
+  pull_request:
+    paths:
+      - 'image_profiles/shared/overlay/rootfs/etc/pam.d/**'
+      - 'scripts/check-pam-drift.sh'
+      - '.github/workflows/pam-drift.yml'
+  schedule:
+    - cron: '17 4 * * 1'   # weekly: a pambase release is drift even when we change nothing
+  workflow_dispatch: {}
+
+jobs:
+  pam-drift:
+    name: system-auth vs pambase
+    # Arch, not ubuntu: the comparison target is pambase's /etc/pam.d/system-auth
+    # (Debian has common-auth instead), so ubuntu would SKIP and stay green forever.
+    runs-on: ubuntu-latest
+    container: archlinux:base
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pambase (the file we fork)
+        run: pacman -Syu --noconfirm --needed pambase
+      - name: Compare
+        run: bash scripts/check-pam-drift.sh

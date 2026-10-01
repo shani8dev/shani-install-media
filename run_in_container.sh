@@ -311,6 +311,15 @@ if [[ -d "${HOST_PKGBUILDS_DIR}" && "$(realpath -m "${HOST_PKGBUILDS_DIR}")" != 
     TESTBED_MOUNT_ARGS+=(-v "${HOST_PKGBUILDS_DIR}:/opt/shani-pkgbuilds:ro")
 fi
 
+# The GUI apps' checkouts (slot-tests/repo-pytest runs their own suites on the
+# image's Python/GTK) and the four web sites' (`web --site=/opt/<repo>`),
+# read-only at /opt/<repo>. Same optional, no-op-if-missing convention.
+for _repo in shani-cassini shani-chronoa shani-backup shani-docs shani-blog shani-website shani-wiki; do
+    _dir="$(realpath -m "${HOST_WORK_DIR}/../${_repo}")"
+    [[ -d "${_dir}" ]] && TESTBED_MOUNT_ARGS+=(-v "${_dir}:/opt/${_repo}:ro")
+done
+unset _repo _dir
+
 # SHANIOS_NO_PULL=1 skips the refresh (the MCP server sets it: an agent
 # driving many short commands shouldn't pay up to 30s per call).
 if [[ "${SHANIOS_NO_PULL:-0}" == "1" ]] && "${CONTAINER_RUNTIME}" image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then

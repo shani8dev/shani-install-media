@@ -1,0 +1,59 @@
+#%PAM-1.0
+
+# Shanios override of pambase's /etc/pam.d/system-auth.
+#
+# WHY THIS FILE EXISTS
+# `shani-peripherals` depends on `pam-u2f`, but no stock PAM stack references
+# pam_u2f.so, so a FIDO2/U2F security key was installed-and-inert: the key is
+# detected, and it cannot authenticate. Verified 2026-09-26 by installing gdm,
+# plasma-login-manager, sddm and kscreenlocker together and grepping every file
+# in /etc/pam.d and /usr/lib/pam.d: pam_u2f appeared in zero stacks.
+#
+# WHY system-auth AND NOT system-local-login
+# system-local-login looks like the narrower choice but is wrong. It is included
+# by gdm-password/gdm-fingerprint/gdm-smartcard, login, kde/kde-fingerprint/
+# kde-smartcard and plasmalogin-autologin - but NOT by `plasmalogin` itself,
+# which is the Plasma edition's actual login manager. system-local-login and
+# system-login are siblings that both include system-auth, so system-auth is the
+# only chokepoint that reaches GNOME, KDE, Plasma and getty alike.
+#
+# WHY `sufficient` AND NOT `required` - this was measured, not assumed
+# With no key present, pam_u2f.so returns PAM_AUTHINFO_UNAVAIL (9). Under
+# `auth required` that fails the whole stack, so a machine without a security
+# key could no longer log in with its password either. Under `auth sufficient`
+# the return value is ignored and the stack falls through to pam_unix.
+# Verified with a compiled libpam client, with pam_permit (0) and pam_deny (7)
+# controls in the same run. Do not "tighten" this to required.
+#
+# MAINTENANCE - THIS IS A FORK OF A pambase FILE
+# Derived from pambase 20260616-1. It will silently drift when pambase changes,
+# because nothing alerts on that: pambase's own upgrade will leave this file
+# alone (it is not in pambase's backup list) and the two will disagree. Re-diff
+# against `pacman -Ql pambase` -> etc/pam.d/system-auth on every pambase bump and
+# carry over upstream changes by hand.
+auth       sufficient                  pam_u2f.so
+auth       required                    pam_faillock.so      preauth
+# Optionally use requisite above if you do not want to prompt for the password
+# on locked accounts.
+-auth      [success=2 default=ignore]  pam_systemd_home.so
+auth       [success=1 default=bad]     pam_unix.so          try_first_pass nullok
+auth       [default=die]               pam_faillock.so      authfail
+auth       optional                    pam_permit.so
+auth       required                    pam_env.so
+auth       required                    pam_faillock.so      authsucc
+# If you drop the above call to pam_faillock.so the lock will be done also
+# on non-consecutive authentication failures.
+
+-account   [success=1 default=ignore]  pam_systemd_home.so
+account    required                    pam_unix.so
+account    optional                    pam_permit.so
+account    required                    pam_time.so
+
+-password  [success=1 default=ignore]  pam_systemd_home.so
+password   required                    pam_unix.so          try_first_pass nullok shadow
+password   optional                    pam_permit.so
+
+-session   optional                    pam_systemd_home.so
+session    required                    pam_limits.so
+session    required                    pam_unix.so
+session    optional                    pam_permit.so

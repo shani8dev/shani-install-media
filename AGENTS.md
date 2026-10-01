@@ -62,6 +62,48 @@ correct." It is verified by observing the actual behavior of the real
 thing in the real environment — built, served, deployed, signed, running.
 If you haven't seen it work (or fail) for real, it isn't verified.
 
+## Test harness: shani-testbed (use it - and improve it, never invent around it)
+
+The ecosystem's real test harness is the sibling repo **`../shani-testbed`**
+(read its `README.md` and `AGENTS.md`). It installs a real ShaniOS image with
+the real installer, boots its slots (`systemd-nspawn`, and UEFI + TPM VMs),
+runs real deploys and rollbacks, drives GUI apps through their accessibility
+tree, and checks web pages in a real headless browser. Every command runs from
+`../shani-install-media`, which provides the builder container:
+
+```bash
+cd ../shani-install-media
+./run_in_container.sh build.sh test <command> ...   # `... test help` lists them all
+```
+
+**If the check you need does not exist, add it to shani-testbed - do not invent
+around it.** A one-off script in this repo, a scratchpad, or a heredoc piped
+into a container is lost when the session ends, and the next agent re-derives
+it. Extend the harness instead (see "Extend the harness" in its AGENTS.md):
+
+- an in-slot check -> `shani-testbed/slot-tests/<name>.sh` (`# slot-test-mode: boot`,
+  prints `RESULT <name> PASS|FAIL|SKIP` lines), run by `slot-test <slot> <name>`;
+- a GUI interaction or assertion -> an `app` action in `lib/app.sh`, or a walk
+  through a real app as `app-scripts/<app>.actions`;
+- a web check -> `lib/web_client.py`;
+- a new way to boot, drive or observe -> a command or option in `lib/`;
+
+each with a negative control (a check that cannot fail is not a check), its
+self-test (`tests/run-app-actions.sh`, `tests/run-web-client.sh`, ...), and the
+`usage` + README updated. One harness run at a time: disk-touching commands
+take `disk/.testbed.lock` and a second run is refused. Plain nspawn boots see
+the image's whole `/var`; real boots have an empty tmpfs `/var`
+(`systemd.volatile=state`) - use `slot-test --volatile`, or a real UEFI boot
+with `iso-install --boot-only --console-exec=CMD`, for anything touching `/var`.
+
+### What to run for this repo
+
+- The mandatory sequence is above. Also: `slot-test <slot> all` and, for
+  anything touching `/var`, `slot-test <slot> service-start unit-verify --volatile`;
+  `slot-diff` to see what an image change does to a machine; `desktop <slot> --tour`
+  for desktop/theme changes; `iso-install --boot-only --console-exec=...` for a
+  real UEFI + TPM boot of whatever `install.img` holds.
+
 ## This repo builds and boot-tests real OS images — use the real harness
 
 Don't `bash -n` a build script and call it done. `test-env/` is a genuine
@@ -497,6 +539,29 @@ here before (the AMI/packer path).
   of thousands of files, partly permission-restricted), not source.
 
 ## Audit-verified known issues (confirmed present)
+
+- **Package-shipped `/var` directories did not exist at runtime - FIXED in the
+  build, pending the next image (2026-10-01).** `/var` is an empty tmpfs on
+  every boot (`systemd.volatile=state`) and the persistent `/data/varlib/<svc>`
+  bind sources and `@libvirt`/`@snapd`/... subvolumes start empty, so a
+  directory a package ships under `/var` only exists if a tmpfiles.d line
+  creates it - and most Arch packages ship none. On a fresh install (real
+  UEFI boot of the published 20260925 image): `smb`, `nmb`, `winbind`
+  (no `/var/lib/samba/private`), `rpc-statd` (no `/var/lib/nfs/statd`),
+  `libvirtd` (via `virt-secret-init-encryption`) and **`apparmor.service`**
+  (the snap-confine profile includes `/var/lib/snapd/apparmor/snap-confine`,
+  so *no* profile loaded) all failed. `scripts/gen-var-tmpfiles.sh`, run by
+  `build-base-image.sh` after overlays + customizations, writes
+  `/usr/lib/tmpfiles.d/shanios-package-var.conf` from pacman's own per-package
+  mtree (the package's mode and owner; `:` prefixes so existing persistent
+  state is never re-chmodded; paths any other tmpfiles.d file declares are
+  skipped). Verified: in an Arch container against samba/nfs-utils/libvirt
+  (modes match the packages, `:` leaves an existing dir alone, no duplicate
+  warnings), and on a real UEFI boot of 20260925 with the generated file
+  applied (132 entries) - all six services active. Found by shani-testbed's
+  `config-validators`/`service-start` slot-tests; real-boot fidelity needs
+  `slot-test --volatile` or `iso-install --boot-only --console-exec`. Until an
+  image built with this ships, installed machines still have the failures.
 
 **For the full narrative, verification methodology, and before/after
 evidence behind every line below, see `AUDIT-HISTORY.md`.** This section

@@ -234,6 +234,14 @@ if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" ]]; then
         || die "Customizations failed"
 fi
 
+# Every directory a package ships under /var, as tmpfiles.d lines: /var is a
+# tmpfs at runtime (systemd.volatile=state) and the /data/varlib binds start
+# empty, so without this smb/nmb/winbind, rpc-statd and libvirtd fail on a
+# fresh install. After the overlays and customizations, so every package and
+# every hand-written tmpfiles.d line (which take precedence) is already there.
+bash "${SCRIPT_DIR}/gen-var-tmpfiles.sh" "${SUBVOL_MOUNT}" \
+    || die "Generating /var tmpfiles.d entries failed"
+
 # Optional OEM/private-mirror injection (integration-map Product 6, Option A).
 # Rewrites shani-deploy's compile-time constants inside the image before the
 # btrfs snapshot — preserves immutability at runtime (no /etc override file).
