@@ -55,11 +55,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve AWS region
+        id: aws
+        env:
+          AWS_REGION_SECRET: ${{ secrets.AWS_REGION }}
+        run: |
+          # us-east-1 is not a guess: it is the default of the packer
+          # template's own aws_region variable
+          # (packer/templates/common.pkr.hcl), so an unset secret and the
+          # template's default are the same region.
+          #
+          # This step exists because every AMI run since 2026-09-24 died on
+          # the next step with "Input required and not supplied: aws-region"
+          # - AWS_REGION is not set in this repo, so the empty secret was
+          # passed straight into configure-aws-credentials and the build
+          # never reached packer at all. A secret for a value the template
+          # already defaults is not worth a red run.
+          region="${AWS_REGION_SECRET:-us-east-1}"
+          echo "AWS region: $region${AWS_REGION_SECRET:+ (from the AWS_REGION secret)}"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_PACKER_ROLE_ARN }}
-          aws-region:     ${{ secrets.AWS_REGION }}
+          aws-region:     ${{ steps.aws.outputs.region }}
 
       - name: Install Packer ${{ env.PACKER_VERSION }}
         uses: hashicorp/setup-packer@v3
