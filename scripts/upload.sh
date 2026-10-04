@@ -3,7 +3,7 @@
 #
 # Uploads:
 #   image  *.zst, *.zst.sha256, *.zst.asc, latest.txt, central latest/stable.txt
-#   iso    signed_*.iso, .sha256, .asc, .torrent
+#   iso    signed_*.iso, .sha256, .asc, .torrent, base-image.txt
 #   all    both of the above
 #
 # All uploads are mirrored to Cloudflare R2 if R2_BUCKET is set.
@@ -434,6 +434,20 @@ if [[ "${VERIFY_ONLY}" != "true" ]]; then
       for f in "${OUTPUT_SUBDIR}"/signed_*.iso.torrent; do r2_upload "$f" "${R2_SUBPATH}"; done
     else
       log "Warning: No signed_*.iso.torrent files found in ${OUTPUT_SUBDIR}"
+    fi
+
+    # Which base image this ISO embeds. Publishes as base-image.txt beside the
+    # ISO, named differently from latest.txt on purpose: latest.txt in this
+    # folder is the *image* channel pointer (when an image build shares the
+    # date), and the ISO's own record must not be mistaken for it. The release
+    # gate reads this to know what the disk an ISO installs has to end up
+    # running - the ISO's folder date is its build date and can be newer than
+    # the image it wraps.
+    if [[ -f "${OUTPUT_SUBDIR}/base-image.txt" ]]; then
+      sf_upload "ISO base image record" "${OUTPUT_SUBDIR}/base-image.txt" "${REMOTE_SUBPATH}"
+      r2_upload "${OUTPUT_SUBDIR}/base-image.txt" "${R2_SUBPATH}"
+    else
+      log "Warning: no base-image.txt in ${OUTPUT_SUBDIR} - the ISO will publish without a record of which image it embeds, and the release gate will refuse it"
     fi
 
     # Write iso-latest.txt so r2_cleanup can pin this dated folder even when

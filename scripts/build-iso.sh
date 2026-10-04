@@ -291,6 +291,16 @@ base_image=$(<"${OUTPUT_SUBDIR}/latest.txt")
 [[ -f "${OUTPUT_SUBDIR}/${base_image}" ]] \
   || die "Base image file not found: ${OUTPUT_SUBDIR}/${base_image}"
 
+# Which image this ISO embeds, as a record the ISO's own dated folder carries.
+# The ISO's folder date is its BUILD date and the image it wraps can be older
+# (it is built around whatever the chosen channel pinned), so an ISO's filename
+# says nothing about the image inside it - and the release gate has to hold
+# the installed disk to that image, not to the ISO's date. The image archive is
+# a zstd btrfs send stream, so reading /etc/shani-version out of it means a
+# btrfs receive; this file is that fact, published next to the ISO.
+printf '%s\n' "${base_image}" > "${OUTPUT_SUBDIR}/base-image.txt"
+log "Base image this ISO embeds: ${base_image}"
+
 ISO_DIR="${TEMP_DIR}/${PROFILE}/iso/${OS_NAME}/x86_64"
 mkdir -p "$ISO_DIR"
 
