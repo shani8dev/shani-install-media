@@ -30,6 +30,19 @@ test-env/disk/*
 # screenshots from `build.sh test desktop` (outside disk/, meant to be viewed)
 test-env/shots/
 
+# Harnessed Chronoa evaluations (testbed `app`/`slot-test` runs writing their
+# evidence outside DATA_DIR): chronoa-matrix/ and chronoa-sing/ hold the
+# cli_matrix.py and singing sweeps (14M + 424K), test-env/matrix-out/ and
+# test-env/eval-out/ their JSON. Generated, regenerable by re-running the
+# sweep, and useless in history - and test-env/disk-plasma/ next to them is a
+# 6.2G loop-backed install image, the exact class of file the rules above
+# exist to keep out of a commit.
+chronoa-matrix/
+chronoa-sing/
+test-env/matrix-out/
+test-env/eval-out/
+test-env/disk-*/
+
 # A stray pacstrap target. The real build installs into a btrfs subvolume, but
 # an ad-hoc `pacstrap` run to reproduce install-hook behaviour creates a whole
 # root filesystem. Point one at this directory and it lands in the repo: ~9G,
