@@ -55,10 +55,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve AWS region
+      - name: Resolve AWS inputs
         id: aws
         env:
           AWS_REGION_SECRET: ${{ secrets.AWS_REGION }}
+          AWS_ROLE_SECRET: ${{ secrets.AWS_PACKER_ROLE_ARN }}
         run: |
           # us-east-1 is not a guess: it is the default of the packer
           # template's own aws_region variable
@@ -74,6 +75,19 @@ jobs:
           region="${AWS_REGION_SECRET:-us-east-1}"
           echo "AWS region: $region${AWS_REGION_SECRET:+ (from the AWS_REGION secret)}"
           echo "region=$region" >> "$GITHUB_OUTPUT"
+
+          # The role is not optional and there is no default for it, so an
+          # unset secret has to be named rather than left for the action to
+          # report as "Credentials could not be loaded ... from any
+          # providers", which reads like a network problem and sent this
+          # looking for one (2026-10-04). It has to be an IAM role whose
+          # trust policy allows this repository's GitHub OIDC principal -
+          # there is nothing in this repo that can create it.
+          if [ -z "${AWS_ROLE_SECRET:-}" ]; then
+            echo "::error::AWS_PACKER_ROLE_ARN is not set in shani8dev/shani-install-media, so this workflow has no way to authenticate to AWS. Add it under Settings -> Secrets and variables -> Actions: an IAM role whose trust policy allows this repository's GitHub Actions OIDC principal (repo:shani8dev/shani-install-media, sub), with permission to run the EC2 instances and write the AMI. AWS_REGION is not needed - it falls back to the packer template's own us-east-1 default."
+            exit 1
+          fi
+          echo "AWS role: configured"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
