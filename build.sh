@@ -240,11 +240,19 @@ case "$COMMAND" in
       log "No flatpak-packages.txt for profile '${_FULL_PROFILE}' — skipping Flatpak build."
     fi
 
-    if [[ -f "${IMAGE_PROFILES_DIR}/${_FULL_PROFILE}/snap-packages.txt" ]]; then
+    # Snap list may live in the profile dir or in shared/ (it currently lives in
+    # shared/ for every profile). Checking only the profile dir meant this gate
+    # never fired, so build-snap-image.sh was never called and `full` shipped an
+    # ISO with no snap layer — reported as "No snap-packages.txt ... skipping",
+    # i.e. as a deliberate choice rather than as a missing file. See the same
+    # fallback inside build-snap-image.sh, which is where the real resolution
+    # happens; this gate only has to agree that a list exists somewhere.
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_FULL_PROFILE}/snap-packages.txt" \
+       || -f "${IMAGE_PROFILES_DIR}/shared/snap-packages.txt" ]]; then
       log "snap-packages.txt found — building Snap image..."
       ./scripts/build-snap-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
-      log "No snap-packages.txt for profile '${_FULL_PROFILE}' — skipping Snap build."
+      warn "No snap-packages.txt for profile '${_FULL_PROFILE}' (nor in shared/) — skipping Snap build."
     fi
 
     ./scripts/build-iso.sh    "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
@@ -275,11 +283,15 @@ case "$COMMAND" in
     else
       log "No flatpak-packages.txt for profile '${_ISO2_PROFILE}' — skipping Flatpak build."
     fi
-    if [[ -f "${IMAGE_PROFILES_DIR}/${_ISO2_PROFILE}/snap-packages.txt" ]]; then
+    # Same shared/ fallback as the 'full' gate above — iso-release is the task CI
+    # runs on ISO weeks, so before this the release ISO never carried a snap
+    # layer either.
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_ISO2_PROFILE}/snap-packages.txt" \
+       || -f "${IMAGE_PROFILES_DIR}/shared/snap-packages.txt" ]]; then
       log "snap-packages.txt found — building Snap image..."
       ./scripts/build-snap-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
-      log "No snap-packages.txt for profile '${_ISO2_PROFILE}' — skipping Snap build."
+      warn "No snap-packages.txt for profile '${_ISO2_PROFILE}' (nor in shared/) — skipping Snap build."
     fi
     ./scripts/build-iso.sh    "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" --from-r2 --base=stable
     ./scripts/repack-iso.sh   "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
