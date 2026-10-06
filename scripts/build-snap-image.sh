@@ -37,12 +37,27 @@ log "Building Snap image for profile: ${PROFILE}"
 
 # ---------------------------------------------------------
 # Load snap list
+#
+# Fall back to image_profiles/shared/snap-packages.txt, which is where the snap
+# list actually lives. Without this fallback the script found no list for ANY
+# profile, printed "No Snap package list ... Exiting..." and exited 0 — so
+# `build.sh snap` silently built nothing, every ISO shipped with no snap layer,
+# and CI stayed green because a no-op is a success. That is the "soft-fail that
+# looks like success" shape, not a harmless convenience.
+# A per-profile list still wins when present, so a profile can diverge.
 # ---------------------------------------------------------
 SNAP_LIST="${IMAGE_PROFILES_DIR}/${PROFILE}/snap-packages.txt"
-
 if [[ ! -f "$SNAP_LIST" ]]; then
-    log "No Snap package list at ${SNAP_LIST}. Exiting..."
-    exit 0
+    SHARED_SNAP_LIST="${IMAGE_PROFILES_DIR}/shared/snap-packages.txt"
+    if [[ -f "$SHARED_SNAP_LIST" ]]; then
+        SNAP_LIST="${SHARED_SNAP_LIST}"
+        log "No snap list for '${PROFILE}' — using the shared list (${SHARED_SNAP_LIST})"
+    else
+        # Say plainly that this is a no-op. It genuinely is fine for a profile to
+        # ship no snaps, but it must never read as "the snap image was built".
+        warn "No snap package list for '${PROFILE}' (neither ${IMAGE_PROFILES_DIR}/${PROFILE}/snap-packages.txt nor ${SHARED_SNAP_LIST}); producing NO snap layer."
+        exit 0
+    fi
 fi
 
 snaps=()
