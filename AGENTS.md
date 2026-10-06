@@ -795,9 +795,10 @@ is deliberately just the current-state summary.
   completely different signature, caused by the container's own root being
   `noexec`, not by anything in Shanios. On the exec-capable bind mount the
   same install shows 0 execv failures and only the 10 real ones above. Note
-  also that `cmd_pacstrap` ignores extra package names (separate known issue
-  below), so it installs only `base` and cannot reproduce this; drive
-  `pacstrap` directly with the concatenated profile list.
+  also that `cmd_pacstrap` now honours extra package names (fixed in
+  `shani-testbed`; this file's note on that was stale until 2026-10-06), so
+  `pacstrap -p <profile> <packages...>` CAN drive that reproduction directly
+  instead of concatenating the profile list by hand.
 
 - **Server profile could never build: `Packages-Extras` listed two packages
   no configured repo has — FIXED (2026-09-23).** `amazon-ssm-agent` is
@@ -933,14 +934,24 @@ is deliberately just the current-state summary.
   inside a throwaway container. Also: an agent this session listed/read
   under `test-env/disk/` and `cache/` despite the rule below; no harm, but
   don't repeat it.
-- **`cmd_pacstrap` ignores extra package names (harness bug, 2026-09-23).**
-  `test-env/test.sh`'s `cmd_pacstrap` hard-codes `pacstrap -cC "$conf"
-  "$target" base`, even though this file's "Testing pacman.conf/signing
-  changes" section and `test-env/README.md` both document
-  `pacstrap -p <profile> [extra-pkg ...]`. Found by running
-  `pacstrap -p server <full server list>`: it installed only `base` (137
-  packages). The extra-package slice described above has therefore never
-  actually been exercised.
+- **`cmd_pacstrap` ignores extra package names — FIXED in shani-testbed, and
+  this note was STALE until 2026-10-06.** It was originally a real harness bug
+  (2026-09-23): `cmd_pacstrap` hard-coded `pacstrap -cC "$conf" "$target"
+  base` while this file and `test-env/README.md` both documented
+  `pacstrap -p <profile> [extra-pkg ...]`, so the documented extra-package slice
+  was silently never installed. **The fix landed with the testbed split
+  (`shani-testbed` `0b6e2e1`) and this entry was never updated to match** — so
+  for months this file has told readers the feature was broken, and the entry
+  above still warns that the hook-failure reproduction "cannot" use it.
+  Verified working live, not assumed: `build.sh test pacstrap -p gnome
+  shani-core flatpak` logs `Extra packages: shani-core flatpak` and then
+  `pacstrap OK — real packages installed and signature-verified`. Extra
+  packages are now honoured, so that reproduction path is available again.
+  **The real lesson is the cross-repo drift:** `shani-testbed` was split out of
+  `shani-install-media/test-env/` and carries its own `AGENTS.md`, but fixes
+  made in the new home were not reflected back in the old file's records.
+  When checking a "known issue" here, confirm against the code in
+  `shani-testbed/lib/` before trusting that it is still open.
 
 - **Two `test-env` harness gaps fixed, both needed to genuinely test
   `shani-deploy`'s new system-level auto-rollback service under a real
