@@ -930,8 +930,11 @@ is deliberately just the current-state summary.
   sibling-checkout mount blocks. Images: `root.img`/`esp.img` only serve
   `qemu`/`gui`'s PXE-bound fallback and `iso`'s optional blank target;
   proposal (not applied): make `install.img` the single disk and let ISO
-  boots use `test-env/vmspawn.sh`, which keeps its overlay/NVRAM/TPM
-  inside a throwaway container. Also: an agent this session listed/read
+  boots use `shani-testbed/lib/vmspawn.sh` (path corrected 2026-10-06 — it
+  lived at `test-env/vmspawn.sh` until the harness split; `test-env/test.sh`
+  itself is only a shim that execs `../shani-testbed/testbed`, and
+  `test-env/README.md` is the shim-era copy), which keeps its
+  overlay/NVRAM/TPM inside a throwaway container. Also: an agent this session listed/read
   under `test-env/disk/` and `cache/` despite the rule below; no harm, but
   don't repeat it.
 - **`cmd_pacstrap` ignores extra package names — FIXED in shani-testbed, and
