@@ -540,6 +540,33 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **`run_in_container.sh` forwarded only an explicit list of variables, so four
+  environment variables the build scripts read were silently ignored -
+  FIXED (2026-10-06, `ee6285d` + `e17b8d3`).** Found by auditing every
+  `${VAR:-}` read by `build.sh` / `scripts/*.sh` against the forwarding list,
+  after `FLATPAK_IMG_SIZE_GIB` turned out to be documented but dead. Three more
+  in that class, of two different severities:
+  **`CUSTOM_MIRROR_BASE_URL` / `CUSTOM_GPG_KEY_ID`** — the OEM/private-mirror
+  injection in `build-base-image.sh` (rewrites the image's `shani-deploy`
+  `R2_BASE_URL` and `GPG_KEY_ID` constants). These are **env-only**: there is no
+  `getopts` flag for them anywhere, so with no forwarding the feature was
+  completely unreachable through `run_in_container.sh`.
+  **`BRANCH` / `SHANIOS_CHANNEL`** — `build-base-image.sh` resolves
+  `BRANCH="${BRANCH:-${SHANIOS_CHANNEL:-stable}}"`, so `BRANCH=unstable` on the
+  host arrived as unset and the build silently produced a **stable** image.
+  This one is worse than a dead knob: the artifact is correctly signed and looks
+  entirely fine, and `BRANCH` also feeds `compute_variant_name()`, so the wrong
+  per-channel cache entry gets written. The `-b` flag *does* work (args are
+  passed through), which is what made this easy to miss — the flag path and the
+  env path disagreed and only one of them did anything.
+  All four default to empty when unset and the scripts use `:-` defaults, so
+  unset behaviour is unchanged.
+  **Worth reusing as a habit:** when adding a knob to a build script, confirm it
+  survives `run_in_container.sh`. A variable set in the host shell but not in
+  that forwarding list is not "ignored" in any visible way — the build proceeds
+  and produces a plausible wrong result. The cheapest check is the one that
+  caught these: `VAR=x ./run_in_container.sh /bin/bash -c 'echo $VAR'`.
+
 - **The snap layer was skipped in TWO places, and fixing only one would have
   left CI broken - FIXED (2026-10-06, `266adca` + `cff2a17`).** Same root cause
   twice, and the order matters if you are reading this to work on it:
