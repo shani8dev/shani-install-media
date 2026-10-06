@@ -540,6 +540,31 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **The snap layer was skipped in TWO places, and fixing only one would have
+  left CI broken - FIXED (2026-10-06, `266adca` + `cff2a17`).** Same root cause
+  twice, and the order matters if you are reading this to work on it:
+  **(1)** `build-snap-image.sh` looked for
+  `image_profiles/<profile>/snap-packages.txt`, which no profile has - the list
+  is at `image_profiles/shared/snap-packages.txt`. It printed `No Snap package
+  list ... Exiting...` and `exit 0`. **(2)** `build.sh`'s `full` **and
+  `iso-release` branches each gate on the same profile-local path before
+  calling the builder at all**, so the script in (1) was never invoked. Fixing
+  only the script leaves both compound commands still skipping the build.
+  Checked across all six profiles: the old gate resolves `SKIP` for every one,
+  the new gate `BUILD` for every one.
+  **Why it stayed invisible:** `build-iso.sh` genuinely treats the layer as
+  optional and logs `No snapfs.zst for profile '<p>' - skipping.` at INFO, and
+  the old gate logged `No snap-packages.txt ... skipping Snap build.` also at
+  INFO. Every log line said "skipping", which reads as a decision rather than
+  as a file being looked for in the wrong directory, and a no-op exits 0 so CI
+  stayed green.
+  **This is the part to carry forward:** when a builder script tolerates a
+  missing input, check whether its *caller* also gates on that input - the two
+  gates can disagree, and fixing the inner one then looks like a complete fix
+  while the outer one still never calls it. `iso-release` is the task
+  `build-image.yml` runs on ISO weeks, specifically to wrap the gated stable
+  image in these layers, so the release ISO shipped without a snap layer too.
+
 - **`build.sh flatpak -p plasma` could not build its layer at all: 13,847 MiB
   of data into a 13,824 MiB budget - FIXED (2026-10-06).** The size pre-flight
   in `build-flatpak-image.sh` aborted plasma's Flatpak image with
