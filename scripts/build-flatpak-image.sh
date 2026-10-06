@@ -470,20 +470,36 @@ fi
 log "No leaked apps — installed set matches profile list exactly."
 
 # ---------------------------------------------------------------------------
-# Pre-flight: verify host Flatpak data fits in the target image size (15 G).
+# Pre-flight: verify host Flatpak data fits in the target image size.
 # A 10 % headroom is reserved for Btrfs metadata overhead.
+#
+# The size is ONE named constant used both for this check and for the mkfs
+# below. It used to be spelled twice — "15 * 1024 * 1024 * 1024" here and the
+# literal "15G" passed to setup_btrfs_image — so the budget and the image it
+# checks could drift apart silently.
+#
+# Raised 15 -> 20 GiB on 2026-10-06: plasma's 45-app set needs 13,847 MiB and
+# the 15 GiB budget allowed 13,824 MiB, so plasma's Flatpak layer could not be
+# built at all while gnome's (41 apps) could. Trimming a curated app list to
+# reclaim 23 MiB is the wrong trade — the image is a sparse Btrfs subvolume, so
+# headroom costs nothing on disk and does not inflate flatpakfs.zst, which only
+# holds real data (gnome's is 1.5 GB out of a 15 GiB image).
+#
+# Overridable for anyone deliberately testing a tighter budget:
+#   FLATPAK_IMG_SIZE_GIB=15 ./build.sh flatpak -p plasma
 # ---------------------------------------------------------------------------
-FLATPAK_IMG_SIZE_BYTES=$(( 15 * 1024 * 1024 * 1024 ))
+FLATPAK_IMG_SIZE_GIB="${FLATPAK_IMG_SIZE_GIB:-20}"
+FLATPAK_IMG_SIZE_BYTES=$(( FLATPAK_IMG_SIZE_GIB * 1024 * 1024 * 1024 ))
 FLATPAK_HEADROOM=90  # percent of image usable
 FLATPAK_DATA_BYTES=$(du -sb /var/lib/flatpak 2>/dev/null | awk '{print $1}')
 FLATPAK_USABLE=$(( FLATPAK_IMG_SIZE_BYTES * FLATPAK_HEADROOM / 100 ))
 if (( FLATPAK_DATA_BYTES > FLATPAK_USABLE )); then
-    die "Flatpak data ($(( FLATPAK_DATA_BYTES / 1024 / 1024 )) MiB) exceeds 90% of the" \
-        "15 GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Increase the image" \
-        "size in build-flatpak-image.sh or reduce the package set."
+    die "Flatpak data ($(( FLATPAK_DATA_BYTES / 1024 / 1024 )) MiB) exceeds ${FLATPAK_HEADROOM}% of the" \
+        "${FLATPAK_IMG_SIZE_GIB} GiB image budget ($(( FLATPAK_USABLE / 1024 / 1024 )) MiB). Raise" \
+        "FLATPAK_IMG_SIZE_GIB, or reduce the package set."
 fi
 
-# Prepare Btrfs image for Flatpak data (15G)
+# Prepare Btrfs image for Flatpak data
 FLATPAK_IMG="${BUILD_DIR}/flatpak.img"
 FLATPAK_SUBVOL="flatpak_subvol"
 FLATPAK_MOUNT="${BUILD_DIR}/flatpak_mount"
@@ -491,7 +507,7 @@ OUTPUT_FILE="${OUTPUT_SUBDIR}/flatpakfs.zst"
 
 
 # This function is assumed to set up a loop device and create a Btrfs image.
-setup_btrfs_image "$FLATPAK_IMG" "15G"  # Make sure this function is defined
+setup_btrfs_image "$FLATPAK_IMG" "${FLATPAK_IMG_SIZE_GIB}G"  # Make sure this function is defined
 # LOOP_DEVICE is set by setup_btrfs_image reuse dont specify here
 
 # ---------------------------------------------------------------------------
