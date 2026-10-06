@@ -119,6 +119,21 @@ thousands of files, partly permission-restricted), not source.
 
 ## Environment facts that affect what you can test here
 
+- **Five `test-env/*.sh` files are byte-identical duplicates of the live
+  copies in `shani-testbed/slot-tests/` (verified `diff`-identical
+  2026-10-06).** They are `check-boot-failure-flock-test.sh`,
+  `finalize-boot-entries-test.sh`, `in-chroot-test.sh`,
+  `self-update-test.sh`, and `sign-efi-binary-test.sh`. No code invokes the
+  `test-env/` copies — the harness runs the `shani-testbed` set (mounted at
+  `/mnt/testbed/slot-tests`, and the `slot-tests/*` list in
+  `shani-testbed/README.md` names them) — but they remain tracked and
+  executable, so they are two sources of truth for the same test and the next
+  edit will silently diverge them. `test-env/test.sh` itself is a deliberately
+  kept shim (execs `../shani-testbed/testbed`), and `test-env/README.md` is a
+  short pointer, both legitimate. **Do not edit the `test-env/` copies** — edit
+  the `shani-testbed/slot-tests/` one — and treat the duplicates as removal
+  candidates, not as files to keep in sync by hand.
+
 - Docker is available; you may also use podman, distrobox, lxd,
   apptainer, or install anything via `apt` if a better tool fits — pick
   what's actually appropriate, don't assume Docker is the only option.
