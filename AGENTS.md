@@ -540,6 +540,27 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **All six profile package lists resolve cleanly against the live repos —
+  VERIFIED (2026-10-06), closing the last standing verification gap.** The
+  `server` profile had never been resolved at all: CI only builds gnome/plasma,
+  there is no server image in `cache/output/`, and the only server check in
+  history was a one-off for the two packages removed in 2026-09-23. Resolved
+  every profile against its own `pacman.conf` in the builder container:
+  gnome 1066, plasma 1185, cosmic 1007, kiosk 578, server 336, gamescope 732 —
+  **0 unresolvable in all six.**
+  **Two ways to run this that both silently lie, both hit while producing
+  this result — worth knowing before trusting any "profile resolves" claim:**
+  **(a)** `pacman --dbpath <tmp> -Sp` reports *every* package as
+  `target not found`, `base` included. `SyncDbs` defaults to `$DBPath/sync`, so
+  the override leaves it pointing at an empty directory (measured: 0 sync dbs
+  under the override vs 3 in the image). The resolve is read-only, so just omit
+  `--dbpath`. This is the invocation this file previously recorded as the
+  verification method; it is corrected in place below.
+  **(b)** Omitting `pacman -Sy` first reports `target not found: shani-core` on
+  all five desktop profiles, because the builder image's sync dbs predate
+  anything published since it was built — the same trap
+  `scripts/check-pacman-cache.sh` handles internally.
+
 - **`run_in_container.sh` forwarded only an explicit list of variables, so four
   environment variables the build scripts read were silently ignored -
   FIXED (2026-10-06, `ee6285d` + `e17b8d3`).** Found by auditing every
@@ -787,10 +808,29 @@ is deliberately just the current-state summary.
   found" killed every server build (added in `a4a4170`, 2026-09-18; CI only
   builds gnome/plasma, and there is no server image in `cache/output/`).
   Verified with a real resolve against the live repos using the server
-  `pacman.conf` in the builder container (`pacman --dbpath <tmp> -Sp` over
-  the list filtered exactly as `build-base-image.sh` filters it): before,
-  `error: target not found` for both; after, rc=0 with 563 packages
-  resolved. Both were removed with a comment; `server-customization.sh` and
+  `pacman.conf` in the builder container, over the list filtered exactly as
+  `build-base-image.sh` filters it: before, `error: target not found` for both;
+  after, rc=0 with 563 packages resolved. **Correction to how that check was
+  run, re-verified 2026-10-06: the invocation recorded here as
+  `pacman --dbpath <tmp> -Sp` cannot work and always reports EVERY package as
+  `target not found` — including `base`.** `SyncDbs` defaults to
+  `$DBPath/sync`, so overriding `--dbpath` leaves it pointing at an empty
+  directory (measured: 0 sync dbs under the override vs 3 in the image), and
+  pacman then has no metadata for anything. Run it **without** `--dbpath`; the
+  resolve is read-only anyway:
+
+  ```bash
+  # inside run_in_container.sh, after `pacman -Sy`
+  pkgs=$(cat image_profiles/<p>/Packages-{Base,Desktop,Extras} \
+         | grep -v '^[[:space:]]*#' | tr -d '\r' | grep -v '^[[:space:]]*$')
+  pacman --config image_profiles/<p>/pacman.conf -Sp $pkgs
+  ```
+
+  `pacman -Sy` first is equally load-bearing: the builder image's sync dbs
+  predate anything published since it was built, so a resolve without it
+  reports `target not found: shani-core` on every desktop profile even when
+  the package is published (measured 2026-10-06, before syncing; 0 after).
+  Both were removed with a comment; `server-customization.sh` and
   `packer/scripts/01-configure-aws.sh` already treat `amazon-ssm-agent` as
   optional. **Still needs a human:** to actually ship them, add PKGBUILDs to
   `shani-pkgbuilds` so they land in `[shani]`, then re-list them.
