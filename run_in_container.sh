@@ -328,6 +328,23 @@ else
     timeout 30 "${CONTAINER_RUNTIME}" pull "${DOCKER_IMAGE}" || echo "[WARN] Could not pull ${DOCKER_IMAGE} (timed out or offline) — using cached image"
 fi
 
+# Identity of the builder image this run actually resolved to (its image ID,
+# not the mutable tag). Passed in so build-base-image.sh can fold it into the
+# base-image cache key: a tag like :latest can be re-pulled to different bytes
+# between two runs, and until the cache key included it, such a rebuild was
+# invisible to the "package list unchanged, skipping" check — the single cause
+# of build-base-image.sh reusing a base assembled by an older builder.
+# `image inspect` already ran above for the NO_PULL probe; this is the same
+# call again (cheap, local) to get the ID out.
+BUILDER_IMAGE_ID="$("${CONTAINER_RUNTIME}" image inspect --format '{{.Id}}' "${DOCKER_IMAGE}" 2>/dev/null || echo "")"
+# config/config.sh's log() is not sourced here, so echo directly (stderr, like
+# log() does) rather than calling a function that does not exist in this shell.
+if [[ -n "${BUILDER_IMAGE_ID}" ]]; then
+    echo "[INFO] Builder image: ${DOCKER_IMAGE} (${BUILDER_IMAGE_ID:0:19})" >&2
+else
+    echo "[WARN] Builder image: ${DOCKER_IMAGE} (ID unavailable — base cache key will not cover builder changes)" >&2
+fi
+
 # ---------------------------------------------------------------------------
 # Run the container
 #
@@ -470,6 +487,7 @@ fi
     --env-file "${SECRETS_ENV_FILE}" \
     -e GPG_KEY_ID="${GPG_KEY_ID:-}" \
     -e GNUPGHOME="${CONTAINER_GNUPGHOME}" \
+    -e BUILDER_IMAGE_ID="${BUILDER_IMAGE_ID}" \
     -e R2_BUCKET="${R2_BUCKET:-}" \
     -e NO_SF="${NO_SF:-false}" \
     -e NO_R2="${NO_R2:-false}" \

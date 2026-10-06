@@ -61,13 +61,39 @@ PACKAGE_EXTRAS="${IMAGE_PROFILES_DIR}/${PROFILE}/Packages-Extras"
 
 # Compute hash of current package lists (excluding comments and blank lines),
 # concatenated in installation order: Base → Desktop → Extras.
+#
+# The key is NOT just the package lists. A lists-only key answers "are the
+# requested package NAMES unchanged" and nothing else, so it cannot see:
+#
+#   * a rebuilt builder image — the base is assembled by whatever the
+#     :latest tag resolved to, so a re-pulled image silently invalidated
+#     every cached base while this check still reported "unchanged";
+#   * a changed profile pacman.conf — different repos, SigLevel, or
+#     mirrorlist change what those names resolve to;
+#   * a package that vanished from a repo — the lists still name it, and
+#     the cached base "matches", but a fresh build would now fail (this is
+#     exactly how shani-core went missing from the pacman db while every
+#     profile's Packages-Base still listed it: the guard reported a match
+#     and skipped a build that could not have succeeded).
+#
+# So fold the builder image's resolved ID and the profile's pacman.conf into
+# the key too. An image ID is the honest signal here: the tag is mutable and
+# is re-pulled every run, so hashing the tag would change on a no-op pull
+# and defeat the cache; the ID changes only when the bytes do.
 CURRENT_LIST_HASH=$(
-    cat "$PACKAGE_BASE" "$PACKAGE_DESKTOP" "$PACKAGE_EXTRAS" \
-    | grep -v '^\s*#' \
-    | tr -d '\r' \
-    | grep -v '^\s*$' \
-    | sha256sum \
-    | awk '{print $1}'
+    {
+        cat "$PACKAGE_BASE" "$PACKAGE_DESKTOP" "$PACKAGE_EXTRAS" \
+            | grep -v '^\s*#' \
+            | tr -d '\r' \
+            | grep -v '^\s*$'
+        # Delimiters matter: without them a package list ending in one name
+        # and a conf starting with the same characters could in principle
+        # concatenate into the same byte stream as a genuinely different
+        # pair, silently aliasing two different cache entries.
+        printf -- '--- pacman.conf ---\n'
+        cat "${IMAGE_PROFILES_DIR}/${PROFILE}/pacman.conf"
+        printf -- '--- builder image ---\n%s\n' "${BUILDER_IMAGE_ID:-unknown-builder-image}"
+    } | sha256sum | awk '{print $1}'
 )
 
 # Deliberately NOT under OUTPUT_SUBDIR: that path includes BUILD_DATE, so a
@@ -84,12 +110,21 @@ if [[ -f "$CACHE_HASH_FILE" ]]; then
 fi
 
 if [[ "$CLEAN_BASE" == "false" && "$CURRENT_LIST_HASH" == "$CACHED_HASH" ]]; then
-    log "Package list unchanged (hash: ${CURRENT_LIST_HASH:0:12}...), skipping base rebuild"
+    log "Base inputs unchanged (hash: ${CURRENT_LIST_HASH:0:12}...), skipping base rebuild"
+    log "  keyed on: package lists + pacman.conf + builder image ${BUILDER_IMAGE_ID:0:19}"
+    log "  this still does NOT detect upstream package versions moving, or a"
+    log "  package disappearing from a repo — force a rebuild with -c if you"
+    log "  suspect either."
     log "Use -c flag to force rebuild"
     exit 0
 fi
 
-log "Package list hash: ${CURRENT_LIST_HASH:0:12}..."
+if [[ "$CLEAN_BASE" == "false" && -n "$CACHED_HASH" && "$CURRENT_LIST_HASH" != "$CACHED_HASH" ]]; then
+    log "Base inputs changed (hash: ${CURRENT_LIST_HASH:0:12}..., was ${CACHED_HASH:0:12}...) — rebuilding"
+    log "  keyed on: package lists + pacman.conf + builder image ${BUILDER_IMAGE_ID:0:19}"
+else
+    log "Base inputs hash: ${CURRENT_LIST_HASH:0:12}..."
+fi
 
 PACMAN_CONFIG="./image_profiles/${PROFILE}/pacman.conf"
 BASE_SUBVOL="${OS_NAME}_base"
