@@ -555,6 +555,44 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **Nothing validated that an ISO embeds the layers it should carry — FIXED
+  (2026-10-06, `fe4243a`).** Two real failures on the same day both passed
+  every existing check while shipping an ISO with **no snap layer**:
+  `build-snap-image.sh` looked up its list at a path no profile uses and
+  `exit 0`'d, and plasma's flatpak layer could not be built at all (over a 15 GiB
+  budget). `build-iso.sh` logs a missing layer at **INFO** ("No snapfs.zst ...
+  skipping"), so nothing downstream ever noticed — a missing *optional* layer is
+  tolerated by every stage including the logs. New `scripts/check-iso-layers.sh`
+  loop-mounts the built ISO and asserts fail-closed: (1) every `*.zst` in the
+  release dir is embedded at the same byte size (base image mapped to
+  `rootfs.zst`, the name `build-iso.sh` gives it), and (2) a profile that
+  *defines* a layer (its own or shared package list) must have that layer
+  present — defined-but-absent is a failure, not a skip. `build-iso.sh` runs it
+  right after `mkarchiso`. Verified live both directions: plasma 20261006 and
+  gnome 20261006 both PASS; hiding `flatpakfs.zst` from the release dir makes it
+  exit 1 (then restored byte-identical), so the check can actually fail.
+  **Transferable lesson:** when a builder tolerates a missing input, the
+  *artifact* it produces needs its own assertion — "the log said skipping" is not
+  evidence the artifact is complete.
+
+- **ISO size: compression is already near-optimal; the only real lever is
+  content, which is high-risk here (measured 2026-10-06).** The gnome ISO is
+  6.66 GB: `rootfs.zst` 2.64G, `airootfs.sfs` 1.40G (3.2G uncompressed),
+  `flatpakfs.zst` 1.40G, `snapfs.zst` 536M, initramfs 243M. Measured directly:
+  `airootfs.sfs` uses `zstd -22 -b 1M` and **reproduces byte-exactly**
+  (1424519168 B) on rebuild, so the recipe is deterministic and near the
+  time-budget optimum. `xz -Xbcj x86` and `zstd -Xdict-size 1M` both **failed to
+  finish** in a 15-minute window on 3.2 GB — xz is too slow to be practical, and
+  the ratio gain is unproven. The remaining lever is *content*: `linux-firmware`
+  (549M uncompressed), kernel modules (192M), `nvidia-open` (~450M of
+  `libnvidia-*`), `libLLVM` (165M). Trimming any of these risks breaking the
+  installer boot, and this host has no `/dev/kvm`, so a real boot test is the
+  only way to confirm — not done, so **no content was removed**. If size matters
+  more than boot-risk, the candidates in descending value are: drop
+  `nvidia-open` from the *installer* airootfs (mesa/llvmpipe is present and
+  drives the framebuffer), then trim `linux-firmware` to boot-relevant NICs in
+  the initramfs.
+
 - **All six profile package lists resolve cleanly against the live repos —
   VERIFIED (2026-10-06), closing the last standing verification gap.** The
   `server` profile had never been resolved at all: CI only builds gnome/plasma,
