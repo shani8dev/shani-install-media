@@ -540,6 +540,31 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **`build.sh flatpak -p plasma` could not build its layer at all: 13,847 MiB
+  of data into a 13,824 MiB budget - FIXED (2026-10-06).** The size pre-flight
+  in `build-flatpak-image.sh` aborted plasma's Flatpak image with
+  `Flatpak data (13847 MiB) exceeds 90% of the 15 GiB image budget
+  (13824 MiB)` — over by **23 MiB**. gnome (41 apps) fitted; plasma's 45 did
+  not, so the layer was buildable for one profile and not the other, with
+  nothing in the pipeline reporting that asymmetry. Raised 15 -> 20 GiB rather
+  than trimming a curated app list for 23 MiB: the image is a sparse Btrfs
+  subvolume, so headroom costs nothing on disk and does not inflate the
+  artifact (gnome's `flatpakfs.zst` is 1.5 GB out of a 15 GiB image).
+  Overridable via `FLATPAK_IMG_SIZE_GIB`.
+  **The size was also spelled twice and could drift** — the byte computation at
+  the pre-flight and a literal `"15G"` passed to `setup_btrfs_image` 30 lines
+  later — so both now derive from one `FLATPAK_IMG_SIZE_GIB` constant. That
+  second half is what would have made the fix silently not apply to the image
+  actually created.
+  Diagnosed rather than assumed: first confirmed there were **no leaked apps**
+  from another profile (40 installed vs plasma's 45; the 5 differences are
+  runtimes/extensions, which `flatpak list --app` does not show) and that
+  `flatpak uninstall` had in fact succeeded for apps **despite** the
+  `dbus-launch --autolaunch ... exited with code 1` errors in the log — so the
+  overrun was genuine data, not residue. `build.sh iso` logs
+  `No flatpakfs.zst for profile '<p>' - skipping.` as INFO, which is what made
+  both this and the snap no-op below invisible at the point of use.
+
 - **`build.sh snap` was a silent no-op for EVERY profile — FIXED
   (2026-10-06).** `build-snap-image.sh` looked for
   `image_profiles/<profile>/snap-packages.txt`. **No profile has one** — the
