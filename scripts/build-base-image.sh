@@ -224,6 +224,19 @@ install -m 644 "${MOK_DIR}/MOK.der" "$secureboot_target/MOK.der" || die "Failed 
 # ---------------------------------------------------------------------------
 log "Installing base system..."
 
+# Fail fast on a poisoned package cache, BEFORE pacstrap spends 40 minutes
+# downloading and unpacking only to abort at the end with "invalid or corrupted
+# package" (exactly how this was found on 2026-10-06: two silently truncated
+# files in the shared cache — zstd -t and tar -tf both PASS on them, so only a
+# hash comparison against the repo sees it). Advisory rather than fatal: the
+# cache is shared between this repo and shani-pkgbuilds, so deleting from it is
+# not this script's call. It is not suppressed — `|| true` here only means "do
+# not abort", and the output is still printed, because a check whose findings
+# are swallowed is worse than no check.
+log "Verifying cached packages against the repos before installing..."
+bash "${SCRIPT_DIR}/check-pacman-cache.sh" -p "${PROFILE}" --quiet \
+    || warn "check-pacman-cache.sh reported problems (see above) — the build continues, but pacstrap may fail with 'invalid or corrupted package'."
+
 # Read packages from Base, Desktop, Extras in installation order.
 mapfile -t _packages < <(
     cat "$PACKAGE_BASE" "$PACKAGE_DESKTOP" "$PACKAGE_EXTRAS" \
