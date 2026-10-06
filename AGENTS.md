@@ -540,6 +540,28 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **`build.sh snap` was a silent no-op for EVERY profile — FIXED
+  (2026-10-06).** `build-snap-image.sh` looked for
+  `image_profiles/<profile>/snap-packages.txt`. **No profile has one** — the
+  list lives at `image_profiles/shared/snap-packages.txt`, and nothing in the
+  repo referenced that path. So the script printed `No Snap package list at
+  ... Exiting...` and `exit 0`. Because a no-op is a success: CI stayed green,
+  `build.sh full` and `iso-release` reported a completed pipeline, and **every
+  ISO shipped with no snap layer, on every profile**. The snap layer only
+  looked optional because `build-iso.sh` genuinely treats it as optional
+  (`No snapfs.zst for profile '<p>' — skipping`), which is what made the
+  absence invisible at the point of use. Now falls back to the shared list
+  (a per-profile list still wins, so a profile can diverge), and the genuinely
+  empty case warns instead of logging an informational "Exiting..." that read
+  like a finished build. Verified live: before, `snap -p gnome` printed
+  "No Snap package list ... Exiting..." and produced no file; after, it uses
+  the shared list and reports **"Contains: 7 snaps with assertions"**,
+  producing a 536 MB `snapfs.zst` with sha256 `OK` and a Good GPG signature.
+  **The transferable lesson, and the reason this was findable at all:** a
+  layer that consumers treat as optional must never be *produced* by a path
+  that no-ops successfully. Check that every "optional" input is actually
+  present before trusting an ISO/artifact that a log calls complete.
+
 - **The base-image cache guard hashed only the package lists - FIXED
   (2026-10-06).** `build-base-image.sh` decided "the base is unchanged, skip the
   rebuild" by hashing the three `Packages-*` text files and nothing else, so it
