@@ -540,6 +540,58 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **The base-image cache guard hashed only the package lists - FIXED
+  (2026-10-06).** `build-base-image.sh` decided "the base is unchanged, skip the
+  rebuild" by hashing the three `Packages-*` text files and nothing else, so it
+  was structurally blind to every other input that determines the base. Two real
+  consequences, both hit in one session:
+  **(a) a rebuilt builder image was invisible to it.** `:latest` is re-pulled on
+  every run, so the base is assembled by whatever the tag resolved to while the
+  guard still reported "unchanged" and skipped - leaving a base built by an
+  older builder in place and reporting success. Verified live: gnome skipped
+  with "Package list unchanged" immediately after a brand-new builder image was
+  published. **(b) a package that vanished from a repo was invisible to it** -
+  the lists still name it and the cached base "matches", but a fresh build could
+  not have succeeded. That is exactly how `shani-core` went missing from the
+  pacman db while every profile's `Packages-Base` still listed it (`target not
+  found: shani-core` killed both image builds): the guard matched, and skipped a
+  build that would have failed. The key now also covers the profile's
+  `pacman.conf` and the builder image's **resolved image ID** (not the tag -
+  the tag is mutable and re-pulled every run, so hashing it would defeat the
+  cache on a no-op pull); `run_in_container.sh` resolves that ID and passes it
+  as `-e BUILDER_IMAGE_ID`. The skip log now states what the guard still
+  cannot detect (upstream versions moving, a package disappearing) rather than
+  implying coverage it lacks. Verified by before/after on the real repo, with a
+  negative control (identical inputs still hash equal; the old formula provably
+  returns one value for two different builder image IDs - the bug reproduced).
+
+- **A silently corrupted package in the shared pacman cache killed a 40-minute
+  image build - FIXED (2026-10-06).** `plasma6-applets-window-title-0.9.0-2-any`
+  and `plasma-setup-git-0.1.0-2-x86_64` were truncated inside their zstd frame,
+  and plasma's `pacstrap` aborted at the very end with `failed to commit
+  transaction (invalid or corrupted package)` after downloading and unpacking
+  1475 packages. **The important part is what did not catch them:** `zstd -t`
+  **PASSES** (the frame is well-formed) and `tar -tf` **PASSES** (the stream
+  lists cleanly). The truncation was inside a valid frame whose payload is
+  short, so every decompress-based check - the one you reach for first - calls
+  those files fine; only comparing bytes against the repo's `%SHA256SUM%` sees
+  it. `scripts/check-pacman-cache.sh` does that comparison for the exact
+  versions `pacstrap` would install, and `build-base-image.sh` runs it *before*
+  the install so this costs seconds instead of 40 minutes. It is advisory, not
+  fatal: the cache is shared with `shani-pkgbuilds`, so deleting from it is not
+  this script's call. Two things it learned the hard way, both load-bearing:
+  expected hashes must come from the sync databases' `%SHA256SUM%` fields and
+  **not** `pacman -Si`, because **pacman 7 prints no checksum field at all**
+  (`Validated By : SHA-256 Sum  Signature` and no hash) - a checker built on it
+  compares nothing and reports success forever, the same shape as a check that
+  cannot fail, which is what the first version did. And it must `pacman -Sy`
+  first: verified live, against the builder image's stale db it reported "1
+  requested package is in NO configured repo" for `shani-core`, which is
+  published and installed - a stale db yields false alarms, and in the mirrored
+  case a false all-clear. Indexing extracts each sync db once rather than
+  running one `bsdtar` per package (~1500 spawns, >15 min, slow enough to have
+  been killed mid-check); it now takes ~2s.
+
 - **Package-shipped `/var` directories did not exist at runtime - FIXED in the
   build, pending the next image (2026-10-01).** `/var` is an empty tmpfs on
   every boot (`systemd.volatile=state`) and the persistent `/data/varlib/<svc>`
