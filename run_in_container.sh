@@ -489,6 +489,10 @@ fi
     -e GNUPGHOME="${CONTAINER_GNUPGHOME}" \
     -e BUILDER_IMAGE_ID="${BUILDER_IMAGE_ID}" \
     -e FLATPAK_IMG_SIZE_GIB="${FLATPAK_IMG_SIZE_GIB:-}" \
+    -e BRANCH="${BRANCH:-}" \
+    -e SHANIOS_CHANNEL="${SHANIOS_CHANNEL:-}" \
+    -e CUSTOM_MIRROR_BASE_URL="${CUSTOM_MIRROR_BASE_URL:-}" \
+    -e CUSTOM_GPG_KEY_ID="${CUSTOM_GPG_KEY_ID:-}" \
     -e R2_BUCKET="${R2_BUCKET:-}" \
     -e NO_SF="${NO_SF:-false}" \
     -e NO_R2="${NO_R2:-false}" \
