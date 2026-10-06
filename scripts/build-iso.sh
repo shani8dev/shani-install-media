@@ -352,4 +352,12 @@ log "Running mkarchiso..."
 mkarchiso -v -w "${TEMP_DIR}/${PROFILE}" -o "${OUTPUT_SUBDIR}" "${ISO_PROFILES_DIR}/${PROFILE}" \
   || die "mkarchiso failed"
 
+# Fail closed on a layer that was produced but not embedded, or a layer the
+# profile defines that never got built. Without this, an ISO missing a layer
+# ships silently — the exact shape of the 2026-10-06 snap no-op, where every
+# log line said "skipping" and CI stayed green.
+log "Verifying the ISO embeds every layer its release dir contains..."
+bash "${SCRIPT_DIR}/check-iso-layers.sh" -p "${PROFILE}" -d "${BUILD_DATE}" \
+    || die "check-iso-layers.sh failed for ${PROFILE}/${BUILD_DATE}"
+
 log "ISO build completed successfully!"
