@@ -1,0 +1,13 @@
+# /swap/swapfile, only when it exists. Not an fstab line: install.sh skips the
+# swapfile on a disk with no room after keeping space for updates, and
+# shani-deploy can shrink or drop it later. A fstab entry for a missing file
+# failed swap-swapfile.swap on every boot of such a machine (the system ran
+# "degraded"); ConditionPathExists makes it a skipped unit instead.
+[Unit]
+Description=Swapfile on the @swap subvolume
+Documentation=man:systemd.swap(5)
+ConditionPathExists=/swap/swapfile
+RequiresMountsFor=/swap/swapfile
+
+[Swap]
+What=/swap/swapfile

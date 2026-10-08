@@ -309,10 +309,11 @@ LABEL=shani_root              /var/lib/qemu             btrfs   nofail,defaults,
 # Create: btrfs subvolume create /@swap
 LABEL=shani_root              /swap                     btrfs   nofail,noatime,subvol=@swap,rw,nodatacow,nospace_cache   0 0
 
-# Swapfile — actual swap space inside the @swap subvolume
+# Swapfile — actual swap space inside the @swap subvolume. NOT listed here:
+# it is /usr/lib/systemd/system/swap-swapfile.swap (ConditionPathExists),
+# because the installer skips it on a small disk and shani-deploy can drop
+# it - an fstab line for a missing file failed on every such boot.
 # Create: btrfs filesystem mkswapfile --size 8G /swap/swapfile
-#         chmod 600 /swap/swapfile
-/swap/swapfile                none                      swap    nofail,defaults   0 0
 
 ##############################################################################
 # SECTION 8: SYSTEM CORE STATE
