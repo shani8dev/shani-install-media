@@ -93,6 +93,16 @@ CURRENT_LIST_HASH=$(
         printf -- '--- pacman.conf ---\n'
         cat "${IMAGE_PROFILES_DIR}/${PROFILE}/pacman.conf"
         printf -- '--- builder image ---\n%s\n' "${BUILDER_IMAGE_ID:-unknown-builder-image}"
+        # The overlays are copied into the image below, so they are inputs
+        # too. Without them an overlay-only fix (the 2026-10-08 dracut.conf
+        # change that made USB-SSD installs boot) skipped the build and
+        # exited 0. A tar with fixed metadata covers contents, modes and
+        # symlink targets, and is the same bytes on every run.
+        local_overlay_dirs=("${IMAGE_PROFILES_DIR}/shared/overlay/rootfs" "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs")
+        for d in "${local_overlay_dirs[@]}"; do
+            printf -- '--- overlay %s ---\n' "${d#"${IMAGE_PROFILES_DIR}/"}"
+            [[ -d "$d" ]] && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - -C "$d" . | sha256sum
+        done
     } | sha256sum | awk '{print $1}'
 )
 
@@ -111,7 +121,7 @@ fi
 
 if [[ "$CLEAN_BASE" == "false" && "$CURRENT_LIST_HASH" == "$CACHED_HASH" ]]; then
     log "Base inputs unchanged (hash: ${CURRENT_LIST_HASH:0:12}...), skipping base rebuild"
-    log "  keyed on: package lists + pacman.conf + builder image ${BUILDER_IMAGE_ID:0:19}"
+    log "  keyed on: package lists + pacman.conf + overlays + builder image ${BUILDER_IMAGE_ID:0:19}"
     log "  this still does NOT detect upstream package versions moving, or a"
     log "  package disappearing from a repo — force a rebuild with -c if you"
     log "  suspect either."
@@ -121,7 +131,7 @@ fi
 
 if [[ "$CLEAN_BASE" == "false" && -n "$CACHED_HASH" && "$CURRENT_LIST_HASH" != "$CACHED_HASH" ]]; then
     log "Base inputs changed (hash: ${CURRENT_LIST_HASH:0:12}..., was ${CACHED_HASH:0:12}...) — rebuilding"
-    log "  keyed on: package lists + pacman.conf + builder image ${BUILDER_IMAGE_ID:0:19}"
+    log "  keyed on: package lists + pacman.conf + overlays + builder image ${BUILDER_IMAGE_ID:0:19}"
 else
     log "Base inputs hash: ${CURRENT_LIST_HASH:0:12}..."
 fi
