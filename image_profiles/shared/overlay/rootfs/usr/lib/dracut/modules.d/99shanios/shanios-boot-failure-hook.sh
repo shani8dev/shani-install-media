@@ -82,10 +82,23 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
     PRIOR_FAILURE=$(cat "$DATA_MNT/boot_hard_failure" 2>/dev/null)
     ESP_DEV=$(blkid -L shani_boot 2>/dev/null)
     ESP_MNT=/run/shanios-boot-esp-tmp
-    if [ -n "$ESP_DEV" ] && mkdir -p "$ESP_MNT" 2>/dev/null; then
-        if mount -t vfat -o rw "$ESP_DEV" "$ESP_MNT" 2>/dev/null; then
-            LOADER="$ESP_MNT/loader/loader.conf"
-            ENTRIES="$ESP_MNT/loader/entries"
+    # Every exit below is announced. The first firmware boot of this ran through
+    # this whole block, changed nothing, and logged nothing — so a branch that
+    # does not run and a branch that runs and succeeds are indistinguishable
+    # from the console, and the only way to tell them apart is a boot. Silence
+    # was the wrong trade for a safety mechanism.
+    if [ -z "$ESP_DEV" ]; then
+        warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but blkid -L shani_boot found no ESP device"
+    elif ! mkdir -p "$ESP_MNT" 2>/dev/null; then
+        warn "shanios-hook: cannot create ${ESP_MNT} for the ESP mountpoint"
+    elif ! mount -t vfat -o rw "$ESP_DEV" "$ESP_MNT" 2>/dev/null; then
+        warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but could not mount the ESP (${ESP_DEV})"
+    else
+        LOADER="$ESP_MNT/loader/loader.conf"
+        ENTRIES="$ESP_MNT/loader/entries"
+        if [ ! -f "$LOADER" ]; then
+            warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but ${ESP_MNT}/loader/loader.conf is absent"
+        else
             CUR=$(sed -n 's/^default[[:space:]]\+\([^[:space:]]*\).*/\1/p' "$LOADER" 2>/dev/null | head -1)
             case "$CUR" in
                 *+*-*)
@@ -96,20 +109,28 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                         case "$N" in *+*-*) continue ;; esac
                         FALLBACK="$N"; break
                     done
-                    if [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$CUR" ]; then
+                    if [ -z "$FALLBACK" ]; then
+                        warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but no non-tries entry exists to fall back to (default=${CUR})"
+                    elif [ "$FALLBACK" = "$CUR" ]; then
+                        warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but the only plain entry is the current default (${CUR})"
+                    else
                         cp "$LOADER" "$LOADER.shanios-bak" 2>/dev/null
                         if sed -i "s|^default[[:space:]]\+[^[:space:]]*|default $FALLBACK|" "$LOADER" 2>/dev/null; then
                             warn "shanios-hook: previous boot also failed (@${PRIOR_FAILURE}); boot default switched ${CUR} -> ${FALLBACK}"
                         else
-                            warn "shanios-hook: could not rewrite boot default (leaving ${CUR})"
+                            warn "shanios-hook: sed failed rewriting the default in ${LOADER} (leaving ${CUR})"
                         fi
                     fi
                     ;;
+                "")
+                    warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but loader.conf has no default line" ;;
+                *)
+                    warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but default '${CUR}' carries no tries counter - not an unproven candidate, leaving it" ;;
             esac
-            umount "$ESP_MNT" 2>/dev/null || true
         fi
-        rmdir "$ESP_MNT" 2>/dev/null || true
+        umount "$ESP_MNT" 2>/dev/null || true
     fi
+    rmdir "$ESP_MNT" 2>/dev/null || true
 fi
 
 printf '%s\n' "$ATTEMPTED_SLOT" > "$DATA_MNT/boot_hard_failure" 2>/dev/null && \
