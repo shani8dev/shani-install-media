@@ -555,6 +555,67 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **`promote-stable.sh` verified reachability, not bytes — and the validator
+  that does verify them was called by nothing. FIXED 2026-10-16.**
+
+  Every verification `promote-stable.sh` performed was a *fetchability* check:
+  `curl --head` (or `rclone lsf`) against the artifact and each sidecar on
+  SourceForge and on R2, plus `--expect` matching the tested build. A truncated
+  upload, a corrupted mirror, or a substituted artifact whose `.sha256` and
+  `.asc` are both perfectly reachable satisfies every one of those, and the
+  promotion would then publish it as **stable** — the last step before every
+  user who runs `shani-deploy`.
+
+  `scripts/validate-image.sh` is the gate that proves the bytes: it recomputes
+  the SHA256, verifies the detached GPG signature against the pinned signing
+  key, checks that `latest.txt` names the on-disk artifact, and confirms every
+  package the profile declares is present in the resolved manifest of what
+  actually shipped. It has existed since 2026-09 and **was invoked by nothing
+  anywhere in the workspace** — its only mention anywhere was a *comment* in
+  `promote-stable.sh` explaining a filename. A correct verifier that is never
+  called is not a gate.
+
+  It is now called, fail-closed, **before** the network checks: verifying local
+  bytes is both the cheapest failure and the only one whose cause is
+  unambiguous. This is the "Supply-chain discipline" rule above — hard failure
+  on mismatch, soft-fail having already shipped a real bug on the AMI path —
+  applied to the one path that was missing it.
+
+  **Two details that are load-bearing, not decoration.**
+
+  *The artifact must be present locally to be promoted.* That is a deliberate
+  behaviour change: an operator promoting from a machine holding only the
+  remote copy must fetch it first. Promoting bytes nobody on this machine has
+  verified is exactly the case worth refusing.
+
+  *`validate-image.sh` resolves its target from the **local** `latest.txt`
+  (`cache/output/<profile>/<date>/latest.txt`), while the promotion publishes
+  the name resolved from the **remote** pointer
+  (`cache/output/<profile>/latest.txt`).* Those are two different files, so the
+  gate could cheerfully verify one image while promoting another. The
+  promotion now cross-checks them and refuses on disagreement. `--only=iso`
+  skips the whole block, with a log line, since no base image is being
+  promoted.
+
+  **`tests/test-promote-gate.sh`** (14 assertions, 3 negative controls) covers
+  the wiring AND the behaviour, by running a **scripted copy** of the promotion
+  with the network, the uploads and `validate-image.sh` itself replaced by
+  stubs. It never runs the real `promote-stable.sh` — this file's own note is
+  blunt that "R2_BUCKET= empty is reset to `shanios` by the script — run it
+  from a scratch copy on a machine with no rclone remote, or it really
+  promotes."
+
+  **Two of its controls were vacuous on the first run and that is worth
+  recording**, because both are the exact shape this repo's other entries warn
+  about. The behavioural cases exited at `check_dependencies_upload` and then
+  `CURL_RETRIES: unbound` — a hand-written stub `config.sh` missing variables
+  the real one defines — so the script died *before* the gate, every case
+  "passed" for the wrong reason, and both negative controls were proving
+  nothing. Fixed by using the **real** `config/config.sh` sandboxed through
+  `cwd` (`OUTPUT_DIR` is `realpath -m ./cache/output`, so a scratch directory
+  redirects every path without overriding anything). A third failure was a curl
+  stub printing to stdout when the script fetches with `--output` to a *file*.
+
 - **Nothing validated that an ISO embeds the layers it should carry — FIXED
   (2026-10-06, `fe4243a`).** Two real failures on the same day both passed
   every existing check while shipping an ISO with **no snap layer**:

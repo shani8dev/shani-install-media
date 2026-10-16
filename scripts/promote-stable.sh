@@ -242,6 +242,49 @@ if [[ -n "${EXPECT}" && "${LATEST_RELEASE}" != "${EXPECT}" ]]; then
 fi
 if [[ -n "${EXPECT}" ]]; then log "latest.txt matches the tested artifact (${EXPECT})."; fi
 
+# ── Verify the artifact's bytes before anything is published ─────────────────
+# Everything below this point checks REACHABILITY: that the artifact and each
+# sidecar answer an HTTP HEAD or appear in an rclone listing. That is not
+# verification. A corrupt, truncated or tampered image whose .sha256 and .asc
+# are both reachable passes every one of those checks, and a promotion would
+# then publish it as stable.
+#
+# scripts/validate-image.sh is the gate that does the real work — it recomputes
+# the SHA256, verifies the detached GPG signature against the pinned signing
+# key, and checks that every package the profile declares is present in the
+# resolved manifest of what actually shipped. It has existed since 2026-09 and
+# was called by nothing at all, so this line is what makes it a gate instead of
+# dead code.
+#
+# It runs BEFORE the network checks on purpose: verifying local bytes is both
+# the cheapest thing to fail and the only check whose failure is unambiguous.
+# This is the repo's own supply-chain rule — "hard failure on mismatch; a
+# soft-fail warn-and-continue has been a real shipped bug here before" — applied
+# to the one path that was missing it.
+#
+# Fail-closed, and therefore a deliberate behaviour change: the artifact must be
+# present locally to be promoted. An operator promoting from a machine that
+# only has the remote copy must fetch it first. That is the correct trade for a
+# release gate — promoting bytes nobody on this machine has verified is exactly
+# the case worth refusing.
+if [[ "${ONLY}" != "iso" ]]; then
+  log "Validating the artifact (checksum, signature, package manifest)…"
+  if ! "${SCRIPT_DIR}/validate-image.sh" -p "${PROFILE}" -d "${BUILD_DATE_DIR}" >&2; then
+    die "validate-image.sh refused ${LATEST_RELEASE} — refusing to promote. Resolve the failure above; do not bypass it."
+  fi
+  # validate-image resolves which artifact to check from the LOCAL latest.txt.
+  # This promotion is about to publish the one resolved from the REMOTE pointer
+  # above, and those are two different files. Prove they agree, or the gate
+  # would happily verify one image while promoting another.
+  _local_latest="$(cat "${PROFILE_DIR}/${BUILD_DATE_DIR}/latest.txt" 2>/dev/null || true)"
+  if [[ "$_local_latest" != "${LATEST_RELEASE}" ]]; then
+    die "local latest.txt names '${_local_latest:-nothing}' but this promotion is for '${LATEST_RELEASE}' — the validated artifact is not the one being promoted."
+  fi
+  log "Artifact verified: SHA256 matches, GPG signature valid against ${GPG_KEY_ID}."
+else
+  log "--only=iso: skipping base-image validation (no image is being promoted)."
+fi
+
 # SourceForge verification — artifact + every sidecar that upload.sh ships
 # The package list is named after the image WITHOUT .zst
 # (<os>-<date>-<profile>.packages.txt, build-base-image.sh / validate-image.sh);
