@@ -616,6 +616,59 @@ here before (the AMI/packer path).
   redirects every path without overriding anything). A third failure was a curl
   stub printing to stdout when the script fetches with `--output` to a *file*.
 
+- **A power cut mid-update leaves the default pointing at a candidate that
+  cannot mount, and nothing moves it back — FIXED 2026-10-16.** Found from a
+  real machine: dracut emergency mode, `Failed to mount /sysroot` three times
+  four minutes apart, then an emergency shell; the operator recovered by
+  running `shani-deploy` from the still-good partition.
+
+  **The chain had a gap that only a power cut could reach.** `boot_hard_failure`
+  is written by the dracut `pre-mount` hook *before* the root mount, so a
+  candidate that cannot mount still leaves evidence — and `shani-auto-rollback`
+  acts on that evidence, but from a **systemd timer inside a boot that
+  succeeds**. The failing boot cannot act on its own marker, and the default
+  still points at the candidate that just failed. So the machine only recovers
+  if someone knows to pick the other slot at the menu.
+
+  **The `+3-0` tries entry that was supposed to cover this does not work on
+  this systemd.** `finalize_boot_entries()` gives the unproven candidate
+  `shanios-<slot>+3-0.conf` and documents that systemd-boot "automatically
+  falls back to the fallback entry if it fails to reach multi-user.target".
+  This repo already recorded (a real qemu+OVMF boot) that **systemd-boot does
+  not decrement the tries counter on systemd 261** — upstream #40405. Three
+  identical failures four minutes apart is what that looks like. The comment
+  describes behaviour the shipped systemd does not have.
+
+  **The fix acts where the failing boot still has a say.** The same `pre-mount`
+  hook now checks, *before* overwriting the marker, whether a `boot_hard_failure`
+  from an earlier boot exists. If it does, it mounts the ESP (`blkid -L
+  shani_boot`) and rewrites the single `default` line in `loader.conf` to the
+  first entry that is not tries-counted. The next boot lands on the known-good
+  slot with no menu navigation and no operator knowledge required — which is
+  the whole point of blue-green.
+
+  **Deliberately narrow, and it fails open.** Any doubt changes nothing: it acts
+  only on a pre-existing failure marker, only when the current default carries a
+  tries counter (exactly how a deploy marks an unproven candidate), and only by
+  rewriting `default`. **No boot entry is ever deleted.** It is also
+  self-limiting — after the switch the default is a plain entry, which does not
+  match, so it cannot ping-pong between two broken slots.
+
+  `tests/test-boot-failover.sh` (10 assertions, 4 negative controls) lifts the
+  decision verbatim and drives it. **One of its four controls was vacuous on the
+  first run and mutation is the only reason that is known**: "already a plain
+  default -> unchanged" was satisfied by the `FALLBACK != CUR` clause rather
+  than by the tries-only restriction, so a mutant that dropped the restriction
+  still scored 10/10. The case now lists a *different* plain entry first, which
+  is the only arrangement where the restriction decides the answer; that
+  mutant fails 1, and a mutant that lets a tries-counted entry serve as the
+  fallback fails 2.
+
+  **Still unverified:** a real UEFI boot (no `/dev/kvm` here), and the case
+  where the default had NOT yet flipped — a power cut during the extract leaves
+  the old slot as default and the machine simply boots, which needs no fix but
+  leaves an incomplete candidate sitting on disk for the next deploy to repair.
+
 - **Nothing validated that an ISO embeds the layers it should carry — FIXED
   (2026-10-06, `fe4243a`).** Two real failures on the same day both passed
   every existing check while shipping an ISO with **no snap layer**:
