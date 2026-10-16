@@ -78,6 +78,19 @@ esac
 #   * only by rewriting the `default` line — no entry is ever deleted
 #   * self-limiting: after the switch the default is a plain entry, which does
 #     not match, so this cannot ping-pong between two broken slots
+# ── Diagnostic ────────────────────────────────────────────────────────────
+# Three boots ran the failover block's guard to false while the host could see
+# the marker on the same subvolume and this same hook WROTE it successfully
+# every time. Both cannot be true unless this read is not looking at what the
+# rest of the system sees. So state it, plainly, on every boot - the next
+# answer is one console line.
+warn "shanios-hook: DIAG root_label=${ROOT_LABEL}"
+warn "shanios-hook: DIAG blkid-L-root=$(blkid -L "$ROOT_LABEL" 2>&1)"
+warn "shanios-hook: DIAG by-label=$(readlink -f /dev/disk/by-label/$ROOT_LABEL 2>&1)"
+warn "shanios-hook: DIAG data_dev=${DATA_DEV:-<unset>}"
+warn "shanios-hook: DIAG mount-cmd=mount -t btrfs -o subvol=@data,rw ${DATA_DEV:-<none>} $DATA_MNT"
+warn "shanios-hook: DIAG mountpoint-before=$(ls -A "$DATA_MNT" 2>&1 | tr '\n' ' ')"
+warn "shanios-hook: DIAG marker-at-mountpoint=$(ls -la "$DATA_MNT/boot_hard_failure" 2>&1 | tr '\n' ' ')"
 if [ -s "$DATA_MNT/boot_hard_failure" ]; then
     PRIOR_FAILURE=$(cat "$DATA_MNT/boot_hard_failure" 2>/dev/null)
     ESP_DEV=$(blkid -L shani_boot 2>/dev/null)
