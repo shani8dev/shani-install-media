@@ -669,6 +669,38 @@ here before (the AMI/packer path).
   the old slot as default and the machine simply boots, which needs no fix but
   leaves an incomplete candidate sitting on disk for the next deploy to repair.
 
+- **The dracut boot-failover hook only reaches machines on an image build, and
+  it is the base-image cache guard that guarantees that. Verified, not assumed
+  (2026-10-16).**
+
+  `99shanios/shanios-boot-failure-hook.sh` lives in the initramfs, so editing it
+  changes nothing about an already-built image — the slot in the testbed carries
+  an initramfs dated 2026-09-22, and a hook edit does not regenerate it. That
+  looks like the fix cannot ship, and it nearly was recorded that way here.
+
+  **It ships, and the mechanism is already in place.** `build-base-image.sh`'s
+  cache key hashes both `shared/overlay/rootfs` and `<profile>/overlay/rootfs`
+  with a fixed-metadata tar, so any change under the overlay changes the key and
+  forces a rebuild. The comment above that code cites the precedent outright: the
+  **2026-10-08 dracut.conf change that made USB-SSD installs boot** is an
+  overlay-only fix that was skipped by the cache and exited 0. Same class, same
+  guard, already fixed once.
+
+  So the correct reading of a hook change is: **correct code, ships on the next
+  image build, and the cache will not let that build be skipped.** What it is
+  NOT is testable against the existing `install.img` — which is why the
+  power-cut scenarios in `shani-testbed` have to inject the hook and regenerate
+  the initramfs first, rather than simply booting what is there.
+
+  **Measured alongside this:** the module is definitely present and running in a
+  booted slot. `lsinitramfs` reported **zero** `99shanios` entries, which reads
+  as "the module was never included" and is wrong — `/etc` is mounted as
+  `overlay`, and `shanios-overlay-etc.sh` is the only thing in the system that
+  mounts it. **`lsinitramfs` on dracut 111 did not surface those paths**, so a
+  grep over its output is not a reliable way to ask whether a custom dracut
+  module made it into an initramfs. Ask something that can only be true if the
+  hook ran.
+
 - **Nothing validated that an ISO embeds the layers it should carry — FIXED
   (2026-10-06, `fe4243a`).** Two real failures on the same day both passed
   every existing check while shipping an ISO with **no snap layer**:
