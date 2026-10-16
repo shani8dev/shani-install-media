@@ -27,6 +27,25 @@ decide() {
     fi
 }
 
+echo "== every copy of the module is identical"
+# image_profiles/server/overlay carries its OWN copy of this module, and it was
+# left at the pre-fix version by the commit that fixed shared/. So the failover
+# would never have reached a server image, and nothing said so - the fix was
+# green in tests that only ever read the shared/ copy.
+# Copies here are deliberately independent (profiles are assembled separately),
+# so they cannot share a file. What they CAN do is not drift silently.
+mapfile -t COPIES < <(find image_profiles -name shanios-boot-failure-hook.sh | sort)
+if [[ "${#COPIES[@]}" -lt 2 ]]; then
+  bad "expected the module to exist per profile, found ${#COPIES[@]}"
+fi
+for c in "${COPIES[@]}"; do
+  if diff -q "${COPIES[0]}" "$c" >/dev/null; then
+    ok "in sync: $c"
+  else
+    bad "DRIFTED from ${COPIES[0]}: $c"
+  fi
+done
+
 echo "== the hook contains the failover and registers at pre-mount"
 grep -q 'previous boot also failed' "$HOOK" && ok "the failover block is present" || bad "no failover block"
 grep -q 'boot_hard_failure' "$HOOK" && ok "it keys off a pre-existing failure marker" || bad "no marker check"

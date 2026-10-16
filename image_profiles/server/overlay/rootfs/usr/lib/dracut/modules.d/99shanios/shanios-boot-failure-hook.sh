@@ -57,6 +57,61 @@ case "$ATTEMPTED_SLOT" in
     blue|green) ;;
     *) ATTEMPTED_SLOT="unknown" ;;
 esac
+# ── If the PREVIOUS boot also failed, stop defaulting to the broken slot ────
+#
+# The gap this closes: boot_hard_failure is written by a boot that FAILS, but
+# shani-auto-rollback acts on it from a boot that SUCCEEDS. That works, but only
+# if the operator knows to pick the other slot — because the default still
+# points at the candidate that cannot mount, and on systemd 261 systemd-boot
+# does not decrement the +3-0 tries counter, so every automatic boot lands back
+# in dracut. Observed on a machine that lost power mid-update: three
+# "Failed to mount /sysroot", four minutes apart, then an emergency shell.
+#
+# So flip the default here, at pre-mount, where we still can — the boot entry
+# for THIS boot was chosen before the kernel started and cannot be changed now,
+# but the next one can.
+#
+# Deliberately narrow, and fails open (any doubt changes nothing):
+#   * only when a pre-existing boot_hard_failure proves an earlier boot failed
+#   * only when the current default is a tries-counted entry, which is exactly
+#     how a deploy marks an unproven candidate
+#   * only by rewriting the `default` line — no entry is ever deleted
+#   * self-limiting: after the switch the default is a plain entry, which does
+#     not match, so this cannot ping-pong between two broken slots
+if [ -s "$DATA_MNT/boot_hard_failure" ]; then
+    PRIOR_FAILURE=$(cat "$DATA_MNT/boot_hard_failure" 2>/dev/null)
+    ESP_DEV=$(blkid -L shani_boot 2>/dev/null)
+    ESP_MNT=/run/shanios-boot-esp-tmp
+    if [ -n "$ESP_DEV" ] && mkdir -p "$ESP_MNT" 2>/dev/null; then
+        if mount -t vfat -o rw "$ESP_DEV" "$ESP_MNT" 2>/dev/null; then
+            LOADER="$ESP_MNT/loader/loader.conf"
+            ENTRIES="$ESP_MNT/loader/entries"
+            CUR=$(sed -n 's/^default[[:space:]]\+\([^[:space:]]*\).*/\1/p' "$LOADER" 2>/dev/null | head -1)
+            case "$CUR" in
+                *+*-*)
+                    FALLBACK=""
+                    for E in "$ENTRIES"/*.conf; do
+                        [ -f "$E" ] || continue
+                        N=$(basename "$E" .conf)
+                        case "$N" in *+*-*) continue ;; esac
+                        FALLBACK="$N"; break
+                    done
+                    if [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$CUR" ]; then
+                        cp "$LOADER" "$LOADER.shanios-bak" 2>/dev/null
+                        if sed -i "s|^default[[:space:]]\+[^[:space:]]*|default $FALLBACK|" "$LOADER" 2>/dev/null; then
+                            warn "shanios-hook: previous boot also failed (@${PRIOR_FAILURE}); boot default switched ${CUR} -> ${FALLBACK}"
+                        else
+                            warn "shanios-hook: could not rewrite boot default (leaving ${CUR})"
+                        fi
+                    fi
+                    ;;
+            esac
+            umount "$ESP_MNT" 2>/dev/null || true
+        fi
+        rmdir "$ESP_MNT" 2>/dev/null || true
+    fi
+fi
+
 printf '%s\n' "$ATTEMPTED_SLOT" > "$DATA_MNT/boot_hard_failure" 2>/dev/null && \
     warn "shanios-hook: boot_hard_failure written for slot '@${ATTEMPTED_SLOT}' (will be cleared on successful pivot)"
 
