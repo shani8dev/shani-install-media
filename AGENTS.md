@@ -727,20 +727,67 @@ here before (the AMI/packer path).
   normal post-flip state, so it is harmless there - but it does mean that line's
   effect is not self-evidently checkable by reading the ESP.
 
-  **What is still unverified:** the variable-clearing path has not been observed
-  on real efivarfs in a real firmware boot. It is unit-driven against a scratch
-  directory, and a zero-byte write *deletes* an efivarfs node while it merely
-  *truncates* an ordinary file — kernel behaviour tmpfs cannot reproduce, so
-  the suite asserts the write is issued against all four names and says so
-  rather than claiming a deletion it did not observe. The end-to-end test with
-  `bootctl set-default` actually run first is the missing piece.
+  **What is still unverified:** the end-to-end test with `bootctl set-default`
+  actually run first. The variable-clearing path itself is no longer in that
+  category — it was measured on real efivarfs and was **broken**. Below.
 
-  **Still unverified:** a real UEFI boot (no `/dev/kvm` here), and the case
-  where the default had NOT yet flipped — a power cut during the extract leaves
-  the old slot as default and the machine simply boots, which needs no fix but
-  leaves an incomplete candidate sitting on disk for the next deploy to repair.
+- **The variable-clearing wrote to the node instead of removing it, so it
+  cleared nothing — FIXED 2026-10-17. It shipped broken.** The clearing was
+  `printf '' > "$_efivarfs"/${_v}-*`, on the belief — stated in the hook's own
+  comment and in the test — that "an efivarfs node is deleted by writing zero
+  bytes to it". Measured on real efivarfs in a real firmware boot (edk2-ovmf,
+  installed image, `iso-install --boot-only --console-exec`; the measurement is
+  `shani-testbed/tests/efivar-proof.sh`):
 
-- **`vmspawn` silently discards everything the guest wrote, so it cannot answer
+  | operation | rc | the node afterwards |
+  |---|---|---|
+  | `printf '' > $node` | 0 | **still there, size UNCHANGED (180 bytes)** |
+  | `truncate -s 0 $node` | 0 | still there |
+  | `rm -f $node` | 0 | **gone** |
+
+  Both zero-byte forms are **silent no-ops**: exit 0, no output, nothing
+  changed. So on every machine the hook logged *"cleared EFI variables that
+  outrank loader.conf"* and cleared none — and `LoaderEntryDefault`, which
+  `finalize_boot_entries` persists on every deploy via `bootctl set-default`,
+  kept naming the candidate that had just failed, still beating the
+  `loader.conf` line the hook had rewritten correctly. **The one half of the
+  fix that reaches a deployed machine did nothing, and reported that it had.**
+
+  The hook now unlinks and then **verifies the node is gone**, because `rc=0` is
+  exactly what the broken version believed and it meant nothing.
+
+  **The premise was never true; it was written down as fact.** The comment said
+  an efivarfs node *is deleted* by a zero-byte write. That is the
+  widely-repeated idiom and it is wrong here: an ordinary file truncates,
+  efivarfs ignores it, only `unlink` deletes.
+
+  **It was green because its own test accepted the wrong state.**
+  `tests/test-boot-failover.sh` treated an *empty* node as proof of deletion,
+  on the stated ground that a zero-byte write deletes on real efivarfs and only
+  truncates on an ordinary file, so "tmpfs cannot reproduce that kernel
+  behaviour" and only the *issuing* of the write was assertable. It can: `rm -f`
+  is a real unlink on both, so the test now asserts the node is **gone**, which
+  also separates *deleted* from *truncated* — the two states the old assertion
+  treated as one. 21 assertions, 4 mutations confirmed red (zero-byte write
+  restored 16/21, `truncate` 16/21, exit status trusted again 17/21, only two of
+  the four names cleared 18/21).
+
+  **Worth carrying forward.** *"The write is issued, not its effect"* is a
+  legitimate concession only when the effect is unreproducible **in principle**.
+  Here it was reproducible in principle and merely unobserved, and the
+  accommodation is precisely what let a no-op pass as a working fix. When a
+  test's tolerance is justified by "the real thing can't be simulated here",
+  the first question is whether the tolerance is instead covering a bug — and a
+  check that accepts a degraded state of its own subject is a check reporting on
+  itself, not on the code.
+
+  **Still unverified (from the entry above):** a real UEFI boot of the failure
+  itself (no `/dev/kvm` here), and the case where the default had NOT yet
+  flipped — a power cut during the extract leaves the old slot as default and the
+  machine simply boots, which needs no fix but leaves an incomplete candidate
+  sitting on disk for the next deploy to repair.
+
+  - **`vmspawn` silently discards everything the guest wrote, so it cannot answer
   "did this boot change the disk?" — FIXED with an opt-in `--commit`
   (2026-10-17). Read this before testing any boot-time behaviour that is
   supposed to persist.**
