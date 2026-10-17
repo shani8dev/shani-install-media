@@ -699,6 +699,34 @@ here before (the AMI/packer path).
   systemd-boot one. Only the four systemd-boot names are touched, which is what
   makes that asymmetry possible.
 
+  **The sweep: exactly one production writer, and it is covered.** Every
+  `bootctl set-default` and every `default ` write to `loader.conf` across
+  shani-deploy, shani-install-media, shani-settings, shani-pkgbuilds and
+  os-installer-config:
+
+  | where | what it writes | correct? |
+  |---|---|---|
+  | `shani-deploy.sh:2092` | `bootctl set-default "${loader_default}"`, variable = `shanios-<slot>.conf` | yes - the base ID |
+  | `shani-deploy.sh:2079,2083` | `default ${loader_default}` in loader.conf | yes |
+  | `os-installer-config/scripts/configure.sh` | `default ${OS_NAME}-${slot}.conf` | yes - but its COMMENT said "use a glob pattern", which is the one thing that does not work. Fixed there. |
+  | the dracut failover hook | loader.conf **and now the EFI variables** | yes |
+
+  `configure.sh` deliberately omits `bootctl set-default` (unreliable efivarfs
+  in a chroot), so **a freshly installed machine has no `LoaderEntryDefault` and
+  a deployed one does.** That asymmetry is exactly why the field test could not
+  see the override: the testbed had never run a deploy.
+
+  **A hazard worth knowing about, observed rather than derived.** If BOTH
+  `shanios-blue.conf` and `shanios-blue+3-0.conf` exist on the ESP - which
+  accumulated scenario state in the testbed did, and which `finalize_boot_entries`
+  can also leave - both entries have the **same ID**, `shanios-blue.conf`,
+  because the tries suffix is stripped for ID purposes. `config_find_entry`
+  returns the first match in `config->entries` order, so which one
+  `default shanios-blue.conf` resolves to depends on systemd-boot's ordering
+  rather than on anything readable from the ESP. Both load the same UKI in a
+  normal post-flip state, so it is harmless there - but it does mean that line's
+  effect is not self-evidently checkable by reading the ESP.
+
   **What is still unverified:** the variable-clearing path has not been observed
   on real efivarfs in a real firmware boot. It is unit-driven against a scratch
   directory, and a zero-byte write *deletes* an efivarfs node while it merely
