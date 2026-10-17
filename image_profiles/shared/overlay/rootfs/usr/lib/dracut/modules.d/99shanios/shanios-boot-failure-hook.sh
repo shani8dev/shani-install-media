@@ -130,6 +130,15 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                         cp "$LOADER" "$LOADER.shanios-bak" 2>/dev/null
                         if sed -i "s|^default[[:space:]]\+[^[:space:]]*|default $FALLBACK|" "$LOADER" 2>/dev/null; then
                             warn "shanios-hook: previous boot also failed (@${PRIOR_FAILURE}); boot default switched ${CUR} -> ${FALLBACK}"
+                            # sed -i renames a new file over the old one, so the
+                            # directory entry AND the file data are dirty. Flush
+                            # explicitly: the initramfs is about to be discarded,
+                            # and a write that never leaves its page cache is
+                            # indistinguishable from one that never happened.
+                            # That is exactly what was seen - the hook reporting
+                            # the switch on every boot while loader.conf on disk
+                            # never changed.
+                            sync
                         else
                             warn "shanios-hook: sed failed rewriting the default in ${LOADER} (leaving ${CUR})"
                         fi
@@ -141,7 +150,15 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                     warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but default '${CUR}' carries no tries counter - not an unproven candidate, leaving it" ;;
             esac
         fi
-        umount "$ESP_MNT" 2>/dev/null || true
+        # Do not discard a failed unmount. If the ESP is still mounted when the
+        # initramfs goes, its dirty pages go with it and the switch is lost -
+        # silently, which is how a hook that reports success every boot can
+        # leave the boot target exactly where it was.
+        sync
+        if ! umount "$ESP_MNT" 2>/dev/null; then
+            warn "shanios-hook: umount of ${ESP_MNT} failed - the default change may not persist"
+            umount -l "$ESP_MNT" 2>/dev/null || true
+        fi
     fi
     rmdir "$ESP_MNT" 2>/dev/null || true
 fi
