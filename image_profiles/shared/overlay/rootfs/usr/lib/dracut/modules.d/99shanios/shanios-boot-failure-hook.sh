@@ -120,7 +120,17 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                         [ -f "$E" ] || continue
                         N=$(basename "$E" .conf)
                         case "$N" in *+*-*) continue ;; esac
-                        FALLBACK="$N"; break
+                        # The ID is the FILENAME, .conf included - not the stem.
+                        # boot.c: `boot_entry_parse_tries(entry, path, file,
+                        # ".conf")` strips a `+N-M` boot counter from the name but
+                        # leaves the suffix, and only then `entry->id =
+                        # xstrdup16(file)`. systemd-boot matches loader.conf's
+                        # default with efi_fnmatch(pattern, entry->id), so writing
+                        # the stem matches NOTHING and it silently falls through to
+                        # "the first suitable entry" - which, on a post-flip disk,
+                        # is the broken candidate. That is why the rewrite landed on
+                        # disk, looked correct, and changed nothing.
+                        FALLBACK="${N}.conf"; break
                     done
                     if [ -z "$FALLBACK" ]; then
                         warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but no non-tries entry exists to fall back to (default=${CUR})"
