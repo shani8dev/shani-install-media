@@ -1082,7 +1082,23 @@ is deliberately just the current-state summary.
     from a root that really lacks `grep`/`awk`, which is not how this image
     is built.
 
-  **Do not "fix" this by patching the individual hooks.** The real shape of
+  **Re-confirmed on a full rebuild (2026-10-17), and one of the ten is two
+messages rather than two faults.** A fresh gnome base build produced exactly these
+10 `.INSTALL` error lines and no others — `grep` not found ×7 (systemd ×1, fish ×2,
+zsh ×2, shani-settings ×2), `awk` ×1 (shani-settings), `vercmp` ×1 (fontconfig) —
+which is the table above, exactly. Worth knowing because the fontconfig one also
+emits a second line that reads like a new and stranger fault:
+
+    /tmp/alpm_XXXX/.INSTALL: line 2: vercmp: command not found
+    /tmp/alpm_XXXX/.INSTALL: line 2: ((: < 0 : arithmetic syntax error: operand expected
+
+That is one cause, not two. `vercmp` is missing, the version comparison it was
+feeding comes back empty, and the `(( < 0 ))` that consumes it then fails
+arithmetically. Anyone counting faults from this log will over-count by one unless
+they know the two lines are the same missing tool. Consequence is unchanged and
+still bounded to the font cache's version comparison.
+
+**Do not "fix" this by patching the individual hooks.** The real shape of
   the problem is that one transaction cannot guarantee hook ordering. If it
   ever does matter, the fix is to split the install so the packages
   providing hook tools land first — not to edit five `.install` files.
