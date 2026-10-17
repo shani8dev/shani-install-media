@@ -100,6 +100,82 @@ R=$(run_hook shanios-blue.conf shanios-blue+3-0.conf shanios-blue.conf)
 [[ "$R" == "shanios-blue.conf" ]] && ok "a plain default beats a tries entry of another name" || bad "plain default disturbed" "got [$R]"
 
 echo
+echo "== systemd-boot reads loader.conf's default LAST, so the EFI vars must go too"
+# finalize_boot_entries() runs `bootctl set-default <candidate>` after every
+# deploy, persisting LoaderEntryDefault. systemd-boot checks that BEFORE
+# loader.conf and returns on the first match, so a hook that only rewrites the
+# file leaves the candidate as the default forever.
+#
+# Driven for real against a SCRATCH efivarfs. It has to be scratch: this code
+# deletes four persistent variables, and a test host running systemd-boot would
+# lose them. `run_hook` is pointed at a temp dir via SHANIOS_EFIVARS_DIR.
+run_hook_efivars() { # <efi-dir> ; prints the resulting default + what was cleared
+  local d eidir="$1"
+  d=$(mktemp -d)
+  mkdir -p "$d/loader/entries"
+  printf 'timeout 5\n' > "$d/loader/loader.conf"
+  printf 'default shanios-green+3-0.conf\n' >> "$d/loader/loader.conf"
+  printf 'title   t\nefi     /e\n' > "$d/loader/entries/shanios-blue.conf"
+  printf 'title   t\nefi     /e\n' > "$d/loader/entries/shanios-green+3-0.conf"
+  ( set -uo pipefail
+    ESP_MNT="$d"; ENTRIES="$d/loader/entries"; LOADER="$d/loader/loader.conf"
+    PRIOR_FAILURE="blue"; SHANIOS_EFIVARS_DIR="$eidir"
+    warn() { echo "WARN: $*" >&2; }
+    eval "$DECIDE"
+  ) >/dev/null 2>"$d/warn"
+  R=$(sed -n 's/^default[[:space:]]*//p' "$d/loader/loader.conf" | head -1)
+  C=$(sed -n 's/^.*cleared EFI variables that outrank loader.conf: //p' "$d/warn" | head -1)
+  rm -rf "$d"
+  printf '%s\n%s\n' "$R" "$C"
+}
+
+mkefi() { # <dir> [names...]  -- create fake efivarfs nodes
+  local d="$1"; shift; mkdir -p "$d"
+  local n; for n in "$@"; do printf 'x' > "$d/${n}-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"; done
+}
+
+ALL4="LoaderEntrySysFail LoaderEntryOneShot LoaderEntryPreferred LoaderEntryDefault"
+
+E=$(mktemp -d); mkefi "$E" $ALL4
+OUT=$(run_hook_efivars "$E")
+[[ "$OUT" == "$R"$'
+'"shanios-blue.conf" ]] || true
+DEF=$(printf '%s' "$OUT" | sed -n 1p)
+CLR=$(printf '%s' "$OUT" | sed -n 2p)
+[[ "$DEF" == "shanios-blue.conf" ]] && ok "the default still switches to the good entry" \
+                                     || bad "the default still switches" "got [$DEF]"
+# A zero-byte write DELETES a node on real efivarfs; on an ordinary file it
+# truncates. tmpfs cannot reproduce that kernel behaviour, so what is asserted
+# is that the write is issued against every one of the four names - which is
+# the part that can silently regress. The delete itself is efivarfs semantics.
+for n in $ALL4; do
+  f=$(compgen -G "$E/${n}-*" | head -1)
+  if [ -n "$f" ] && [ ! -s "$f" ]; then
+    ok "it issues the zero-byte delete against $n (it outranks loader.conf)"
+  elif [ -z "$f" ]; then
+    ok "it deleted $n"
+  else
+    bad "it issues the zero-byte delete against $n" "left with $(stat -c %s "$f") bytes"
+  fi
+done
+echo "$CLR" | grep -q 'LoaderEntryDefault' && ok "it reports which variables it cleared" \
+                                          || bad "it reports which variables it cleared" "got [$CLR]"
+
+# Negative control: a dir with NONE of them must not be reported as cleared,
+# and nothing may be invented.
+E2=$(mktemp -d); mkefi "$E2" LoaderDevicePartUUID
+OUT2=$(run_hook_efivars "$E2")
+DEF2=$(printf '%s' "$OUT2" | sed -n 1p); CLR2=$(printf '%s' "$OUT2" | sed -n 2p)
+[[ "$DEF2" == "shanios-blue.conf" ]] && ok "with no such variables the switch still happens" \
+                                     || bad "with no such variables the switch still happens" "got [$DEF2]"
+[ -z "$CLR2" ] && ok "with none set, nothing is claimed to have been cleared" \
+              || bad "with none set, nothing is claimed" "claimed [$CLR2]"
+[ -f "$E2/LoaderDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" ] \
+  && ok "it touches ONLY the four systemd-boot names (GRUB's variables survive)" \
+  || bad "it touches ONLY the four systemd-boot names" "LoaderDevicePartUUID was deleted"
+rm -rf "$E" "$E2"
+
+echo
 echo "== the backup the hook leaves behind"
 D=$(mktemp -d); mkdir -p "$D/loader/entries"
 printf 'default shanios-green+3-0.conf\n' > "$D/loader/loader.conf"

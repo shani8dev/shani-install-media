@@ -149,6 +149,57 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                             # the switch on every boot while loader.conf on disk
                             # never changed.
                             sync
+                            # Rewriting loader.conf is NOT enough, and this is the
+                            # single most important thing in this hook.
+                            #
+                            # systemd-boot reads loader.conf's `default` LAST.
+                            # config_select_default_entry() (v262 src/boot/boot.c)
+                            # tries LoaderEntrySysFail, LoaderEntryOneShot,
+                            # LoaderEntryPreferred, then the saved entry, then
+                            # LoaderEntryDefault - and RETURNS ON THE FIRST MATCH.
+                            # loader.conf is only consulted after all of those.
+                            #
+                            # And finalize_boot_entries() runs `bootctl
+                            # set-default "${loader_default}"` after every deploy,
+                            # which persists LoaderEntryDefault naming the
+                            # CANDIDATE. So on a real machine that variable is set,
+                            # it outranks this rewrite, and the machine boots the
+                            # candidate that just failed - forever.
+                            #
+                            # A field test of this hook passed end to end while
+                            # missing exactly this, because the testbed's EFI
+                            # variables were unset (no real deploy had run). The
+                            # precondition that made it pass is the one a deploy
+                            # actively violates.
+                            #
+                            # efivarfs nodes are ordinary files: writing zeroes to
+                            # one deletes it. No efibootmgr needed, and nothing
+                            # here has to fail closed on a missing binary.
+                            _cleared=""
+                            # Overridable so a test can point this at a scratch
+                            # directory. It MUST NOT point at the real efivarfs in
+                            # a test: this code deletes four persistent variables,
+                            # and a test host running systemd-boot would lose
+                            # them. Only the four systemd-boot names below are
+                            # touched; a GRUB host has none of them, which is why
+                            # an accidental run against a live efivarfs can go
+                            # unnoticed.
+                            _efivarfs="${SHANIOS_EFIVARS_DIR:-/sys/firmware/efi/efivars}"
+                            for _v in LoaderEntrySysFail LoaderEntryOneShot \
+                                     LoaderEntryPreferred LoaderEntryDefault; do
+                                for _f in "$_efivarfs"/${_v}-*; do
+                                    [ -e "$_f" ] || continue
+                                    if printf '' > "$_f" 2>/dev/null; then
+                                        _cleared="${_cleared} ${_v}"
+                                    else
+                                        warn "shanios-hook: could not clear EFI variable ${_v} (${_f}) - systemd-boot may still boot ${CUR}"
+                                    fi
+                                done
+                            done
+                            if [ -n "$_cleared" ]; then
+                                warn "shanios-hook: cleared EFI variables that outrank loader.conf:${_cleared}"
+                            fi
+                            sync
                         else
                             warn "shanios-hook: sed failed rewriting the default in ${LOADER} (leaving ${CUR})"
                         fi

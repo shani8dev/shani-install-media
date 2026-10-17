@@ -664,6 +664,49 @@ here before (the AMI/packer path).
   mutant fails 1, and a mutant that lets a tries-counted entry serve as the
   fallback fails 2.
 
+  **The rewrite is not sufficient on a real machine, and the test that proved it
+  could not have caught that — FIXED (2026-10-17), and this is the most important
+  thing in this entry.**
+
+  `finalize_boot_entries()` (`shani-deploy.sh:2092`) runs
+  `bootctl set-default "${loader_default}"` after every deploy, which persists
+  the EFI variable **`LoaderEntryDefault` naming the candidate**. And
+  `config_select_default_entry()` in v262 `src/boot/boot.c` tries, returning on
+  the first match: `LoaderEntrySysFail`, `LoaderEntryOneShot`,
+  `LoaderEntryPreferred`, the saved entry, **`LoaderEntryDefault`** — and only
+  then `default` in loader.conf. **loader.conf is seventh of eight.**
+
+  So on a real machine the hook rewrites the file, the variable still names the
+  candidate, the variable wins, and the machine boots the candidate that just
+  failed — on every subsequent boot. The hook now clears all four variables
+  (an efivarfs node is deleted by writing zero bytes to it; no `efibootmgr`
+  needed), reports which it cleared, and says so loudly if one cannot be
+  cleared rather than continuing as if it had.
+
+  **How it survived a green end-to-end test is the reusable part.** The field
+  test booted a genuinely unbootable candidate for real and watched the next
+  boot land on the good slot — and the testbed's EFI variables were **unset**,
+  because no real deploy had ever run there. The precondition that made the
+  test pass is precisely the one a deploy actively violates. A passing test
+  whose precondition the production path guarantees to be false is not a
+  passing test.
+
+  The `SHANIOS_EFIVARS_DIR` override exists so the suite can drive this against
+  a scratch directory. **It must never point at the real efivarfs:** the code
+  deletes four persistent variables, and this host boots GRUB (so it has
+  `LoaderDevicePartUUID`/`LoaderInfo` and none of the four) — an accidental run
+  against a live efivarfs would be *silent* on a GRUB box and destructive on a
+  systemd-boot one. Only the four systemd-boot names are touched, which is what
+  makes that asymmetry possible.
+
+  **What is still unverified:** the variable-clearing path has not been observed
+  on real efivarfs in a real firmware boot. It is unit-driven against a scratch
+  directory, and a zero-byte write *deletes* an efivarfs node while it merely
+  *truncates* an ordinary file — kernel behaviour tmpfs cannot reproduce, so
+  the suite asserts the write is issued against all four names and says so
+  rather than claiming a deletion it did not observe. The end-to-end test with
+  `bootctl set-default` actually run first is the missing piece.
+
   **Still unverified:** a real UEFI boot (no `/dev/kvm` here), and the case
   where the default had NOT yet flipped — a power cut during the extract leaves
   the old slot as default and the machine simply boots, which needs no fix but
