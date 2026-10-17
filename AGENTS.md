@@ -669,6 +669,70 @@ here before (the AMI/packer path).
   the old slot as default and the machine simply boots, which needs no fix but
   leaves an incomplete candidate sitting on disk for the next deploy to repair.
 
+- **`vmspawn` silently discards everything the guest wrote, so it cannot answer
+  "did this boot change the disk?" — FIXED with an opt-in `--commit`
+  (2026-10-17). Read this before testing any boot-time behaviour that is
+  supposed to persist.**
+
+  `lib/vmspawn.sh` boots a qcow2 overlay backed by `install.img` and throws the
+  overlay away on exit. Correct default — a boot should not scribble on the image
+  — but it makes an entire class of question unanswerable **by omission rather
+  than by design**: a hook that rewrites `loader.conf`, a service that clears a
+  marker, a deploy that flips a slot. Those tests do not fail. They read the
+  pre-boot state, which is byte-identical to what a boot that did nothing would
+  leave behind.
+
+  **What it cost, because the symptom reads exactly like a product bug.** The
+  dracut boot-failover hook above was investigated across a long stretch on the
+  conclusion that its write to `loader.conf` was being lost. Three independent
+  guest writes came back missing from disk: a cleared `boot_hard_failure` marker
+  still present, an ESP file the guest created absent, and the rewritten
+  `loader.conf` unchanged. For several steps the conclusion was "the hook is
+  losing its write". **The hook was fine.** Two escapes eventually narrowed it:
+  a guest that *deletes* a file and reboots still found the file, and a marker
+  the hook had explicitly cleared came back on the next boot. Neither is a
+  shape a real boot produces.
+
+  **Asymmetry worth remembering:** the same ESP, written from a `systemd-nspawn`
+  session, *did* persist (read back from the host after `clean`). Writes reach
+  `install.img` through the harness's loop device; only the `vmspawn` path threw
+  them away. So `nspawn` write tests and `vmspawn` write tests disagreeing is a
+  known tell, not a mystery.
+
+  Use `test vmspawn --commit` for any assertion that a boot *changed* something.
+  It is opt-in because it mutates the image; every run logs which way it went
+  (`committed the guest's writes…` vs `guest writes discarded…`). It has a
+  control suite (`shani-testbed/tests/vmspawn-args.sh`, four mutations confirmed
+  to go red) because a flag that parses but does nothing is the exact shape of the
+  bug it fixes.
+
+- **The builder image had no qemu, no OVMF and no swtpm, so the firmware-boot
+  commands were unreachable rather than broken — FIXED (2026-10-17), in
+  `shani-builder/docker/Dockerfile`.**
+
+  `qemu-system-x86_64`, `qemu-img`, `edk2-ovmf` and `swtpm` were all absent from
+  `shrinivasvkumbhar/shani-builder:latest`, which took three different shapes and
+  none of them loud:
+
+  - `iso-install` **worked**, because it runs `pacman -Sy` for the missing tools
+    on every invocation (`lib/isoinstall.sh:_isovm_tools`). The builder container
+    is `--rm`, so the install is discarded each time — every run re-downloads and
+    re-installs, and a run with no network fails at the very end of a boot that
+    takes minutes. Its comment says "pacman cache is persistent", which is true of
+    the bind-mounted cache and false of the installation.
+  - `qemu` and `gui` have no preflight at all. `lib/qemu.sh` exits 1 and prints
+    `apt install qemu-system-x86 ovmf   (Debian/Ubuntu)` — Debian instructions,
+    on an Arch image, for a command that cannot work.
+  - So a real capability looked present — the commands exist, the README
+    describes them, `iso-install` is even documented with real transcripts — while
+    being unreachable, with the only evidence a missing binary.
+
+  This matters here specifically because `iso-install --boot-only
+  --console-exec=...` is **the only way to run a command against the image's own
+  kernel** (nspawn shares the host's), which is what the power-cut work above
+  needs. `qemu-base` depends on `qemu-img`, so the one package covers both the
+  firmware boot and `vmspawn --commit`'s overlay commit.
+
 - **The dracut boot-failover hook only reaches machines on an image build, and
   it is the base-image cache guard that guarantees that. Verified, not assumed
   (2026-10-16).**
