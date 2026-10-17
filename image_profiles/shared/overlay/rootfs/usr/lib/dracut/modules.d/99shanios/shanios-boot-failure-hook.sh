@@ -172,9 +172,31 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                             # precondition that made it pass is the one a deploy
                             # actively violates.
                             #
-                            # efivarfs nodes are ordinary files: writing zeroes to
-                            # one deletes it. No efibootmgr needed, and nothing
-                            # here has to fail closed on a missing binary.
+                            # MEASURED, on real efivarfs in a real firmware
+                            # boot (edk2-ovmf via iso-install --boot-only,
+                            # tests/efivar-proof.sh):
+                            #
+                            #   printf '' > $node   rc=0  node still there
+                            #                                size UNCHANGED
+                            #   truncate -s 0 $node  rc=0  node still there
+                            #   rm -f $node          rc=0  node GONE
+                            #
+                            # Both zero-byte forms are SILENT NO-OPS. They exit 0
+                            # with no error and change nothing, so the version of
+                            # this hook that used them reported "cleared" on every
+                            # boot while clearing nothing, on every machine, with
+                            # its unit test green - because that test drives this
+                            # code against a scratch directory, where the same
+                            # write truncates an ordinary file to zero bytes.
+                            # tmpfs cannot reproduce efivarfs, which is the whole
+                            # reason this was invisible for so long.
+                            #
+                            # So: unlink, and then VERIFY. Trusting the exit
+                            # status is precisely what hid the last version -
+                            # rc=0 meant nothing happened. A write to a file
+                            # system that does not implement the operation
+                            # succeeds, so the only evidence is the node's
+                            # absence afterwards.
                             _cleared=""
                             # Overridable so a test can point this at a scratch
                             # directory. It MUST NOT point at the real efivarfs in
@@ -189,7 +211,8 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                                      LoaderEntryPreferred LoaderEntryDefault; do
                                 for _f in "$_efivarfs"/${_v}-*; do
                                     [ -e "$_f" ] || continue
-                                    if printf '' > "$_f" 2>/dev/null; then
+                                    rm -f "$_f" 2>/dev/null
+                                    if [ ! -e "$_f" ]; then
                                         _cleared="${_cleared} ${_v}"
                                     else
                                         warn "shanios-hook: could not clear EFI variable ${_v} (${_f}) - systemd-boot may still boot ${CUR}"

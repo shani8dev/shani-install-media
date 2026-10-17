@@ -144,18 +144,33 @@ DEF=$(printf '%s' "$OUT" | sed -n 1p)
 CLR=$(printf '%s' "$OUT" | sed -n 2p)
 [[ "$DEF" == "shanios-blue.conf" ]] && ok "the default still switches to the good entry" \
                                      || bad "the default still switches" "got [$DEF]"
-# A zero-byte write DELETES a node on real efivarfs; on an ordinary file it
-# truncates. tmpfs cannot reproduce that kernel behaviour, so what is asserted
-# is that the write is issued against every one of the four names - which is
-# the part that can silently regress. The delete itself is efivarfs semantics.
+# The node must be GONE, not merely emptied. This assertion used to accept
+# either, with a comment explaining that a zero-byte write deletes on real
+# efivarfs and only truncates on an ordinary file, so tmpfs "cannot reproduce
+# that kernel behaviour" - and the empty-file case passed.
+#
+# That accommodation was the bug's hiding place, and it was wrong on the
+# kernel's own terms. Measured in a real firmware boot on real efivarfs
+# (tests/efivar-proof.sh, edk2-ovmf via iso-install --boot-only):
+#
+#     printf '' > $node   rc=0  still there, size UNCHANGED (180 bytes)
+#     truncate -s 0 $node  rc=0  still there
+#     rm -f $node          rc=0  gone
+#
+# So the zero-byte write does not delete an efivarfs node at all - it is a
+# silent no-op that exits 0 - and the hook using it reported "cleared" on
+# every boot while clearing nothing, everywhere, with this test green. There
+# is no kernel version that behaves the way the old comment assumed, so
+# nothing is being approximated: `rm -f` is a real unlink here and on
+# efivarfs, and the honest assertion is that the file is absent.
 for n in $ALL4; do
   f=$(compgen -G "$E/${n}-*" | head -1)
-  if [ -n "$f" ] && [ ! -s "$f" ]; then
-    ok "it issues the zero-byte delete against $n (it outranks loader.conf)"
-  elif [ -z "$f" ]; then
-    ok "it deleted $n"
+  if [ -z "$f" ]; then
+    ok "it removes $n (it outranks loader.conf)"
+  elif [ -s "$f" ]; then
+    bad "it removes $n" "node survives, $(stat -c %s "$f") bytes: a zero-byte write does NOT delete on efivarfs"
   else
-    bad "it issues the zero-byte delete against $n" "left with $(stat -c %s "$f") bytes"
+    bad "it removes $n" "node truncated to empty, not deleted - truncation is not deletion"
   fi
 done
 echo "$CLR" | grep -q 'LoaderEntryDefault' && ok "it reports which variables it cleared" \
