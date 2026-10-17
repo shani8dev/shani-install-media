@@ -59,7 +59,7 @@ install() {
     #   head    parsing the default line
     #   basename the fallback-entry scan
     inst_multiple blkid mount umount mountpoint mkdir rmdir rm printf sed \
-                  cat cp ls readlink tr head basename
+                  cat cp ls readlink tr head basename sync
 
     # Ensure the overlay kernel module is packed into the initramfs so
     # 'mount -t overlay' works before the real root's modules are available.
