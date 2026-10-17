@@ -701,6 +701,43 @@ here before (the AMI/packer path).
   module made it into an initramfs. Ask something that can only be true if the
   hook ran.
 
+- **`99shanios/module-setup.sh` did not install the binaries its own hooks call —
+  FIXED 2026-10-17.** `inst_multiple` listed `blkid mount umount mountpoint
+  mkdir rmdir rm printf sed`. The hooks also run **`cat`, `cp`, `ls`,
+  `readlink`, `tr`, `head`, `basename`**, and two of those are load-bearing for
+  the boot failover itself: `cat` reads the previous `boot_hard_failure` back
+  into `PRIOR_FAILURE`, and `cp` is what backs up and rewrites `loader.conf`.
+
+  **A binary missing from that list is not a build error and not a boot error.**
+  The hook runs, the shell reports nothing useful, and the logic silently does
+  nothing. That matches the console exactly and is why the mechanism looked
+  inert: six boots logged `boot_hard_failure written` — **`printf` is
+  installed** — with no DIAG line (`ls`/`readlink`/`tr`) and no default rewrite
+  (`cp`). From a console that is indistinguishable from a hook that never ran,
+  which is exactly how it was read for an entire session.
+
+  The DIAG lines are what made the gap findable at all. They were added for the
+  opposite reason — a branch that runs and succeeds is indistinguishable from
+  one that never ran — and they are shell functions' output built from command
+  substitutions over binaries that were never installed, so the instrumentation
+  designed to expose this was itself disabled by it.
+
+  **How it was found, and the limit of that finding:** by extracting every
+  external command the three hook scripts reference and diffing them against
+  `inst_multiple` — not by reading the hook. Attempting to reproduce it in an
+  ad-hoc `dracut` install (the builder image ships **no dracut and no kernel**
+  at all, and `dracut --list-modules` would not see the module even with it
+  installed) could not confirm the binaries were actually *absent* from a real
+  initramfs. So this is fixed on its own terms rather than as a proven root
+  cause: **a hook that shells out must declare what it shells out to**, and the
+  declared list is the only thing that makes the dependency reviewable.
+
+  **Two false passes on the way, both the shape this file keeps recording.**
+  `dracut` produced no initramfs at all in those containers, and the check
+  printed `NO` for every binary in both the "before" and "after" runs — an
+  all-red result that was pure absence, and would have been reported as
+  "confirmed absent" by anyone not looking at whether the file existed.
+
 - **Nothing validated that an ISO embeds the layers it should carry — FIXED
   (2026-10-06, `fe4243a`).** Two real failures on the same day both passed
   every existing check while shipping an ISO with **no snap layer**:
