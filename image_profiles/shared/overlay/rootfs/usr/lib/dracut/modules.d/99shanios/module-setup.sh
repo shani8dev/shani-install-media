@@ -40,7 +40,26 @@ install() {
     # overlay: the kernel module is auto-loaded; 'overlay' here is the fs-type
     # name passed to mount -t, which needs no binary — but we do need mount to
     # accept it, so ensure the overlay kernel module is present.
-    inst_multiple blkid mount umount mountpoint mkdir rmdir rm printf sed
+    #
+    # The list must cover EVERY external command the hooks actually run, not
+    # just the ones the first version of the failover happened to use. A
+    # command missing here is not an error at build time and not an error at
+    # boot: the hook runs, the shell prints nothing useful, and the logic
+    # silently does nothing. That is exactly what happened — six boots logged
+    # "boot_hard_failure written" (printf IS installed) and no DIAG line and no
+    # default rewrite (cat, ls, readlink, tr, cp are NOT), which reads from the
+    # console exactly like a hook that never ran.
+    #
+    #   printf  writes the marker          -> the one line that did appear
+    #   cat     reads it back (PRIOR_FAILURE)
+    #   cp      backs up + rewrites loader.conf  -> the failover itself
+    #   ls      DIAG
+    #   readlink DIAG
+    #   tr      DIAG
+    #   head    parsing the default line
+    #   basename the fallback-entry scan
+    inst_multiple blkid mount umount mountpoint mkdir rmdir rm printf sed \
+                  cat cp ls readlink tr head basename
 
     # Ensure the overlay kernel module is packed into the initramfs so
     # 'mount -t overlay' works before the real root's modules are available.
