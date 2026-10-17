@@ -64,6 +64,20 @@ install() {
     # Ensure the overlay kernel module is packed into the initramfs so
     # 'mount -t overlay' works before the real root's modules are available.
     instmods overlay
+
+    # vfat, and this is the failover's whole mechanism. The pre-mount hook has
+    # to mount the ESP to rewrite loader.conf's default line - and `mount -t
+    # vfat` fails without the module, silently, because the hook redirects
+    # mount's stderr. Measured on a real boot: every hook line was correct and
+    # the run died on
+    #
+    #   prior failure (@blue) but could not mount the ESP (/dev/vda1)
+    #
+    # with `overlay.ko` present and `vfat.ko` ABSENT from the very initramfs
+    # that was about to be booted. `fat` and the nls_* charset modules come
+    # along as dependencies of vfat; blkid -L already resolves the label
+    # without them, since that is read from the superblock.
+    instmods vfat
 }
 
 installkernel() {
