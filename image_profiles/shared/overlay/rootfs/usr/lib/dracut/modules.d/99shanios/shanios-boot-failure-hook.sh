@@ -125,8 +125,17 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
         warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but blkid -L shani_boot found no ESP device"
     elif ! mkdir -p "$ESP_MNT" 2>/dev/null; then
         warn "shanios-hook: cannot create ${ESP_MNT} for the ESP mountpoint"
-    elif ! mount -t vfat -o rw "$ESP_DEV" "$ESP_MNT" 2>/dev/null; then
-        warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but could not mount the ESP (${ESP_DEV})"
+    elif ! _esp_err=$(mount -t vfat -o rw "$ESP_DEV" "$ESP_MNT" 2>&1); then
+        # The mount's OWN error, not just ours. `2>/dev/null` here meant a boot
+        # where the ESP could not be mounted printed only "could not mount the
+        # ESP (/dev/vda1)" - which is exactly the level of detail that left the
+        # original question ("is the ESP reachable at pre-mount at all?") open
+        # through a whole investigation. The device is found by blkid and the
+        # mount is a separate step that can fail for reasons worth naming: no
+        # vfat driver in the initramfs, a busy device, a bad superblock, a
+        # read-only mount. Each has a different fix and none is guessable from
+        # "it failed".
+        warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but could not mount the ESP (${ESP_DEV}) - ${_esp_err:-no error output}"
     else
         LOADER="$ESP_MNT/loader/loader.conf"
         ENTRIES="$ESP_MNT/loader/entries"
