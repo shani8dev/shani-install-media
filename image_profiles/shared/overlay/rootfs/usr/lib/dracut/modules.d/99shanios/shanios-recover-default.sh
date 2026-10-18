@@ -37,6 +37,27 @@ LOADER_CONF="$ESP_MNT/loader/loader.conf"
 log() { warn "shanios-recover: $*" 2>/dev/null || echo "shanios-recover: $*" >&2; }
 
 # --- rule 1: a prior failure is required ------------------------------------
+# The marker lives on @data. The pre-mount hook mounts that subvolume at
+# /run/shanios-data-tmp, but this unit runs from emergency.target, and dracut has
+# torn the hook's mount down by then - so the unit cannot inherit it and has to
+# make its own, exactly as it already does for the ESP a few lines below.
+#
+# Measured, in one boot: the hook logged
+#   previous boot also failed (@@blue); boot default switched ...
+# and this unit then logged
+#   no prior failure marker - not acting
+# Same marker, same boot, two different views of it. The unit's guard was
+# correct and its input was invisible, which is the one combination that reads as
+# "the mechanism is broken" rather than "the mechanism could not see".
+if [ ! -s "$MARKER" ]; then
+    DATA_MNT="${MARKER%/*}"
+    DATA_DEV="$(blkid -L shani_root 2>/dev/null || true)"
+    if [ -n "$DATA_DEV" ] && ! mountpoint -q "$DATA_MNT" 2>/dev/null; then
+        mkdir -p "$DATA_MNT" 2>/dev/null
+        mount -o subvol=@data,rw "$DATA_DEV" "$DATA_MNT" 2>/dev/null || DATA_DEV=""
+    fi
+    log "marker state: dev=${DATA_DEV:-none} mounted=$(mountpoint -q "$DATA_MNT" 2>/dev/null && echo yes || echo no) present=$([ -s "$MARKER" ] && echo yes || echo no)"
+fi
 if [ ! -s "$MARKER" ]; then
     log "no prior failure marker — not acting (a single failed mount is not evidence of a bad slot)"
     exit 0
