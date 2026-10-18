@@ -114,6 +114,20 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
         # the manager refusing to talk at dracut-pre-mount. None is guessable
         # from "it failed", and the arming has now failed on a real boot with
         # nothing on record about why.
+        # Before arming: is the unit even IN this initramfs? dracut's
+        # inst_simple is what puts it there, and "dracut did not install it" and
+        # "systemd cannot see a file on its own unit path" are different bugs
+        # with different fixes, and systemctl's one line ("does not exist")
+        # reads identically for both.
+        #
+        # This is here because the harness was copying only *.sh for an entire
+        # session, so no initramfs contained the unit at all and every
+        # observation of "does not exist" was that, misread as a systemd fault.
+        if [ -f /etc/systemd/system/shanios-recover-default.service ]; then
+            warn "shanios-hook: DIAG unit-present=yes mode=$(ls -l /etc/systemd/system/shanios-recover-default.service 2>&1 | cut -d' ' -f1)"
+        else
+            warn "shanios-hook: DIAG unit-present=NO - dracut did not install it; /etc/systemd/system holds: $(ls /etc/systemd/system 2>&1 | tr '\n' ' ')"
+        fi
         _arm_err=$(systemctl enable shanios-recover-default.service 2>&1) && \
             warn "shanios-hook: armed emergency-mode default recovery (this boot, not the next)" || \
             warn "shanios-hook: could not arm shanios-recover-default.service - recovery is still next-boot only - ${_arm_err:-no error output}"
