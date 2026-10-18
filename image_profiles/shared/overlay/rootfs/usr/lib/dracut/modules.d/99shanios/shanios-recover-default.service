@@ -10,10 +10,25 @@ Documentation=man:systemd.special(7)
 # pre-mount hook, and only when it has found a prior-failure marker. Arming it
 # unconditionally would make every single boot that fails to mount the root
 # reboot once, which for a transient failure is a reboot nobody asked for.
+# DefaultDependencies=no, because the initramfs has no basic.target and the
+# default dependencies would order this behind targets that do not exist.
 DefaultDependencies=no
 After=initrd-root-fs.target
-Conflicts=shutdown.target emergency.target
-Before=shutdown.target
+
+# NO `Conflicts=emergency.target`. This unit used to carry it, alongside
+# `WantedBy=emergency.target`, and the two together meant it could never run:
+# arming creates the symlink under emergency.target.wants/, emergency.target
+# then starts, and `Conflicts` tells systemd to STOP any unit that conflicts
+# with the target it is starting - which is this one. It armed successfully on
+# every boot and was killed by the very target it was waiting for.
+#
+# Measured, in this order, on a real boot: `unit-present=yes`, then
+# `armed emergency-mode default recovery (this boot, not the next)`, then
+# emergency mode, and the unit's ExecStart never ran - no output from
+# shanios-recover-default.sh at all, and the machine sat in the shell until the
+# harness timeout. An armed unit that never starts is indistinguishable from an
+# unarmed one unless you read the arming line, which is why it looked like the
+# arming was failing.
 
 [Service]
 Type=oneshot

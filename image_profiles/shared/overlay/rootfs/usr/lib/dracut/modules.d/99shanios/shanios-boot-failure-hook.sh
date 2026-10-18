@@ -124,7 +124,7 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
         # session, so no initramfs contained the unit at all and every
         # observation of "does not exist" was that, misread as a systemd fault.
         if [ -f /etc/systemd/system/shanios-recover-default.service ]; then
-            warn "shanios-hook: DIAG unit-present=yes mode=$(ls -l /etc/systemd/system/shanios-recover-default.service 2>&1 | cut -d' ' -f1)"
+            warn "shanios-hook: DIAG unit-present=yes bytes=$(wc -c < /etc/systemd/system/shanios-recover-default.service 2>&1 | tr -d " ")"
         else
             warn "shanios-hook: DIAG unit-present=NO - dracut did not install it; /etc/systemd/system holds: $(ls /etc/systemd/system 2>&1 | tr '\n' ' ')"
         fi
