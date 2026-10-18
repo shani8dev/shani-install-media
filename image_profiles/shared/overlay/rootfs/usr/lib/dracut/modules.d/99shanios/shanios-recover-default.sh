@@ -97,6 +97,25 @@ CUR="$(sed -n 's/^default[[:space:]]*//p' "$LOADER_CONF" | head -1)"
 # re-arm is to still be pointed at the failed slot, which is the one case that
 # falls through to doing the switch.
 FAILED_SLOT="$(sed -e 's/^@*//' -e 's/[[:space:]]*$//' "$MARKER" 2>/dev/null | head -1)"
+
+# `unknown` means the hook could not work out which slot this boot tried - it is
+# written whenever the rootflags cmdline does not parse, and a slot name that
+# appears in NO entry filename makes the comparison below vacuously true, so the
+# "already switched, reboot" branch would fire on every boot regardless.
+#
+# That is not a safe default. With the failed slot unknown, a plain default may
+# mean the hook switched OR that it was always plain and still points at the
+# broken slot; rebooting on the second reading loops forever, because the marker
+# survives and the unit re-arms each boot. So when the slot is not knowable the
+# unit declines and leaves the operator at the shell, which is the correct
+# outcome for a case it cannot reason about.
+case "$FAILED_SLOT" in
+    ""|unknown)
+        log "marker does not name a slot (@${FAILED_SLOT:-none}) - cannot tell a switched default from a still-broken one; leaving the shell to the operator"
+        exit 0
+        ;;
+esac
+
 if [ -n "$FAILED_SLOT" ]; then
     case "$CUR" in
         *"${FAILED_SLOT}"*) : ;;
