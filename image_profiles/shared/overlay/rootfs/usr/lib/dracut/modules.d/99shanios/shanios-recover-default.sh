@@ -81,6 +81,36 @@ fi
 CUR="$(sed -n 's/^default[[:space:]]*//p' "$LOADER_CONF" | head -1)"
 [ -n "$CUR" ] || { log "loader.conf has no default line — nothing to rewrite"; exit 0; }
 
+# --- has the pre-mount hook already done the switch? -------------------------
+# The hook rewrites loader.conf at pre-mount; this unit runs from
+# emergency.target. So by the time we read the default, the switch has usually
+# ALREADY happened and the default is a plain entry - which rule 2 below used to
+# reject. Measured, in one boot: this unit logged
+#   default 'shanios-green.conf' carries no tries counter - not acting
+# while the hook had already logged
+#   boot default switched shanios-blue+3-0.conf -> shanios-green.conf
+# i.e. it declined to reboot into a slot the machine was already pointed at.
+#
+# The safety question is not "is the default marked" but "would rebooting land
+# on the slot that just failed". The marker records that slot, so ask it
+# directly. This also makes an unbounded reboot loop impossible: the only way to
+# re-arm is to still be pointed at the failed slot, which is the one case that
+# falls through to doing the switch.
+FAILED_SLOT="$(sed -e 's/^@*//' -e 's/[[:space:]]*$//' "$MARKER" 2>/dev/null | head -1)"
+if [ -n "$FAILED_SLOT" ]; then
+    case "$CUR" in
+        *"${FAILED_SLOT}"*) : ;;
+        *)
+            log "default '$CUR' is not the failed slot (@${FAILED_SLOT}) - the switch is already done; rebooting into it"
+            rm -f "$MARKER" 2>/dev/null || true
+            sleep 2
+            sync
+            exec /sbin/reboot -f -f 2>/dev/null || exec /usr/bin/systemctl reboot --force 2>/dev/null ||
+                log "reboot failed - dropping to the emergency shell"
+            ;;
+    esac
+fi
+
 # --- rule 2: only a tries-counted default qualifies --------------------------
 # A plain default means either this slot is already proven or the hook has
 # already switched once. Rewriting it either way is how a recovery turns into a
