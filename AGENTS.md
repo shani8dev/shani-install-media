@@ -555,6 +555,56 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **The boot-failover hook's candidate guard could not match a correctly-configured
+  machine, and its `+3-0` marker is load-bearing — both settled on real firmware
+  2026-10-18.** The entry above records this hook as fixed and describes its guard
+  as *"only when the current default carries a tries counter"*. Both halves of
+  that were wrong in ways that mattered, and neither was visible without booting.
+
+  **The guard was dead code on any correctly-configured machine.** It decided by
+  pattern-matching the `default` **string** in `loader.conf` and never looked at
+  the filesystem. systemd commit `4301ad0` ("boot: Strip boot counter from entry
+  id", fixes #38813, 2025-09-11) made `boot_entry_parse_tries()` *set*
+  `entry->id` with the counter **removed** — so on the systemd this image ships
+  (v262) `shanios-blue+3-0.conf` has id `shanios-blue.conf`, and `loader.conf`'s
+  default is `efi_fnmatch`'d against that id. **The base ID is the spelling that
+  matches.** A correctly-written `loader.conf` therefore names the plain id even
+  when the entry on disk is marked — precisely the case `case "$CUR" in *+*-*)`
+  could not match. It could only fire when `loader.conf` used the one spelling
+  systemd-boot does *not* match. The default is now resolved against the entries
+  directory instead of re-derived from a string.
+
+  **The `+3-0` suffix is a marker, not decoration.** The sibling
+  `os-installer-config` removed it from the active slot on the reasoning that the
+  counter is frozen and so is dead weight. The counting is frozen; the conclusion
+  does not follow. The suffix is the hook's only trigger, and a first install —
+  where there is no deploy and therefore nothing else in the chain — became
+  unrecoverable. This repo's own `+3-0` entry cites a comment describing the id
+  as the full filename, which is **pre-`4301ad0` behaviour described as current**;
+  it is corrected in place at the hook.
+
+  **Three more defects, all found by booting and all of the same shape — a failure
+  path with no diagnostic:** the marked-entry lookup was built as
+  `$CUR` + `+*-*.conf`, which asks for `shanios-blue.conf+3-0.conf`, a filename
+  that cannot exist (the counter goes before the `.conf`); the ESP mount's own
+  error was discarded with `2>/dev/null`, leaving *"is the ESP reachable at
+  pre-mount?"* open through an entire investigation; and `systemctl enable`'s
+  error was discarded the same way, which hid the arming failure for a session.
+  Each now reports its own failure.
+
+  **The in-boot recovery unit had never run, for three stacked reasons**, none of
+  which was a systemd fault despite two of them reporting like one: the harness
+  never installed the unit (see `shani-testbed/AGENTS.md`), the unit carried both
+  `WantedBy=emergency.target` and `Conflicts=emergency.target` so the target
+  stopped the unit it wanted, and it read its own guard's input from a `@data`
+  mount the hook had made and dracut had since torn down.
+
+  Verified on real firmware, from an unbootable default on a first-install ESP:
+  three boots to an unattended `shanios login:` on the good slot, both entries
+  intact, nothing deleted, marker and `switched_from` cleared. Full record in
+  `shani-testbed/POWER-CUT-STATE.md`.
+
+
 - **`promote-stable.sh` verified reachability, not bytes — and the validator
   that does verify them was called by nothing. FIXED 2026-10-16.**
 
