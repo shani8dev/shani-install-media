@@ -176,8 +176,17 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                 *+*-*) : ;;
                 "") : ;;
                 *)
+                    # The counter sits BEFORE the `.conf`, so the glob has to be
+                    # built from the stem. My first version appended `+*-*.conf`
+                    # to the whole name INCLUDING `.conf`, which asks for
+                    # `shanios-blue.conf+3-0.conf` - a filename that cannot exist.
+                    # It matched nothing, left CUR unchanged, and fell through to
+                    # the "carries no tries counter" branch, which is exactly what
+                    # a real boot then reported. The branch was not dead; the
+                    # lookup feeding it was.
                     if [ ! -f "$ENTRIES/$CUR" ]; then
-                        for _m in "$ENTRIES/$CUR"+"+"-*-*.conf; do
+                        _stem="${CUR%.conf}"
+                        for _m in "$ENTRIES/${_stem}"+*-*.conf; do
                             [ -f "$_m" ] || continue
                             CUR="${_m##*/}"
                             warn "shanios-hook: default resolved to marked entry '${CUR}' on disk"
