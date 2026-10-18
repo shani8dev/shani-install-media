@@ -1,0 +1,30 @@
+[Unit]
+Description=ShaniOS: recover the boot default after a failed root mount
+Documentation=man:systemd.special(7)
+# Only meaningful once we are already in trouble. dracut's emergency shell is a
+# full systemd instance in the initramfs, so this is what turns "the hook
+# rewrote loader.conf for the NEXT boot" into "this boot reboots into the good
+# slot instead".
+#
+# NOT WantedBy=emergency.target statically: this is enabled at runtime by the
+# pre-mount hook, and only when it has found a prior-failure marker. Arming it
+# unconditionally would make every single boot that fails to mount the root
+# reboot once, which for a transient failure is a reboot nobody asked for.
+DefaultDependencies=no
+After=initrd-root-fs.target
+Conflicts=shutdown.target emergency.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The script's own guards are the real safety net (prior marker required,
+# tries-counted default required, fallback entry must exist, rewrite verified
+# before rebooting). This is defence in depth for a script that reboots.
+TimeoutStartSec=90
+ExecStart=/usr/lib/dracut/modules.d/99shanios/shanios-recover-default.sh
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=emergency.target

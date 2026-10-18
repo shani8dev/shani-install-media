@@ -93,6 +93,27 @@ warn "shanios-hook: DIAG mountpoint-before=$(ls -A "$DATA_MNT" 2>&1 | tr '\n' ' 
 warn "shanios-hook: DIAG marker-at-mountpoint=$(ls -la "$DATA_MNT/boot_hard_failure" 2>&1 | tr '\n' ' ')"
 if [ -s "$DATA_MNT/boot_hard_failure" ]; then
     PRIOR_FAILURE=$(cat "$DATA_MNT/boot_hard_failure" 2>/dev/null)
+
+    # Arm the emergency-mode recovery unit BEFORE anything else, and do it on
+    # the strength of the marker alone. The block below rewrites loader.conf for
+    # the *next* boot, which leaves this boot committed to the same broken UKI -
+    # so without this, a power-cut candidate costs two black screens and the
+    # third boot. Armed here, dracut's emergency shell runs the recovery while
+    # we are still in this boot and the machine reboots once into the good slot.
+    #
+    # The unit's own script re-checks every condition before it acts (prior
+    # marker, tries-counted default, a fallback entry exists, and the rewrite
+    # verified) so arming it is cheap and safe even when this boot will in fact
+    # succeed - on a successful boot emergency.target is never reached and the
+    # script never runs.
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl enable shanios-recover-default.service >/dev/null 2>&1 && \
+            warn "shanios-hook: armed emergency-mode default recovery (this boot, not the next)" || \
+            warn "shanios-hook: could not arm shanios-recover-default.service - recovery is still next-boot only"
+    else
+        warn "shanios-hook: systemctl absent in the initramfs - recovery is still next-boot only"
+    fi
+
     ESP_DEV=$(blkid -L shani_boot 2>/dev/null)
     ESP_MNT=/run/shanios-boot-esp-tmp
     # Every exit below is announced. The first firmware boot of this ran through
@@ -211,6 +232,39 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                                      LoaderEntryPreferred LoaderEntryDefault; do
                                 for _f in "$_efivarfs"/${_v}-*; do
                                     [ -e "$_f" ] || continue
+                                    # `chattr -i` FIRST. Since the kernel's
+                                    # "efi: Make efivarfs entries immutable by
+                                    # default" (ed8b0de, 2016), every efivarfs
+                                    # node that is not on a small allowlist of
+                                    # standardised variables is created
+                                    # IMMUTABLE — see fs/efivarfs/inode.c:
+                                    #
+                                    #   inode->i_flags = is_removable ? 0 : S_IMMUTABLE;
+                                    #
+                                    # and `is_removable` comes from
+                                    # efivar_variable_is_removable(), an allowlist.
+                                    # systemd-boot's `LoaderEntry*` variables are
+                                    # vendor-specific, NOT standardised, so they are
+                                    # immutable — and unlinking an immutable inode is
+                                    # EPERM.
+                                    #
+                                    # This was measured, not inferred: one
+                                    # iso-install --boot-only boot, same invocation,
+                                    # same uid/capabilities —
+                                    #
+                                    #   victim=ConOut-8BE4DF61-...      rm -f -> rc 0, GONE
+                                    #   loader-victim=LoaderEntrySelected-
+                                    #     4a67b082-...                rm -f -> EPERM, survives
+                                    #
+                                    # So `rm -f` alone cannot have ever cleared these,
+                                    # and the kernel docs are explicit that the flag is
+                                    # exactly the intended way through: "This doesn't
+                                    # prevent removal - `chattr -i` will work".
+                                    #
+                                    # `|| true`: if chattr is missing or the fs
+                                    # refuses, fall through to `rm -f` anyway and let
+                                    # the existence check below report the truth.
+                                    chattr -i "$_f" 2>/dev/null || true
                                     rm -f "$_f" 2>/dev/null
                                     if [ ! -e "$_f" ]; then
                                         _cleared="${_cleared} ${_v}"

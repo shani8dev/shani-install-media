@@ -58,8 +58,24 @@ install() {
     #   tr      DIAG
     #   head    parsing the default line
     #   basename the fallback-entry scan
+    # chattr is required by the EFI-variable clearing below and was missing
+    # entirely. `chattr` and `sync` were the two that mattered: `sync` silently
+    # absent meant the hook's flush never ran, and `chattr` absent would have
+    # meant the same for the clearing. Both are cheap and both are load-bearing.
     inst_multiple blkid mount umount mountpoint mkdir rmdir rm printf sed \
-                  cat cp ls readlink tr head basename sync
+                  cat cp ls readlink tr head basename sync chattr \
+                  grep systemctl sleep reboot
+
+    # Emergency-mode recovery. shanios-recover-default.sh runs inside the
+    # initramfs's emergency shell after a failed root mount and puts the boot
+    # default back on a working entry *in this boot*, so the machine reboots
+    # once into the good slot instead of twice into the broken one. Both files
+    # must be in the initramfs or the armed unit is a unit that cannot start -
+    # which is the silent-nothing shape this repo keeps finding.
+    inst_simple "$moddir/shanios-recover-default.sh" \
+                /usr/lib/dracut/modules.d/99shanios/shanios-recover-default.sh
+    inst_simple "$moddir/shanios-recover-default.service" \
+                /etc/systemd/system/shanios-recover-default.service
 
     # Ensure the overlay kernel module is packed into the initramfs so
     # 'mount -t overlay' works before the real root's modules are available.
