@@ -107,9 +107,16 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
     # succeed - on a successful boot emergency.target is never reached and the
     # script never runs.
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl enable shanios-recover-default.service >/dev/null 2>&1 && \
+        # systemctl's OWN error, for the same reason the ESP mount's is kept.
+        # A real boot logged only "could not arm ... - recovery is still
+        # next-boot only", which is a summary of our intent, not a reason: the
+        # unit may be missing from the initramfs, the unit path unwritable, or
+        # the manager refusing to talk at dracut-pre-mount. None is guessable
+        # from "it failed", and the arming has now failed on a real boot with
+        # nothing on record about why.
+        _arm_err=$(systemctl enable shanios-recover-default.service 2>&1) && \
             warn "shanios-hook: armed emergency-mode default recovery (this boot, not the next)" || \
-            warn "shanios-hook: could not arm shanios-recover-default.service - recovery is still next-boot only"
+            warn "shanios-hook: could not arm shanios-recover-default.service - recovery is still next-boot only - ${_arm_err:-no error output}"
     else
         warn "shanios-hook: systemctl absent in the initramfs - recovery is still next-boot only"
     fi
@@ -143,6 +150,42 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
             warn "shanios-hook: prior failure (@${PRIOR_FAILURE}) but ${ESP_MNT}/loader/loader.conf is absent"
         else
             CUR=$(sed -n 's/^default[[:space:]]\+\([^[:space:]]*\).*/\1/p' "$LOADER" 2>/dev/null | head -1)
+            # Resolve the default against the entries on disk before deciding
+            # whether this slot is a marked candidate. loader.conf may spell the
+            # default either as the bare ID or as the marked filename, and this
+            # guard only ever saw one of them.
+            #
+            # Measured, on a real ESP written by os-installer-config's
+            # configure.sh: entries were shanios-blue.conf + shanios-green.conf
+            # with `default shanios-blue.conf`, and this hook reported
+            #
+            #   prior failure (@unknown) but default 'shanios-blue.conf' carries
+            #   no tries counter - not an unproven candidate, leaving it
+            #
+            # - correctly declining to act on a slot that genuinely had no
+            # marker. But it declined for the WRONG REASON: it never looked at
+            # the filesystem, only at the string, so an ESP where the marked
+            # entry exists and the default names it by bare ID looks identical
+            # to an ESP with no marker at all. Those two cases need opposite
+            # behaviour and this guard could not tell them apart.
+            #
+            # So: if the named entry exists plainly, honour the name. If it does
+            # not exist but a `+N-M` variant of the same name does, the default
+            # resolves to the marked entry - which is the candidate.
+            case "$CUR" in
+                *+*-*) : ;;
+                "") : ;;
+                *)
+                    if [ ! -f "$ENTRIES/$CUR" ]; then
+                        for _m in "$ENTRIES/$CUR"+"+"-*-*.conf; do
+                            [ -f "$_m" ] || continue
+                            CUR="${_m##*/}"
+                            warn "shanios-hook: default resolved to marked entry '${CUR}' on disk"
+                            break
+                        done
+                    fi
+                    ;;
+            esac
             case "$CUR" in
                 *+*-*)
                     FALLBACK=""
@@ -150,16 +193,33 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                         [ -f "$E" ] || continue
                         N=$(basename "$E" .conf)
                         case "$N" in *+*-*) continue ;; esac
-                        # The ID is the FILENAME, .conf included - not the stem.
-                        # boot.c: `boot_entry_parse_tries(entry, path, file,
-                        # ".conf")` strips a `+N-M` boot counter from the name but
-                        # leaves the suffix, and only then `entry->id =
-                        # xstrdup16(file)`. systemd-boot matches loader.conf's
-                        # default with efi_fnmatch(pattern, entry->id), so writing
-                        # the stem matches NOTHING and it silently falls through to
-                        # "the first suitable entry" - which, on a post-flip disk,
-                        # is the broken candidate. That is why the rewrite landed on
-                        # disk, looked correct, and changed nothing.
+                        # The rewrite names the BASE ID (`name.conf`), which is what
+                        # loader.conf's default has to name.
+                        #
+                        # This comment used to assert the opposite - that the id is
+                        # the full filename and that naming the stem "matches
+                        # NOTHING". That was true before systemd commit 4301ad0
+                        # ("boot: Strip boot counter from entry id", fixes #38813,
+                        # 2025-09-11), which made boot_entry_parse_tries() SET
+                        # entry->id with the counter removed:
+                        #
+                        #     entry->id = xasprintf("%.*ls%ls", (int) prefix_len - 1,
+                        #                                file, suffix);
+                        #
+                        # On the systemd this image ships (v262) the entry
+                        # `shanios-green+3-0.conf` therefore has id
+                        # `shanios-green.conf`, so the base ID is what matches.
+                        #
+                        # That correction cuts both ways, and the other half is why
+                        # the resolution block above exists: because the id no
+                        # longer carries the counter, a correctly-written
+                        # loader.conf names the plain base ID even when the entry on
+                        # disk is marked. So `case "$CUR" in *+*-*)` - the guard
+                        # that decides whether this slot is an unproven candidate -
+                        # could not match a correctly-configured machine at all. It
+                        # only ever fired when loader.conf happened to spell the
+                        # default with the marked filename, which is the one spelling
+                        # systemd-boot does NOT match.
                         FALLBACK="${N}.conf"; break
                     done
                     if [ -z "$FALLBACK" ]; then
