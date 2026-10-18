@@ -96,6 +96,13 @@ CUR="$(sed -n 's/^default[[:space:]]*//p' "$LOADER_CONF" | head -1)"
 # directly. This also makes an unbounded reboot loop impossible: the only way to
 # re-arm is to still be pointed at the failed slot, which is the one case that
 # falls through to doing the switch.
+# Preferred, exact answer: the pre-mount hook recorded the entry id it switched
+# away from. This is not a guess about which slot failed - it is the id the
+# bootloader had selected, read by the hook that did the switching.
+SWITCHED_FROM=""
+[ -f "${MARKER%/*}/shanios_switched_from" ] && \
+    SWITCHED_FROM="$(head -1 "${MARKER%/*}/shanios_switched_from" 2>/dev/null)"
+
 FAILED_SLOT="$(sed -e 's/^@*//' -e 's/[[:space:]]*$//' "$MARKER" 2>/dev/null | head -1)"
 
 # `unknown` means the hook could not work out which slot this boot tried - it is
@@ -109,6 +116,25 @@ FAILED_SLOT="$(sed -e 's/^@*//' -e 's/[[:space:]]*$//' "$MARKER" 2>/dev/null | h
 # survives and the unit re-arms each boot. So when the slot is not knowable the
 # unit declines and leaves the operator at the shell, which is the correct
 # outcome for a case it cannot reason about.
+if [ -n "$SWITCHED_FROM" ] && [ "$CUR" != "$SWITCHED_FROM" ]; then
+    # Exact answer available: the hook recorded the entry it switched away from,
+    # and the default is not that entry. Rebooting is safe.
+    log "default '$CUR' is not '$SWITCHED_FROM', the entry the hook switched away from - reboot is safe; rebooting"
+    rm -f "$MARKER" 2>/dev/null || true
+    rm -f "${MARKER%/*}/shanios_switched_from" 2>/dev/null || true
+    sleep 2
+    sync
+    exec /sbin/reboot -f -f 2>/dev/null || exec /usr/bin/systemctl reboot --force 2>/dev/null ||
+        log "reboot failed - dropping to the emergency shell"
+    exit 0
+fi
+# If SWITCHED_FROM is set but EQUALS the current default, the hook recorded a
+# switch that did not take. Deliberately no exit here: fall THROUGH to the rules
+# below, which perform the switch and verify it landed. Exiting would strand
+# exactly the case that most needs something done.
+[ -n "$SWITCHED_FROM" ] && \
+    log "default '$CUR' is still the entry the hook switched away from - doing the switch here instead"
+
 case "$FAILED_SLOT" in
     ""|unknown)
         log "marker does not name a slot (@${FAILED_SLOT:-none}) - cannot tell a switched default from a still-broken one; leaving the shell to the operator"

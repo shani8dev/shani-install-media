@@ -252,6 +252,24 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                     else
                         cp "$LOADER" "$LOADER.shanios-bak" 2>/dev/null
                         if sed -i "s|^default[[:space:]]\+[^[:space:]]*|default $FALLBACK|" "$LOADER" 2>/dev/null; then
+                            # Record EXACTLY what was switched away from, as an
+                            # entry id, for the in-boot recovery unit.
+                            #
+                            # The recovery unit's question is "would rebooting land
+                            # on the slot that just failed", and it was being asked
+                            # via boot_hard_failure's slot field - which is
+                            # "unknown" whenever rootflags does not parse, because
+                            # this hook deliberately refuses to guess (it only
+                            # accepts blue|green, so shani-auto-rollback cannot act
+                            # on a bad guess). Making the unit depend on that field
+                            # therefore made it inert in exactly the cases where it
+                            # was needed.
+                            #
+                            # It does not need a guess: the hook has resolved $CUR to
+                            # the entry the bootloader actually chose, right here.
+                            # That is an answer, not an inference. Written to @data
+                            # and consumed only if present.
+                            printf '%s\n' "$CUR" > "$DATA_MNT/shanios_switched_from" 2>/dev/null && sync
                             warn "shanios-hook: previous boot also failed (@${PRIOR_FAILURE}); boot default switched ${CUR} -> ${FALLBACK}"
                             # sed -i renames a new file over the old one, so the
                             # directory entry AND the file data are dirty. Flush
