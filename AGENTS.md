@@ -666,6 +666,26 @@ here before (the AMI/packer path).
   redirects every path without overriding anything). A third failure was a curl
   stub printing to stdout when the script fetches with `--output` to a *file*.
 
+  **The local-preservation rule also made CI promotion impossible — FIXED
+  2026-10-25 (`_ensure_local_artifact`).** The promote workflow runs on a fresh
+  runner where `cache/output/<profile>/<date>/` does not exist at all, so the
+  rule above ("the artifact must be present locally") was not a gate there but
+  a guaranteed failure: the gate died on `validate-image.sh: release dir not
+  found` before a byte was ever downloaded (real failure: the gnome promote
+  job, 2026-10-23 — R2 held every file at 200; the runner held none). The gate
+  now feeds itself first: `_ensure_local_artifact` fetches the image, `.sha256`,
+  `.asc`, `.packages.txt` and the dated `latest.txt` from the same R2 folder
+  the remote pointer was resolved from, resumably (`--continue-at -`), only
+  when something is missing (a complete local copy is judged as-is, never
+  re-fetched); `--no-r2` keeps the local-copy-only behaviour, and anything
+  still missing after the fetch aborts naming the gaps — curl's exit code is
+  deliberately re-checked, since a contentless 0 is the truncated-download
+  class. Verified three ways: the suite (`test-promote-gate.sh`, 25
+  assertions) gained a fetch section whose every case can go red (removing
+  the fetch call fails 6 of them), and the real R2 folder that failed
+  promotion named (`/gnome/20261023/`) HEADs 200 for all five files the gate
+  reads.
+
 - **A power cut mid-update leaves the default pointing at a candidate that
   cannot mount, and nothing moves it back — FIXED 2026-10-16.** Found from a
   real machine: dracut emergency mode, `Failed to mount /sysroot` three times

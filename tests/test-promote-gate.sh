@@ -118,6 +118,47 @@ else
     fail "the --only=iso skip is stated, not silent" "no log line for the skip"
 fi
 
+# ── 6. A bare promotion machine is fed, not exempted ─────────────────────────
+# CI promotes from a fresh runner where cache/output/<profile>/<date>/ does
+# not exist at all, so the local-preservation rule above made every CI
+# promote job a guaranteed gate failure (real failure: the gnome promote
+# job, 2026-10-23 — R2 had the bytes; the runner had none). The gate must
+# feed itself before it judges: fetch every file it reads from the same R2
+# folder the remote pointer was resolved from, run BEFORE validate-image.sh,
+# fail closed on anything still missing, and stay disabled under --no-r2
+# (a local-copy-only promotion, exactly as before).
+if grep -q '^_ensure_local_artifact() {' "$PROMOTE"; then
+    ok "the gate feeds itself: an R2 fetch step exists"
+else
+    fail "the gate feeds itself: an R2 fetch step exists" \
+         "no _ensure_local_artifact — a bare runner still cannot reach the gate"
+fi
+FETCH_CALL_LINE=$(grep -n '^  _ensure_local_artifact$' "$PROMOTE" | head -1 | cut -d: -f1)
+if [[ -n "$FETCH_CALL_LINE" && -n "$GATE_LINE" && "$FETCH_CALL_LINE" -lt "$GATE_LINE" ]]; then
+    ok "the fetch runs before validate-image.sh"
+else
+    fail "the fetch runs before validate-image.sh" \
+         "fetch at ${FETCH_CALL_LINE:-none}, gate at ${GATE_LINE:-none}"
+fi
+if grep -q 'Refusing to promote an artifact whose bytes were never verified' "$PROMOTE"; then
+    ok "an incomplete fetch aborts the promotion (bytes were never verified)"
+else
+    fail "an incomplete fetch aborts the promotion" "a partially fetched artifact could be promoted"
+fi
+if grep -q -- '--no-r2) — fetch the artifact' "$PROMOTE" || grep -q 'R2 fetching is disabled (--no-r2)' "$PROMOTE"; then
+    ok "--no-r2 keeps the local-copy-only rule (no fetch, refuse if absent)"
+else
+    fail "--no-r2 keeps the local-copy-only rule" "the fetch ignores the --no-r2 opt-out"
+fi
+# The fetch must not silently overwrite an operator's or a local build's
+# copy: it runs only when something is missing, and a complete local copy
+# short-circuits before any network call.
+if grep -qF '(( ${#missing[@]} == 0 )) && return 0' "$PROMOTE"; then
+    ok "a complete local copy is never re-fetched (bytes judged as-is)"
+else
+    fail "a complete local copy is never re-fetched" "the fetch may overwrite local bytes"
+fi
+
 # ══ Behavioural: run a SCRIPTED COPY of the promotion, fully stubbed ═════════
 # Everything that could touch the network, an upload target, or a real
 # validator is replaced. What is left is promote-stable's own control flow.
@@ -125,7 +166,13 @@ fi
 run_promote() {
     # $1 = sed mutation applied to the copy (may be empty)
     # $2 = exit code the stubbed validate-image.sh should return
-    local mutation="$1" vrc="${2:-0}"
+    # $3 = extra args to pass (e.g. --no-sf); default none (legacy runs add --no-r2)
+    # $4 = artifact fixture mode: "full" (default — the release dir holds the
+    #      image and every sidecar, so _ensure_local_artifact fetches nothing
+    #      and the behaviour is the pre-fetch one) or "missing" (only
+    #      latest.txt, so the promotion must fetch or refuse). "missing" runs
+    #      must go through R2 (no --no-r2) or the promotion dies by design.
+    local mutation="$1" vrc="${2:-0}" extra="${3:-}" mode="${4:-full}"
     local dir; dir=$(mktemp -d /tmp/promote-gate.XXXXXX)
     # The REAL config/config.sh, not a hand-written stub. Two reasons, and the
     # first one cost this suite two rounds:
@@ -155,6 +202,15 @@ EOF
 
     # A local release dir whose latest.txt agrees with the promoted name.
     printf 'shanios-20261006-gnome.zst\n' > "$dir/cache/output/gnome/20261006/latest.txt"
+    if [[ "$mode" == "full" ]]; then
+        # The artifact and its sidecars all present non-empty, so the gate's
+        # own fetch step sees a complete local copy and never touches the
+        # network — the cases below test the pre-fetch control flow.
+        printf 'stub-image-bytes'      > "$dir/cache/output/gnome/20261006/shanios-20261006-gnome.zst"
+        printf 'stub-checksum'         > "$dir/cache/output/gnome/20261006/shanios-20261006-gnome.zst.sha256"
+        printf 'stub-signature'        > "$dir/cache/output/gnome/20261006/shanios-20261006-gnome.zst.asc"
+        printf 'stub-package-list'     > "$dir/cache/output/gnome/20261006/shanios-20261006-gnome.packages.txt"
+    fi
 
     # Replace every remote interaction. The script must not reach the network.
     for tool in rclone sfcmd rsync; do
@@ -183,14 +239,38 @@ while [ $# -gt 0 ]; do
 done
 case "$url" in
   *latest.txt*) [ -n "$out" ] && printf 'shanios-20261006-gnome.zst\n' > "$out" ;;
+  *20261006*)   [ -n "$out" ] && printf 'stub-bytes' > "$out" ;;
 esac
 exit 0
 EOF
+    if [[ "$mode" == "halffetch" ]]; then
+        # A fetching R2 that answers the pointer but not the artifact —
+        # curl "succeeds" while writing nothing. The gate must still refuse:
+        # trusting exit codes here is the truncated-download bug class.
+        cat > "$dir/bin/curl" <<'EOF'
+#!/bin/sh
+out=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --output) out="$2"; shift 2 ;;
+    http*)    url="$1"; shift ;;
+    *)        shift ;;
+  esac
+done
+case "$url" in
+  *latest.txt*) [ -n "$out" ] && printf 'shanios-20261006-gnome.zst\n' > "$out" ;;
+esac
+exit 0
+EOF
+    fi
     chmod +x "$dir/bin/curl"
 
     local out rc
+    # Default to --no-r2 (the legacy behavioural posture: no R2 anywhere).
+    # R2-fetch cases pass --no-sf explicitly instead.
+    extra="${3:---no-r2}"
     out=$(cd "$dir" && PATH="$dir/bin:$PATH" \
-          bash "$dir/scripts/promote-stable.sh" -p gnome --no-r2 2>&1)
+          bash "$dir/scripts/promote-stable.sh" -p gnome $extra 2>&1)
     rc=$?
     printf '%s\n--RC=%s--\n' "$out" "$rc"
     rm -rf "$dir"
@@ -218,6 +298,55 @@ if printf '%s' "$out" | grep -q 'SUCCESS'; then
     fail "a failing validation never reports success" "it printed SUCCESS"
 else
     ok "a failing validation never reports success"
+fi
+
+# ── Fetch behaviour: the three cases the fresh-CI-runner failure is ──────────
+echo ""
+echo "behavioural: the fetch (stubbed, no network, no uploads)"
+
+# Bare runner + R2: the artifact and its sidecars do not exist, --no-sf (the
+# R2-only posture a CI promote run uses), R2 enabled. Fetch must complete and
+# the gate must then run on the fetched bytes.
+out=$(run_promote "" 0 "--no-sf" missing)
+if printf '%s' "$out" | grep -q 'Fetching from R2'; then
+    ok "a bare release dir is fetched from R2"
+else
+    fail "a bare release dir is fetched from R2" "the fetch never started: $(printf '%s' "$out" | tail -3 | tr '\n' ' ' | cut -c1-160)"
+fi
+if printf '%s' "$out" | grep -q 'stub-validate'; then
+    ok "the fetched artifact reaches the real gate"
+else
+    fail "the fetched artifact reaches the real gate" \
+         "validate never saw the fetched bytes"
+fi
+
+# Bare runner + --no-r2: nothing may be fetched, the local-copy rule stands,
+# and the gate must not be reached with zero bytes.
+out=$(run_promote "" 0 "--no-r2" missing)
+if printf '%s' "$out" | grep -q 'stub-validate'; then
+    fail "a bare runner with --no-r2 never reaches the gate" "the gate ran on nothing"
+else
+    ok "a bare runner with --no-r2 never reaches the gate"
+fi
+if printf '%s' "$out" | grep -q 'R2 fetching is disabled (--no-r2)'; then
+    ok "the --no-r2 refusal names the cause (fetch the artifact first)"
+else
+    fail "the --no-r2 refusal names the cause" "died without saying why: $(printf '%s' "$out" | tail -3 | tr '\n' ' ' | cut -c1-160)"
+fi
+
+# An R2 that answers the pointer but not the artifact: curl exits 0, writes
+# nothing. Trusting the exit code would promote an unfetched artifact.
+out=$(run_promote "" 0 "--no-sf" halffetch)
+if printf '%s' "$out" | grep -q 'stub-validate'; then
+    fail "a silently empty fetch is refused, not promoted" "the promotion continued on a half-fetched artifact"
+else
+    ok "a silently empty fetch is refused, not promoted"
+fi
+if printf '%s' "$out" | grep -q 'still missing'; then
+    ok "the incomplete-fetch refusal names what is missing"
+else
+    fail "the incomplete-fetch refusal names what is missing" \
+         "died without naming the gap: $(printf '%s' "$out" | tail -3 | tr '\n' ' ' | cut -c1-160)"
 fi
 
 # ── N1 — remove the gate. Every behavioural case above must then fail. ───────
@@ -263,6 +392,12 @@ printf '#!/bin/sh\necho "[stub-validate] ran"\nexit 0\n' > "$DIR3/scripts/valida
 chmod +x "$DIR3/scripts/validate-image.sh"
 # The mismatch: local says one image, the remote pointer says another.
 printf 'shanios-20261005-gnome.zst\n' > "$DIR3/cache/output/gnome/20261006/latest.txt"
+# The artifact + sidecars exist (the fetch step must stay out of the way so
+# the cross-check, not the fetch's refusal, is the thing under test).
+printf 'stub-image-bytes'  > "$DIR3/cache/output/gnome/20261006/shanios-20261006-gnome.zst"
+printf 'stub-checksum'     > "$DIR3/cache/output/gnome/20261006/shanios-20261006-gnome.zst.sha256"
+printf 'stub-signature'    > "$DIR3/cache/output/gnome/20261006/shanios-20261006-gnome.zst.asc"
+printf 'stub-package-list' > "$DIR3/cache/output/gnome/20261006/shanios-20261006-gnome.packages.txt"
 cat > "$DIR3/bin/curl" <<'EOF'
 #!/bin/sh
 out=""; url=""

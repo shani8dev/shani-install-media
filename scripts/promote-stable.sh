@@ -267,7 +267,62 @@ if [[ -n "${EXPECT}" ]]; then log "latest.txt matches the tested artifact (${EXP
 # only has the remote copy must fetch it first. That is the correct trade for a
 # release gate — promoting bytes nobody on this machine has verified is exactly
 # the case worth refusing.
+#
+# CI is exactly that operator: the promote workflow runs on a fresh runner
+# where cache/output/<profile>/<date>/ does not exist at all, so the gate
+# failed before a byte was ever downloaded (real failure, gnome promote job
+# 2026-10-23). The rule stays intact; the gap is closed by fetching — the
+# gate below still verifies the bytes, downloaded or not. Nothing is fetched
+# when the files are already here (local builds and operator copies are
+# judged as-is, the fetch never overwrites them), a locally-present artifact
+# with --no-r2 behaves exactly as before, and anything still missing after
+# the fetch aborts the promotion. Resumable so a stalled multi-GB transfer
+# continues rather than restarts.
+_ensure_local_artifact() {
+  local rel_dir="${PROFILE_DIR}/${BUILD_DATE_DIR}"
+  local base="${R2_BASE_URL}/${PROFILE}/${BUILD_DATE_DIR}"
+  local -a files=(
+    "${LATEST_RELEASE}" "${LATEST_RELEASE}.sha256" "${LATEST_RELEASE}.asc"
+    "${LATEST_RELEASE%.zst}.packages.txt" "latest.txt"
+  )
+  local -a missing=()
+  local f
+  for f in "${files[@]}"; do
+    [[ -s "${rel_dir}/${f}" ]] || missing+=("$f")
+  done
+  (( ${#missing[@]} == 0 )) && return 0
+  log "Not fully local in ${rel_dir}: ${missing[*]}"
+
+  if [[ "${NO_R2}" == "true" ]]; then
+    die "${LATEST_RELEASE} is not fully present on this machine (${rel_dir}) and R2 fetching is disabled (--no-r2) — fetch the artifact (and sidecars) first; promote-stable refuses to promote bytes it has not verified locally."
+  fi
+
+  log "Fetching from R2 (${base}/ — resumable)"
+  for f in "${missing[@]}"; do
+    if ! curl --fail --location --silent --show-error \
+        --retry "${CURL_RETRIES}" --retry-delay "${CURL_RETRY_DELAY}" --retry-all-errors \
+        --connect-timeout "${NETWORK_CONNECT_TIMEOUT}" \
+        --continue-at - --remote-time \
+        --output "${rel_dir}/${f}" \
+        "${base}/${f}"; then
+      die "R2 fetch of ${base}/${f} failed — refusing to promote. Fix the fetch or run with the artifact present locally; do not bypass the gate."
+    fi
+  done
+  # Re-check rather than trusting curl's exit: a truncated sidecar or an
+  # empty --continue-at - no-op output would leave a hole the gate could
+  # only report as "missing", with the cause less obvious than this.
+  missing=()
+  for f in "${files[@]}"; do
+    [[ -s "${rel_dir}/${f}" ]] || missing+=("$f")
+  done
+  if (( ${#missing[@]} > 0 )); then
+    die "R2 fetch left ${rel_dir} incomplete — still missing: ${missing[*]}. Refusing to promote an artifact whose bytes were never verified."
+  fi
+  log "Artifact + sidecars fetched from R2; the gate below verifies the downloaded bytes as it would local ones."
+}
+
 if [[ "${ONLY}" != "iso" ]]; then
+  _ensure_local_artifact
   log "Validating the artifact (checksum, signature, package manifest)…"
   if ! "${SCRIPT_DIR}/validate-image.sh" -p "${PROFILE}" -d "${BUILD_DATE_DIR}" >&2; then
     die "validate-image.sh refused ${LATEST_RELEASE} — refusing to promote. Resolve the failure above; do not bypass it."
