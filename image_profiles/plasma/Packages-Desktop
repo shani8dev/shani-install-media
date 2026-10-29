@@ -2,6 +2,8 @@
 # Installed after Base. Profile-specific desktop meta-package is first.
 shani-desktop-plasma
 shani-accessibility
+# input methods (split out of shani-accessibility 1.3): IBus and its engines
+shani-input-ibus
 shani-fonts
 shani-multimedia
 shani-bluetooth

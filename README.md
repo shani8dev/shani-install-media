@@ -1,6 +1,6 @@
 # Shanios Install Media Builder
 
-A fully automated build system for **Shanios** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, kiosk, and headless Server profiles. Image/ISO builds run inside a container (Docker or Podman — `run_in_container.sh` auto-detects the runtime) so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
+A fully automated build system for **Shanios** — a secure, immutable, Arch-based Linux distribution. The pipeline builds Btrfs system images, optional Flatpak/Snap images, and Secure Boot–signed ISOs for GNOME, Plasma, COSMIC, niri (the AI desktop), kiosk, and headless Server profiles. Image/ISO builds run inside a container (Docker or Podman — `run_in_container.sh` auto-detects the runtime) so your host system is never modified; see [Build Environment](#build-environment) for the one exception (AWS AMI builds, which run Packer directly).
 
 Also builds and publishes **AWS AMIs** from an already-built base image — see [Building an AWS AMI](#aws-ami-builds-build-amiyml) below.
 

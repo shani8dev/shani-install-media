@@ -107,7 +107,7 @@ if [[ -z "$PROFILES" ]]; then
     # `IFS=',' read -ra` split below — a space-separated default here would
     # silently become one bogus profile name containing all six, not six
     # separate profiles.
-    PROFILES="gnome,plasma,cosmic,kiosk,server,shared"
+    PROFILES="gnome,plasma,cosmic,niri,kiosk,server,shared"
 fi
 
 # Convert comma-separated to array

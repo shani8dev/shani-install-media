@@ -1,0 +1,32 @@
+# Packages-Desktop — GUI packages
+# Installed after Base. Profile-specific desktop meta-package is first.
+# niri + shani-shell: the AI desktop (shani-desktop-niri pulls the shell,
+# greetd with first-boot setup, portals, and the native apps GNOME's own
+# metapackage brings; the rest are Flatpaks).
+shani-desktop-niri
+shani-accessibility
+shani-fonts
+shani-multimedia
+shani-bluetooth
+shani-peripherals
+shani-printer
+shani-scanner
+shani-video
+shani-video-guest
+shani-cassini
+shani-backup
+shani-chronoa
+desktop-entry-hider
+pipewire-jack
+noto-fonts
+
+# Input methods: fcitx5, not IBus (shani-input-ibus on the other desktops).
+# IBus's Wayland frontend speaks only input-method-v1; niri implements v2,
+# which is fcitx5's.
+shani-input-fcitx5
+
+# tesseract (via shani-desktop-niri: Lens reads text) depends on the virtual
+# `tessdata`, which ~128 tesseract-data-* packages provide. Pin the one
+# language pack this image needs; a provider named in a metapackage's
+# depends=() does not settle this (see Packages-Base).
+tesseract-data-eng

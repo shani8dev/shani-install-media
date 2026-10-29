@@ -48,7 +48,7 @@ image.
 
 The fully automated build system for Shanios — builds Btrfs system images,
 optional Flatpak/Snap images, and Secure Boot-signed ISOs for GNOME,
-Plasma, COSMIC, kiosk, and headless Server profiles, plus AWS AMIs. Builds
+Plasma, COSMIC, niri, kiosk, and headless Server profiles, plus AWS AMIs. Builds
 run inside the `shani-builder` Docker container so the host is never
 modified. This is also the repo that owns build/boot verification for the
 whole OS pipeline — see "Before claiming a package/service is missing"

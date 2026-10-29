@@ -34,7 +34,7 @@ done
 if [[ -n "$PROFILE" ]]; then
     PROFILES=("$PROFILE")
 else
-    PROFILES=(gnome plasma cosmic gamescope kiosk server shared)
+    PROFILES=(gnome plasma cosmic niri gamescope kiosk server shared)
 fi
 
 log "Generating manifests for profiles: ${PROFILES[*]}"
