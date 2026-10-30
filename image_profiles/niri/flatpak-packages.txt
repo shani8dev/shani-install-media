@@ -42,4 +42,3 @@ io.missioncenter.MissionCenter
 org.gnome.Logs
 org.gtk.Gtk3theme.adw-gtk3
 org.gtk.Gtk3theme.adw-gtk3-dark
-org.freedesktop.Platform.Icontheme.Papirus
