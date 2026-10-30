@@ -216,7 +216,12 @@ SFEOF
 sf_upload() {
   local label="$1"; shift
   [[ "${NO_SF}" == "true" ]] && { log "SF: skipping ${label} (--no-sf)"; return 0; }
-  rsync -e ssh -rvz --progress "$@" || die "Upload of ${label} failed"
+  if ! rsync -e ssh -rvz --progress "$@"; then
+    log "Warning: SourceForge upload of ${label} failed (non-fatal; R2 is primary). " \
+        "For a new profile this usually means /home/frs/project/shanios/${PROFILE}/ " \
+        "does not exist on SourceForge yet — create it there, then re-run."
+    return 0
+  fi
 }
 
 usage() {
