@@ -20,7 +20,7 @@ BTRFS_DEFRAG_PATHS="auto"
 ## ServiceRestart: btrfsmaintenance-refresh
 #
 # Frequency of defrag.
-BTRFS_DEFRAG_PERIOD="weekly"
+BTRFS_DEFRAG_PERIOD="none"
 ## Path:        System/File systems/btrfs
 ## Type:        string
 ## Default:     "+1M"
