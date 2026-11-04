@@ -12,6 +12,7 @@ org.gnome.Gnote
 org.gnome.Papers
 org.gnome.Loupe
 org.gnome.Decibels
+com.github.neithern.g4music
 org.gnome.Showtime
 org.gnome.Snapshot
 org.gnome.Connections
