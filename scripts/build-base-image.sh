@@ -268,6 +268,41 @@ PACKAGE_LIST_ARTIFACT="${OUTPUT_SUBDIR}/${OS_NAME}-${BUILD_DATE}-${PROFILE}.pack
 arch-chroot "${SUBVOL_MOUNT}" pacman -Qq > "${PACKAGE_LIST_ARTIFACT}"
 log "Exported resolved package list (${PACKAGE_LIST_ARTIFACT})"
 
+# ---------------------------------------------------------------------------
+# Preinstalled brain (Qwen3.5-2B Q4_K_M, 1.28 GB) and its vision projector
+# (mmproj-F16, 668 MB) -> /usr/share/shani-chronoa/{llm,vision}/. This is NOT
+# a package: publishing it through shani-repo bloated the git repo past
+# GitHub's 2 GiB push limit. Chronoa reads SYSTEM_MODEL_DIR in both modules,
+# so the assistant thinks and sees at first boot with no download and no
+# consent prompt. Pinned by byte size and sha256 (the Hugging Face LFS oid),
+# fetched and verified here - the same discipline as stt_provision.install.
+# ---------------------------------------------------------------------------
+if [[ "$PROFILE" != "server" && "$PROFILE" != "kiosk" && "$PROFILE" != "gamescope" ]]; then
+    log "Fetching preinstalled brain + vision projector..."
+    _llm_dir="${SUBVOL_MOUNT}/usr/share/shani-chronoa/llm"
+    _vis_dir="${SUBVOL_MOUNT}/usr/share/shani-chronoa/vision"
+    mkdir -p "$_llm_dir" "$_vis_dir"
+    _repo="https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae"
+    _files=("Qwen3.5-2B-Q4_K_M.gguf:aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223:1280835840"
+            "mmproj-F16.gguf:7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7:668227264")
+    for entry in "${_files[@]}"; do
+        IFS=":" read -r _name _sha _size <<< "$entry"
+        _dest="$_llm_dir/$_name"
+        [[ "$_name" == mmproj-* ]] && _dest="$_vis_dir/$_name"
+        if [[ -f "$_dest" ]] && [[ "$(sha256sum "$_dest" | awk '{print $1}')" == "$_sha" ]]; then
+            log "  $_name already present and verified"
+            continue
+        fi
+        log "  downloading $_name ($_size bytes)..."
+        curl -fL --retry 3 -o "$_dest" "$_repo/$_name"             || die "failed to download $_name"
+        _got_sha=$(sha256sum "$_dest" | awk '{print $1}')
+        _got_size=$(stat -c %s "$_dest")
+        [[ "$_got_sha" == "$_sha" ]] || die "$_name sha256 mismatch: got $_got_sha, want $_sha"
+        [[ "$_got_size" == "$_size" ]] || die "$_name size mismatch: got $_got_size, want $_size"
+        log "  $_name verified ($_got_size bytes)"
+    done
+fi
+
 # Apply shared overlay first, then the profile-specific overlay on top.
 # Order matters: a profile's own overlay must be able to override shared
 # defaults (server does this for its 20 server-only files). cosmic/gnome/plasma
