@@ -14,11 +14,14 @@ shani-video
 shani-video-guest
 shani-cassini
 shani-backup
+# shani-chronoa itself depends on the minimal voice stack (shani-piper-tts,
+# shani-piper-voice, shani-whisper-model) and shani-link, so they are not
+# pinned here.
 shani-chronoa
-shani-piper-tts
-shani-piper-voice
-shani-whisper-model
-shani-link
+# Face sign-in (Windows Hello style): daemon, PAM module and the enrolment
+# GUI. Works with any PAM greeter, so Plasma gets it too - enrol through
+# linux-hello-gui. shani-shell's Settings page is niri-only.
+linux-hello
 desktop-entry-hider
 pipewire-jack
 noto-fonts
