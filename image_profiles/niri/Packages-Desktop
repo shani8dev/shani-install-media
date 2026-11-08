@@ -4,6 +4,12 @@
 # greetd with first-boot setup, portals, and the native apps GNOME's own
 # metapackage brings; the rest are Flatpaks).
 shani-desktop-niri
+# pipewire-audio provides ladspa-host, and naming it here is what stops
+# pacman picking ardour (a full DAW) for swh-plugins' virtual ladspa-host
+# dependency: only a package named on the pacstrap line settles a provider
+# (see Packages-Base). PipeWire's own host runs the SC4 compressor without
+# the DAW.
+pipewire-audio
 shani-accessibility
 shani-fonts
 shani-multimedia
