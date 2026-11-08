@@ -38,3 +38,8 @@ org.gnome.Calculator
 org.gnome.Calendar
 org.gnome.Gnote
 org.gnome.Snapshot
+org.gnome.clocks
+org.gnome.Characters
+org.gnome.Weather
+io.missioncenter.MissionCenter
+org.gnome.Logs
