@@ -16,10 +16,9 @@ shani-video
 shani-video-guest
 shani-cassini
 shani-backup
+# shani-chronoa itself depends on the minimal voice stack (shani-piper-tts,
+# shani-piper-voice, shani-whisper-model), so they are not pinned here.
 shani-chronoa
-shani-piper-tts
-shani-piper-voice
-shani-whisper-model
 desktop-entry-hider
 
 # Input methods and OCR data are not pinned here: shani-desktop-niri already
