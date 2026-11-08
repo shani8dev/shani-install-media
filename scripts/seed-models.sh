@@ -8,7 +8,7 @@
 # first boot. (Kokoro's runtime is a package, shani-sherpa-onnx; its model
 # is seeded here alongside the others.)
 #   /usr/share/shani-chronoa/vision/  SmolVLM2-500M (the "eyes")
-#   /usr/share/kokoro/                Kokoro-82M int8 (the neural voice)
+#   /usr/share/kokoro/                Kokoro-82M v1.0 int8 (the neural voice)
 #   /usr/share/shani-chronoa/llm/     Qwen3-0.6B (the default brain)
 # Without them the setup wizard downloads ~1.3 GB on first use, on
 # whichever network the user has; with them, speech, vision and thinking
@@ -38,8 +38,8 @@ _VISION_PROJ_URL="https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-G
 _VISION_PROJ_SHA="921dc7e259f308e5b027111fa185efcbf33db13f6e35749ddf7f5cdb60ef520b"
 _BRAIN_URL="https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf"
 _BRAIN_SHA="9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
-_KOKO_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2"
-_KOKO_SHA="c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd"
+_KOKO_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2"
+_KOKO_SHA="72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653"
 
 if [[ "${1:-}" == "--pins" ]]; then
     printf '%s %s\n%s %s\n%s %s\n' \
@@ -83,7 +83,7 @@ _fetch "${_BRAIN_URL}" "${_BRAIN_SHA}" "Qwen3-0.6B-Q8_0.gguf" "llm"
 
 # Kokoro: the archive unpacks into its model directory, which is where
 # voices.kokoro_files() looks for it on a system (packaged) install.
-KOKO_CACHE="${SEED_CACHE}/kokoro-int8-en-v0_19.tar.bz2"
+KOKO_CACHE="${SEED_CACHE}/kokoro-int8-multi-lang-v1_0.tar.bz2"
 if [[ -f "${KOKO_CACHE}" ]] && [[ "$(sha256sum "${KOKO_CACHE}" | awk '{print $1}')" == "${_KOKO_SHA}" ]]; then
     echo "seed: kokoro archive already cached and verified"
 else
@@ -97,7 +97,7 @@ KOKO_TARGET="${DEST}/usr/share/kokoro"
 mkdir -p "${KOKO_TARGET}"
 INSTALL_TMP="$(mktemp -d)"
 tar -xjf "${KOKO_CACHE}" -C "${INSTALL_TMP}"
-install -dm755 "${KOKO_TARGET}/kokoro-int8-en-v0_19"
-cp -r "${INSTALL_TMP}/kokoro-int8-en-v0_19/." "${KOKO_TARGET}/kokoro-int8-en-v0_19/"
+install -dm755 "${KOKO_TARGET}/kokoro-int8-multi-lang-v1_0"
+cp -r "${INSTALL_TMP}/kokoro-int8-multi-lang-v1_0/." "${KOKO_TARGET}/kokoro-int8-multi-lang-v1_0/"
 rm -rf "${INSTALL_TMP}"
 echo "seed: models baked into ${DEST}/usr/share/shani-chronoa (kokoro under /usr/share/kokoro)"
