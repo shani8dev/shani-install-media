@@ -251,6 +251,26 @@ LABEL=shani_root              /var/log                  btrfs   defaults,nofail,
 #
 #overlay   /var   overlay   rw,lowerdir=/var,upperdir=/data/overlay/var/upper,workdir=/data/overlay/var/work,index=off,metacopy=off,x-systemd.requires-mounts-for=/data   0 0
 
+
+##############################################################################
+# SECTION 5b: MODEL OVERLAYS (WRITABLE /usr/share model dirs)
+##############################################################################
+# The shipped models (whisper, piper voices, brain, vision, embeddings,
+# picture engine) live under /usr/share on the read-only root, so they are
+# frozen at image-build time. These OverlayFS mounts make exactly those
+# directories writable: lowerdir is the image's copy (never modified, so an
+# OS update always brings the newest shipped model), upperdir is on the
+# persistent @data. A root model upgrader (shani-model-update) writes
+# improved models into the upper layers without an image rebuild; until one
+# does, an untouched upperdir means the image's models simply show through.
+# Requires: mkdir -p /data/overlay/{models,whisper-models,piper-voices}/{upper,work}
+# (the tmpfiles.d shanios-data-structure.conf creates them at boot).
+# Mounted after /data: x-systemd.requires-mounts-for=/data, like every bind
+# below; before local-fs.target so no service reads a half-mounted dir.
+overlay   /usr/share/shani-chronoa   overlay   rw,lowerdir=/usr/share/shani-chronoa,upperdir=/data/overlay/models/upper,workdir=/data/overlay/models/work,index=off,metacopy=off,nofail,x-systemd.requires-mounts-for=/data,x-systemd.before=local-fs.target   0 0
+overlay   /usr/share/whisper/models   overlay   rw,lowerdir=/usr/share/whisper/models,upperdir=/data/overlay/whisper-models/upper,workdir=/data/overlay/whisper-models/work,index=off,metacopy=off,nofail,x-systemd.requires-mounts-for=/data,x-systemd.before=local-fs.target   0 0
+overlay   /usr/share/piper/voices   overlay   rw,lowerdir=/usr/share/piper/voices,upperdir=/data/overlay/piper-voices/upper,workdir=/data/overlay/piper-voices/work,index=off,metacopy=off,nofail,x-systemd.requires-mounts-for=/data,x-systemd.before=local-fs.target   0 0
+
 ##############################################################################
 # SECTION 6: CONTAINER & VIRTUALIZATION PLATFORMS
 ##############################################################################

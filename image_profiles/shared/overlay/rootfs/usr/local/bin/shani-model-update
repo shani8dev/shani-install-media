@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# shani-model-update — upgrade the models baked into the image, in place.
+#
+# /usr is a read-only blue/green root, so the models baked into the image
+# (brain, vision, whisper, piper voice) are frozen at image-build time.
+# Their directories are OverlayFS mounts whose writable layers live on the
+# persistent @data, and this tool writes new model bytes through those
+# mounts: an upgrade lands immediately, survives reboots and blue/green
+# switches, and never needs an image rebuild.
+#
+# Versions and pins come from the installed shani-chronoa (there is one
+# source of truth for what each model _is_); this script only knows the
+# destination layout. Files that already match their pin are skipped, so
+# running this on a fresh image is a no-op check.
+#
+# Usage: shani-model-update [--check] [brain|vision|ears|voice|all]
+#   --check   report what is behind, download nothing
+# Requires root. Invalid digests abort, leaving the old model in place.
+set -Eeuo pipefail
+
+if [[ "${EUID}" -ne 0 ]]; then
+    echo "shani-model-update: needs root (sudo shani-model-update)" >&2; exit 1
+fi
+
+CHECK=0
+WANT=()
+for a in "$@"; do
+    case "$a" in
+        --check) CHECK=1 ;;
+        brain|vision|ears|voice|all) WANT+=("$a") ;;
+        *) echo "unknown argument: $a (want: brain vision ears voice all)" >&2; exit 2 ;;
+    esac
+done
+[[ ${#WANT[@]} -eq 0 ]] && WANT=(all)
+want() {  # want <name>: included in the request?
+    for w in "${WANT[@]}"; do [[ "$w" == "all" || "$w" == "$1" ]] && return 0; done
+    return 1
+}
+
+# filename<TAB>url<TAB>sha256<TAB>dest-dir — from the installed Chronoa.
+ROWS=$(python3 - <<'PY'
+import sys
+try:
+    from shani_chronoa import local_llm, local_vision, stt_provision, voices
+except ImportError:
+    sys.exit("shani-model-update: shani-chronoa is not installed; nothing to upgrade")
+
+rows = []
+s = local_llm.SPECS["qwen3-0.6b"]
+rows.append(("brain", s.filename, s.base + "/" + s.filename, s.sha256, "/usr/share/shani-chronoa/llm"))
+tier = [m for m in local_vision.TIERS if m.key == "smolvlm2-500m"][0]
+for spec in (tier.model, tier.mmproj):
+    rows.append(("vision", spec.filename, spec.base + "/" + spec.filename, spec.sha256, "/usr/share/shani-chronoa/vision"))
+w = stt_provision.MODELS["base-q5_1"]
+rows.append(("ears", w.filename, w.base + "/" + w.filename, w.sha256, "/usr/share/whisper/models"))
+v = voices.VOICES["en_US-lessac-medium"]
+base = voices._VOICES_URL + "/" + v.folder
+rows.append(("voice", "en_US-lessac-medium.onnx", base + "/en_US-lessac-medium.onnx", v.onnx_sha256, "/usr/share/piper/voices"))
+rows.append(("voice", "en_US-lessac-medium.onnx.json", base + "/en_US-lessac-medium.onnx.json", v.json_sha256, "/usr/share/piper/voices"))
+for backend, name, url, sha, dest in rows:
+    print(f"{backend}\t{name}\t{url}\t{sha}\t{dest}")
+PY
+) || { echo "shani-model-update: cannot read the model catalogue from shani-chronoa" >&2; exit 1; }
+
+changed=0
+while IFS=$'\t' read -r backend name url sha dest; do
+    want "$backend" || continue
+    target="${dest}/${name}"
+    if [[ -f "${target}" ]] && [[ "$(sha256sum "${target}" | awk '{print $1}')" == "${sha}" ]]; then
+        echo "${backend}: ${name} is current"
+        continue
+    fi
+    if [[ ${CHECK} -eq 1 ]]; then
+        echo "${backend}: ${name} is behind (or missing)"
+        changed=1
+        continue
+    fi
+    echo "${backend}: updating ${name} ..."
+    tmp="$(mktemp)"
+    if command -v aria2c >/dev/null; then
+        aria2c --allow-overwrite=true -x4 -s4 -o "${tmp}" "${url}" >/dev/null 2>&1 || { rm -f "${tmp}"; echo "ERROR: download failed for ${name}" >&2; exit 1; }
+    else
+        curl --fail --location --silent --show-error -o "${tmp}" "${url}" || { rm -f "${tmp}"; echo "ERROR: download failed for ${name}" >&2; exit 1; }
+    fi
+    got="$(sha256sum "${tmp}" | awk '{print $1}')"
+    if [[ "${got}" != "${sha}" ]]; then
+        rm -f "${tmp}"
+        echo "ERROR: sha256 mismatch for ${name} (got ${got}) — old model kept" >&2
+        exit 1
+    fi
+    mkdir -p "${dest}"
+    install -m 644 "${tmp}" "${target}"
+    rm -f "${tmp}"
+    echo "${backend}: ${name} upgraded"
+    changed=1
+done <<< "${ROWS}"
+
+if [[ ${CHECK} -eq 0 && ${changed} -eq 1 ]]; then
+    echo "Done. The new models are live for their services' next use."
+fi
+exit 0
