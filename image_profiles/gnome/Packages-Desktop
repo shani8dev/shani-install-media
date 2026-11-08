@@ -19,6 +19,9 @@ shani-video
 shani-video-guest
 shani-cassini
 shani-backup
+# The preinstalled brain (Qwen3.5-2B, 1.28 GB): the assistant thinks
+# at first boot without a download. See shani-llm-model's PKGBUILD.
+shani-llm-model
 # shani-chronoa itself depends on the minimal voice stack (shani-piper-tts,
 # shani-piper-voice, shani-whisper-model) and shani-link, so they are not
 # pinned here.
