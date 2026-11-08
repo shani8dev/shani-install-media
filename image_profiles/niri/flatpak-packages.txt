@@ -31,3 +31,15 @@ de.haeckerfelix.Fragments
 de.haeckerfelix.Shortwave
 org.gtk.Gtk3theme.adw-gtk3
 org.gtk.Gtk3theme.adw-gtk3-dark
+io.github.flattool.Warehouse
+org.gnome.Gnote
+org.gnome.Weather
+org.gnome.clocks
+org.gnome.Characters
+org.gnome.Calculator
+org.gnome.Calendar
+org.gnome.SoundRecorder
+org.gnome.Snapshot
+org.gnome.Logs
+io.missioncenter.MissionCenter
+org.gnome.NetworkDisplays
