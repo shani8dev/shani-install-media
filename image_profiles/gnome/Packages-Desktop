@@ -18,10 +18,6 @@ shani-backup
 # shani-piper-voice, shani-whisper-model) and shani-link, so they are not
 # pinned here.
 shani-chronoa
-# Face sign-in (Windows Hello style): daemon, PAM module and the enrolment
-# GUI. Works with any PAM greeter (GDM included), so the feature is not
-# niri-only - enrol through linux-hello-gui.
-linux-hello
 desktop-entry-hider
 pipewire-jack
 noto-fonts
