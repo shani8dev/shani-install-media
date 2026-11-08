@@ -106,7 +106,7 @@ CURRENT_LIST_HASH=$(
         # Seeded models are image inputs too: a model pin change must change
         # the key, or a cached base "matches" while carrying the old model.
         printf -- '--- seeded models ---\n'
-        bash "${SCRIPT_DIR}/seed-vision-model.sh" --pins
+        bash "${SCRIPT_DIR}/seed-models.sh" --pins
     } | sha256sum | awk '{print $1}'
 )
 
@@ -290,11 +290,12 @@ if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" \
         || die "Overlay copy failed"
 fi
 
-# Bake the vision model (SmolVLM2-500M) into the image: too large for the
-# package repo's 100 MB file limit, fetched and digest-verified here
-# instead. Chronoa finds it at /usr/share/shani-chronoa/vision on first
-# boot, so the Eyes page never re-downloads 545 MB.
-bash "${SCRIPT_DIR}/seed-vision-model.sh" "${SUBVOL_MOUNT}" \
+# Bake the preinstalled models (the vision model and the default brain)
+# into the image: too large for the package repo's 100 MB file limit,
+# fetched and digest-verified here instead. Chronoa finds them under
+# /usr/share/shani-chronoa on first boot, so setup never re-downloads
+# ~1.2 GB on the user's network.
+bash "${SCRIPT_DIR}/seed-models.sh" "${SUBVOL_MOUNT}" \
     || die "Seeding the vision model failed"
 
 if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" ]]; then
