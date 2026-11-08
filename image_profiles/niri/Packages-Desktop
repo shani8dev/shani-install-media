@@ -17,7 +17,9 @@ shani-video-guest
 shani-cassini
 shani-backup
 shani-chronoa
-shani-voice-models
+shani-piper-tts
+shani-piper-voice
+shani-whisper-model
 shani-link
 desktop-entry-hider
 pipewire-jack
