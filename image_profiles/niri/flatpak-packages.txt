@@ -34,3 +34,6 @@ org.gtk.Gtk3theme.adw-gtk3-dark
 io.github.flattool.Warehouse
 org.gnome.SoundRecorder
 org.gnome.NetworkDisplays
+org.gnome.Calculator
+org.gnome.Calendar
+org.gnome.Gnote
