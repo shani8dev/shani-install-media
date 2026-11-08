@@ -8,8 +8,6 @@ shani-core
 shani-deploy
 shani-network
 shani-tools-network
-dracut
-openresolv
 
 # Virtual providers, pinned here so the build is non-interactive.
 #

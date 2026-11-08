@@ -15,8 +15,6 @@ shani-deploy
 shani-bluetooth
 shani-peripherals
 shani-video
-dracut
-openresolv
 
 # Virtual providers, pinned here so the build is non-interactive.
 #

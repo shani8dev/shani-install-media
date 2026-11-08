@@ -10,13 +10,10 @@ linux-firmware
 linux-headers
 glibc-locales
 lsb-release
-dracut
 cpio
 efibootmgr
-efitools
 sbctl
 mokutil
-sbsigntools
 libpwquality
 audit
 apparmor
@@ -35,9 +32,7 @@ systemd-resolvconf
 nss-mdns
 openfortivpn
 shani-tools-network
-btrfs-progs
 dosfstools
-e2fsprogs
 xfsprogs
 f2fs-tools
 exfatprogs
@@ -73,7 +68,6 @@ vim
 nano
 micro
 tmux
-jq
 pv
 bc
 zsh
@@ -98,7 +92,6 @@ expect
 dialog
 cronie
 logrotate
-zstd
 7zip
 unzip
 zip

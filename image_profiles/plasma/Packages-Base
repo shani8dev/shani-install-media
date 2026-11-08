@@ -7,9 +7,6 @@ shani-network
 shani-tools-network
 shani-storage
 shani-tools
-shani-deploy
-dracut
-openresolv
 
 # Virtual providers, pinned here so the build is non-interactive.
 #
