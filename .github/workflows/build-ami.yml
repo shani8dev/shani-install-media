@@ -14,7 +14,7 @@ on:
         required: true
         default: "server"
         type: choice
-        options: [server, gnome, plasma, cosmic]
+        options: [server, niri, gnome, plasma, cosmic]
       root_volume_size_gb:
         description: "Root volume GiB (server=20, desktop=40)"
         required: false
