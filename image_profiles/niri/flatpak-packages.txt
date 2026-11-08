@@ -37,4 +37,3 @@ org.gnome.NetworkDisplays
 org.gnome.Calculator
 org.gnome.Calendar
 org.gnome.Gnote
-org.gnome.Snapshot
