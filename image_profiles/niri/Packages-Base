@@ -6,6 +6,7 @@ shani-core
 shani-network
 shani-storage
 shani-tools
+shani-tools-network
 
 # Virtual providers, pinned here so the build is non-interactive.
 #
