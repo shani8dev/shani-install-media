@@ -275,6 +275,11 @@ LABEL=shani_root              /var/lib/waydroid         btrfs   nofail,defaults,
 # Create: btrfs subvolume create /@containers
 LABEL=shani_root              /var/lib/containers       btrfs   nofail,defaults,noatime,subvol=@containers,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount,x-systemd.before=local-fs.target   0 0
 
+# /var/lib/shani-chronoa — Chronoa model data (LLM weights, STT/TTS models, etc.)
+# Persistent across blue/green root switches; survives image updates.
+# Create: btrfs subvolume create /@shani-chronoa
+LABEL=shani_root              /var/lib/shani-chronoa    btrfs   nofail,defaults,noatime,subvol=@shani-chronoa,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount,x-systemd.before=local-fs.target   0 0
+
 # /var/lib/machines — systemd-nspawn system containers
 # Keeps system containers available in both blue and green roots.
 # Create: btrfs subvolume create /@machines

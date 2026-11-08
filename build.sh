@@ -240,6 +240,18 @@ case "$COMMAND" in
       log "No flatpak-packages.txt for profile '${_FULL_PROFILE}' — skipping Flatpak build."
     fi
 
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_FULL_PROFILE}/ai-models.txt" ]] || [[ -f "${IMAGE_PROFILES_DIR}/shared/ai-models.txt" ]]; then
+      case "$_FULL_PROFILE" in
+        server|kiosk|gamescope) log "Profile '$_FULL_PROFILE' does not ship the AI desktop — skipping AI models layer." ;;
+        *)
+          log "ai-models.txt found — building AI models image layer..."
+          ./scripts/build-ai-models-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+          ;;
+      esac
+    else
+      log "No ai-models.txt for profile '$_FULL_PROFILE' — skipping AI models layer."
+    fi
+
     # Snap list may live in the profile dir or in shared/ (it currently lives in
     # shared/ for every profile). Checking only the profile dir meant this gate
     # never fired, so build-snap-image.sh was never called and `full` shipped an

@@ -246,7 +246,7 @@ if [[ "$FROM_R2" == "true" ]]; then
   # Optional layered images — local copy wins; download if present on R2.
   # Sidecars are mandatory once the layer itself is present, same as the
   # base image: refuse to build from an unverified Flatpak/Snap layer.
-  for _layer in flatpakfs snapfs; do
+  for _layer in flatpakfs snapfs aimodelsfs; do
     _layer_file="${OUTPUT_SUBDIR}/${_layer}.zst"
     _layer_url="${R2_DATED_URL}/${_layer}.zst"
 
@@ -329,6 +329,13 @@ if [[ -f "${OUTPUT_SUBDIR}/snapfs.zst" ]]; then
   link_or_copy "${OUTPUT_SUBDIR}/snapfs.zst" "${ISO_DIR}/snapfs.zst" "Snap image"
 else
   log "No snapfs.zst for profile '${PROFILE}' — skipping."
+fi
+
+if [[ -f "${OUTPUT_SUBDIR}/aimodelsfs.zst" ]]; then
+  log "Linking aimodelsfs.zst..."
+  link_or_copy "${OUTPUT_SUBDIR}/aimodelsfs.zst" "${ISO_DIR}/aimodelsfs.zst" "AI models image"
+else
+  log "No aimodelsfs.zst for profile '${PROFILE}' — skipping."
 fi
 
 # Inject profile marker so customize_airootfs.sh can detect the profile at

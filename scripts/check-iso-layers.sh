@@ -106,6 +106,7 @@ done
 have_base=0
 have_flatpak=0
 have_snap=0
+have_aimodels=0
 for f in "${RELEASE_DIR}"/*.zst; do
     [[ -f "$f" ]] || continue
     name="$(basename "$f")"
@@ -130,6 +131,7 @@ for f in "${RELEASE_DIR}"/*.zst; do
     case "$name" in
         *flatpakfs*) have_flatpak=1 ;;
         *snapfs*)    have_snap=1 ;;
+        *aimodelsfs*) have_aimodels=1 ;;
         *)           have_base=1 ;;
     esac
 done
@@ -149,6 +151,13 @@ for cand in \
     [[ -f "$cand" ]] && have_snap_list=1
 done
 
+have_aimodels_list=0
+for cand in \
+    "${IMAGE_PROFILES_DIR}/${PROFILE}/ai-models.txt" \
+    "${IMAGE_PROFILES_DIR}/shared/ai-models.txt"; do
+    [[ -f "$cand" ]] && have_aimodels_list=1
+done
+
 if [[ $have_flatpak_list -eq 1 && $have_flatpak -eq 0 ]]; then
     fail "profile '${PROFILE}' defines a Flatpak package list, but the ISO embeds no flatpakfs layer"
 fi
@@ -156,4 +165,8 @@ if [[ $have_snap_list -eq 1 && $have_snap -eq 0 ]]; then
     fail "profile '${PROFILE}' defines a Snap package list, but the ISO embeds no snapfs layer"
 fi
 
-echo "check-iso-layers[${PROFILE}]: PASS — base + ${have_flatpak} flatpakfs + ${have_snap} snapfs, each matching the release-dir bytes"
+if [[ $have_aimodels_list -eq 1 && $have_aimodels -eq 0 ]]; then
+    fail "profile '${PROFILE}' defines an AI models list, but the ISO embeds no aimodelsfs layer"
+fi
+
+echo "check-iso-layers[${PROFILE}]: PASS — base + ${have_flatpak} flatpakfs + ${have_snap} snapfs + ${have_aimodels} aimodelsfs, each matching the release-dir bytes"

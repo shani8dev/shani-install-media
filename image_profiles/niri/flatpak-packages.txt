@@ -1,12 +1,10 @@
 com.github.tchx84.Flatseal
 com.github.marhkb.Pods
 io.github.dvlv.boxbuddyrs
-org.localsend.localsend_app
 it.mijorus.gearlever
 com.vivaldi.Vivaldi
 org.onlyoffice.desktopeditors
 org.gnome.seahorse.Application
-org.gnome.World.Secrets
 org.gnome.Papers
 org.gnome.Loupe
 org.gnome.Decibels
@@ -14,9 +12,7 @@ com.github.neithern.g4music
 org.gnome.Showtime
 org.gnome.Connections
 org.gnome.font-viewer
-org.gnome.TextEditor
 org.gnome.Maps
-org.gnome.SimpleScan
 org.gnome.Boxes
 org.gnome.meld
 org.gnome.Nibbles
@@ -36,4 +32,3 @@ org.gnome.SoundRecorder
 org.gnome.NetworkDisplays
 org.gnome.Calculator
 org.gnome.Calendar
-org.gnome.Gnote
