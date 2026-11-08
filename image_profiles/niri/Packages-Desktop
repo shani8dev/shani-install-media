@@ -20,18 +20,9 @@ shani-chronoa
 shani-piper-tts
 shani-piper-voice
 shani-whisper-model
-shani-link
 desktop-entry-hider
-pipewire-jack
-noto-fonts
 
-# Input methods: fcitx5, not IBus (shani-input-ibus on the other desktops).
-# IBus's Wayland frontend speaks only input-method-v1; niri implements v2,
-# which is fcitx5's.
-shani-input-fcitx5
-
-# tesseract (via shani-desktop-niri: Lens reads text) depends on the virtual
-# `tessdata`, which ~128 tesseract-data-* packages provide. Pin the one
-# language pack this image needs; a provider named in a metapackage's
-# depends=() does not settle this (see Packages-Base).
-tesseract-data-eng
+# Input methods and OCR data are not pinned here: shani-desktop-niri already
+# depends on shani-input-fcitx5 (the only input method that speaks niri's
+# input-method-v2) and tesseract-data-eng (Lens reads text at first boot;
+# other languages are downloaded by the setup wizard).
