@@ -17,6 +17,17 @@ WORK=$(mktemp -d /tmp/bootfail.XXXXXX)
 DATA_MNT="/run/shanios-data-tmp"; ESP_MNT="/run/shanios-boot-esp-tmp"
 trap 'rm -rf "$WORK"' EXIT
 
+# The hook under test hardcodes $DATA_MNT and writes the failure marker there,
+# so this drives it at that path for real rather than pretending otherwise.
+# Non-root cannot create /run/shanios-data-tmp - the earlier failures were that,
+# not the hook - so say so instead of reporting a discovery of bugs.
+if ! mkdir -p "$DATA_MNT" 2>/dev/null || [ ! -w "$DATA_MNT" ]; then
+    printf 'SKIP: %s is not writable; this test drives the real hook at its\n' "$DATA_MNT"
+    printf '      fixed pre-mount paths and needs root (the contract test in\n'
+    printf '      tests/test-boot-failover.sh covers the decision unprivileged)\n'
+    exit 0
+fi
+
 # ── dracut environment stubs ──────────────────────────────────────────────
 # The hook opens with `type getarg ... || return 0` precisely so that running
 # it outside dracut is a no-op. Sourcing it therefore REQUIRES getarg to exist,
@@ -60,10 +71,10 @@ echo "== the hook actually runs (not short-circuiting on the dracut guard)"
 build_esp "shanios-green+3-0" "shanios-green+3-0" "shanios-blue"
 printf 'green\n' > "$DATA_MNT/boot_hard_failure" 2>/dev/null || { mkdir -p "$DATA_MNT"; printf 'green\n' > "$DATA_MNT/boot_hard_failure"; }
 run_hook
-if [[ "$(default_now)" == "shanios-blue" ]]; then
+if [[ "$(default_now)" == "shanios-blue.conf" ]]; then
   ok "a prior failure + tries default switches the default to the plain entry"
 else
-  bad "expected shanios-blue, got '$(default_now)'"
+  bad "expected shanios-blue.conf, got '$(default_now)'"
 fi
 [[ -f "$ESP_MNT/loader/loader.conf.shanios-bak" ]] \
   && ok "the original loader.conf is backed up before it is rewritten" \
@@ -100,7 +111,7 @@ printf 'green\n' > "$DATA_MNT/boot_hard_failure"
 run_hook; first="$(default_now)"
 printf 'blue\n' > "$DATA_MNT/boot_hard_failure"
 run_hook; second="$(default_now)"
-[[ "$first" == "shanios-blue" && "$second" == "shanios-blue" ]] \
+[[ "$first" == "shanios-blue.conf" && "$second" == "shanios-blue.conf" ]] \
   && ok "a second run does not ping-pong back" \
   || bad "ping-ponged: '$first' -> '$second'"
 

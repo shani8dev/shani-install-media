@@ -23,11 +23,21 @@ bad() { printf '  FAIL  %s\n' "$1"; fail=$((fail+1)); }
 if [[ ! -f $HOOK ]]; then echo "no hook at $HOOK" >&2; exit 2; fi
 
 # The real code, lifted from the file rather than retyped. Anchored on where CUR
-# is read and on the `esac` that closes the case it opens — anchoring on the
-# success message instead yields a block with an unterminated `case`, which eval
-# rejects after printing half the hook at you.
+# is read and on the `esac` that closes the failover decision —
+#
+# not the FIRST esac. The block opens two sequential `case "$CUR"` statements
+# (resolve the default against the entries on disk, then decide from it), so
+# stopping at the first esac lifts half the block: the switch never runs and
+# every assertion about the resulting default fails against code that is fine.
+# The end is the esac that closes the decision case, which is the one followed
+# by the `fi` ending the `else` branch; the first is followed by another
+# `case`.
 START=$(grep -n 'CUR=$(sed -n' "$HOOK" | head -1 | cut -d: -f1)
-END=$(awk -v s="${START:-0}" 'NR>s && /^[[:space:]]*esac/ {print NR; exit}' "$HOOK")
+END=$(awk -v s="${START:-0}" '
+    NR > s && /^[[:space:]]*esac[[:space:]]*$/ { last = NR; next }
+    NR > s && last && NR == last + 1 && /^[[:space:]]*fi[[:space:]]*$/ {
+        print last; exit
+    }' "$HOOK")
 if [[ -z $START || -z $END || $END -le $START ]]; then
     echo "could not locate the failover block in the hook (CUR at ${START:-none}, esac at ${END:-none})" >&2
     exit 2
@@ -54,7 +64,11 @@ run_hook() {
     done
     ( set -uo pipefail
       ESP_MNT="$d"; ENTRIES="$d/loader/entries"; LOADER="$d/loader/loader.conf"
-      PRIOR_FAILURE="blue"
+      # The block also records what it switched away from under $DATA_MNT for
+      # the in-boot recovery unit. Unset here it aborted the whole subshell at
+      # that line under `set -u`, before the EFI-variable clearing below it, so
+      # the scratch efivars survived and every clearing assertion failed.
+      DATA_MNT="$d"; PRIOR_FAILURE="blue"
       warn() { echo "warn: $*" >&2; }
       eval "$DECIDE"
     ) >/dev/null 2>&1
@@ -119,7 +133,7 @@ run_hook_efivars() { # <efi-dir> ; prints the resulting default + what was clear
   printf 'title   t\nefi     /e\n' > "$d/loader/entries/shanios-green+3-0.conf"
   ( set -uo pipefail
     ESP_MNT="$d"; ENTRIES="$d/loader/entries"; LOADER="$d/loader/loader.conf"
-    PRIOR_FAILURE="blue"; SHANIOS_EFIVARS_DIR="$eidir"
+    DATA_MNT="$d"; PRIOR_FAILURE="blue"; SHANIOS_EFIVARS_DIR="$eidir"
     warn() { echo "WARN: $*" >&2; }
     eval "$DECIDE"
   ) >/dev/null 2>"$d/warn"

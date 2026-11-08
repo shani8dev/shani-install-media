@@ -103,10 +103,6 @@ CURRENT_LIST_HASH=$(
             printf -- '--- overlay %s ---\n' "${d#"${IMAGE_PROFILES_DIR}/"}"
             [[ -d "$d" ]] && tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - -C "$d" . | sha256sum
         done
-        # Seeded models are image inputs too: a model pin change must change
-        # the key, or a cached base "matches" while carrying the old model.
-        printf -- '--- seeded models ---\n'
-        bash "${SCRIPT_DIR}/seed-models.sh" --pins
     } | sha256sum | awk '{print $1}'
 )
 
@@ -289,14 +285,6 @@ if [[ -d "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs" \
     cp -r "${IMAGE_PROFILES_DIR}/${PROFILE}/overlay/rootfs/"* "${SUBVOL_MOUNT}/" \
         || die "Overlay copy failed"
 fi
-
-# Bake the preinstalled models (the vision model and the default brain)
-# into the image: too large for the package repo's 100 MB file limit,
-# fetched and digest-verified here instead. Chronoa finds them under
-# /usr/share/shani-chronoa on first boot, so setup never re-downloads
-# ~1.2 GB on the user's network.
-bash "${SCRIPT_DIR}/seed-models.sh" "${SUBVOL_MOUNT}" \
-    || die "Seeding the vision model failed"
 
 if [[ -f "${IMAGE_PROFILES_DIR}/${PROFILE}/${PROFILE}-customization.sh" ]]; then
     log "Applying customizations..."
