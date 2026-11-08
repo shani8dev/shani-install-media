@@ -1,6 +1,11 @@
 # Packages-Desktop — GUI packages
 # Installed after Base. Profile-specific desktop meta-package is first.
 shani-desktop-cosmic
+# pipewire-audio provides ladspa-host; naming it here settles the
+# virtual provider so a package that needs one (e.g. swh-plugins)
+# in the future) never pulls a DAW like ardour. Already in the
+# image via shani-multimedia - this line is the provider choice.
+pipewire-audio
 shani-accessibility
 # input methods (split out of shani-accessibility 1.3): IBus and its engines
 shani-input-ibus
