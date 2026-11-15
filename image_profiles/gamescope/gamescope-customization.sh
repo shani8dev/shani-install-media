@@ -18,6 +18,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOTSTRAP_DIR="${SUBVOL_MOUNT}/usr/share/gamescope-session-plus"
 BOOTSTRAP="${BOOTSTRAP_DIR}/bootstrap_steam.tar.zst"
 install -d "${SUBVOL_MOUNT}/etc/shani-arr" "${SUBVOL_MOUNT}/var/lib/shani-arr"
+# The wheel sudoers drop-in must be 0440 or visudo rejects it. The gamescope
+# user is in wheel (gamescope-session-user.service); it has an empty password
+# until the user sets one on a TTY, then sudo works for updates.
+install -d "${SUBVOL_MOUNT}/etc/sudoers.d"
+chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-wheel"
 if [ ! -f "$BOOTSTRAP" ]; then
     manifest="$(mktemp)"
     if curl -fsSL --retry 5 --retry-all-errors --max-time 60 \

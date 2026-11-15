@@ -14,6 +14,23 @@ shani-desktop-gamescope
 # in the future) never pulls a DAW like ardour. Already in the
 # image via shani-multimedia - this line is the provider choice.
 pipewire-audio
+# pipewire-jack provides the virtual `jack` that ffmpeg (pulled in by the
+# desktop/video stack) depends on. Name it here so pacman resolves that
+# virtual to PipeWire instead of jack2, which conflicts with the
+# pipewire-jack that shani-desktop-gamescope requires.
+pipewire-jack
 shani-fonts
 desktop-entry-hider
 shani-backup
+
+# Maintenance desktop: sway + foot for updates/troubleshooting. Steam's
+# "Switch to Desktop" (and gamescope-session-plus desktop) launches this;
+# the gamescope session remains the default boot.
+sway
+swaybg
+swaylock
+foot
+grim
+slurp
+wl-clipboard
+brightnessctl

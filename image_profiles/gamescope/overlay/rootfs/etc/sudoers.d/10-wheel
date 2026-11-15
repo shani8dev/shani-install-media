@@ -1,0 +1,5 @@
+# The gamescope user is the single console user. It starts with an empty
+# password (greetd autologin); set one with `passwd` on a TTY, then sudo
+# works for updates/maintenance. The maintenance desktop (sway + foot) is
+# for exactly this: `sudo shani-deploy`, logs, config edits.
+%wheel ALL=(ALL) ALL
