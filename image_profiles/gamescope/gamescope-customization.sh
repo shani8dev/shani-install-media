@@ -22,13 +22,9 @@ install -d "${SUBVOL_MOUNT}/etc/shani-arr" "${SUBVOL_MOUNT}/var/lib/shani-arr"
 # The optional *arr media stack (podman compose), off by default.
 install -d "${SUBVOL_MOUNT}/etc/shani-arr"
 
-# A simple dark gradient wallpaper; swaybg falls back to a solid color if
-# ImageMagick is not present in the builder.
-if command -v convert >/dev/null 2>&1; then
-    install -d "${SUBVOL_MOUNT}/usr/share/backgrounds/shani"
-    convert -size 1920x1080 gradient:'#0e1116-#1a1b26' \
-        "${SUBVOL_MOUNT}/usr/share/backgrounds/shani/shani.png" || true
-fi
+# The wallpaper is NOT generated here: it ships with shani-desktop-gamescope
+# (usr/share/backgrounds/shani/), already rendered and blurred. Generating it
+# in the builder would need ImageMagick in the build image for no gain.
 if [ ! -f "$BOOTSTRAP" ]; then
     manifest="$(mktemp)"
     if curl -fsSL --retry 5 --retry-all-errors --max-time 60 \
