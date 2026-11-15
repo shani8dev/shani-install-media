@@ -305,6 +305,21 @@ case "$COMMAND" in
     else
       warn "No snap-packages.txt for profile '${_ISO2_PROFILE}' (nor in shared/) — skipping Snap build."
     fi
+    # iso-release previously skipped this gate even though 'full' had it, so a
+    # scheduled ISO silently shipped without aimodelsfs.zst and
+    # check-iso-layers.sh then (correctly) failed the build. Same shared/
+    # fallback and AI-desktop profile exclusions as the 'full' gate.
+    if [[ -f "${IMAGE_PROFILES_DIR}/${_ISO2_PROFILE}/ai-models.txt" ]] || [[ -f "${IMAGE_PROFILES_DIR}/shared/ai-models.txt" ]]; then
+      case "$_ISO2_PROFILE" in
+        server|kiosk|gamescope) log "Profile '$_ISO2_PROFILE' does not ship the AI desktop — skipping AI models layer." ;;
+        *)
+          log "ai-models.txt found — building AI models image layer..."
+          ./scripts/build-ai-models-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+          ;;
+      esac
+    else
+      log "No ai-models.txt for profile '$_ISO2_PROFILE' — skipping AI models layer."
+    fi
     ./scripts/build-iso.sh    "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" --from-r2 --base=stable
     ./scripts/repack-iso.sh   "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     ./scripts/upload.sh       "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" "${_UPLOAD_FLAGS[@]+"${_UPLOAD_FLAGS[@]}"}" iso
@@ -359,6 +374,20 @@ case "$COMMAND" in
       ./scripts/repack-iso.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     else
       log "No ISO found — running full iso-only pipeline."
+      # Same AI-models gate as iso-release/full: an ISO built from a profile
+      # that defines ai-models.txt must carry aimodelsfs.zst or
+      # check-iso-layers.sh fails it.
+      if [[ -f "${IMAGE_PROFILES_DIR}/${_ISO_PROFILE}/ai-models.txt" ]] || [[ -f "${IMAGE_PROFILES_DIR}/shared/ai-models.txt" ]]; then
+        case "$_ISO_PROFILE" in
+          server|kiosk|gamescope) log "Profile '$_ISO_PROFILE' does not ship the AI desktop — skipping AI models layer." ;;
+          *)
+            log "ai-models.txt found — building AI models image layer..."
+            ./scripts/build-ai-models-image.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
+            ;;
+        esac
+      else
+        log "No ai-models.txt for profile '$_ISO_PROFILE' — skipping AI models layer."
+      fi
       ./scripts/build-iso.sh  "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}" --from-r2
       ./scripts/repack-iso.sh "${_BUILD_ARGS[@]+"${_BUILD_ARGS[@]}"}"
     fi
