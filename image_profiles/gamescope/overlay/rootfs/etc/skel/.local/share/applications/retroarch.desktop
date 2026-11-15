@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=RetroArch
-Comment=Libretro frontend (emulators, game engines, media)
-Exec=flatpak-spawn --host flatpak run org.libretro.RetroArch
-Icon=input-gaming
-Terminal=false
-Categories=Game;Emulator;
-Keywords=retro;libretro;emulator;game;

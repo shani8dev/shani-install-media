@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Return to game mode
-Comment=Switch the console back to Steam
-Exec=foot -e sudo gamescope-session-select steam
-Icon=input-gaming
-Terminal=false
-Categories=System;Settings;
-Keywords=switch;steam;game;console;
