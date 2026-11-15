@@ -1,0 +1,24 @@
+# The console user (gamescope) is the appliance owner. greetd's
+# initial_session autologins it and gamescope-session-user.service runs
+# `passwd -d gamescope`, so the account has an EMPTY password — and sudo
+# refuses to run at all for a user with an empty password. Without this file
+# the console's own buttons (return to game mode, install an update, factory
+# reset) could not do their job on a freshly installed machine.
+#
+# The grants are deliberately narrow:
+#   * three absolute paths — no wildcards, no shell, no directory grants;
+#   * each one is only reached from an explicit action in the Control Center,
+#     and the factory reset additionally requires the word RESET to be typed
+#     before it runs;
+#   * NOPASSWD only removes the password PROMPT. The wheel membership check
+#     still applies, and so does everything the command itself enforces
+#     (shani-deploy verifies every signature it downloads; shani-reset asks
+#     for its own confirmation when it is not given --yes).
+#
+# This is the console's ownership model, stated once: the person holding the
+# controller owns the machine. A desktop account is a different model and
+# keeps the polkit policy in shani-settings' 99-shani.rules, where
+# shani-deploy needs AUTH_SELF.
+gamescope ALL=(root) NOPASSWD: /usr/bin/gamescope-session-select
+gamescope ALL=(root) NOPASSWD: /usr/local/bin/shani-deploy
+gamescope ALL=(root) NOPASSWD: /usr/local/bin/shani-reset

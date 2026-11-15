@@ -23,6 +23,13 @@ install -d "${SUBVOL_MOUNT}/etc/shani-arr" "${SUBVOL_MOUNT}/var/lib/shani-arr"
 # until the user sets one on a TTY, then sudo works for updates.
 install -d "${SUBVOL_MOUNT}/etc/sudoers.d"
 chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-wheel"
+# The console user's own grant (session switch, update, factory reset). visudo
+# rejects a sudoers file that is not exactly 0440, so set it here rather than
+# trusting the copy's mode.
+if [[ -f "${SUBVOL_MOUNT}/etc/sudoers.d/10-gamescope-console" ]]; then
+    chown root:root "${SUBVOL_MOUNT}/etc/sudoers.d/10-gamescope-console"
+    chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-gamescope-console"
+fi
 # The control center is a Python script; the overlay copy is 0644.
 chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-gamescope-control"
 chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-screenshot"
