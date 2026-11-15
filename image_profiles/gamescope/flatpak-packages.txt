@@ -42,7 +42,6 @@ org.telegram.desktop
 io.github.kolunmi.Bazaar
 com.discordapp.Discord
 com.github.tchx84.Flatseal
-io.github.flattool.Warehouse
 io.github.ilya_zlobintsev.LACT
 im.riot.Riot
 # Audio effects for gaming headsets (surround, compressor, EQ) - the PipeWire
