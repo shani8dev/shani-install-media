@@ -23,6 +23,8 @@ install -d "${SUBVOL_MOUNT}/etc/shani-arr" "${SUBVOL_MOUNT}/var/lib/shani-arr"
 # until the user sets one on a TTY, then sudo works for updates.
 install -d "${SUBVOL_MOUNT}/etc/sudoers.d"
 chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-wheel"
+# The control center is a Python script; the overlay copy is 0644.
+chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-gamescope-control"
 if [ ! -f "$BOOTSTRAP" ]; then
     manifest="$(mktemp)"
     if curl -fsSL --retry 5 --retry-all-errors --max-time 60 \

@@ -1,0 +1,9 @@
+[global]
+background-color=#1a1b26
+text-color=#c0caf5
+border-color=#7aa2f7
+border-size=2
+border-radius=10
+default-timeout=5000
+max-visible=5
+position=top-right

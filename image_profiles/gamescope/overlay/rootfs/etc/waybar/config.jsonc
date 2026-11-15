@@ -1,0 +1,19 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 36,
+  "spacing": 8,
+  "modules-left": ["sway/workspaces", "sway/mode"],
+  "modules-center": ["clock"],
+  "modules-right": ["pulseaudio", "network", "battery", "custom/session", "tray"],
+  "clock": {
+    "format": "{:%H:%M}",
+    "format-alt": "{:%Y-%m-%d %H:%M:%S}",
+    "tooltip-format": "<tt><small>{calendar}</small></tt>"
+  },
+  "custom/session": {
+    "format": "󰒉 Game mode",
+    "tooltip": false,
+    "on-click": "foot -e sudo gamescope-session-select steam"
+  }
+}

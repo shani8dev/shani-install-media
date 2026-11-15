@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Shani Control Center — the gamescope maintenance desktop's big-button UI.
+
+Runs in the sway session. Every button either launches a GUI app or opens a
+foot terminal for a command that needs a password (sudo) or a scrollback.
+"""
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Adw, Gdk, Gtk  # noqa: E402
+
+
+def spawn(cmd, terminal=False):
+    if terminal:
+        subprocess.Popen(["foot", "-e", "bash", "-lc", cmd])
+    else:
+        subprocess.Popen(["bash", "-lc", cmd])
+
+
+class ControlWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Shani Control Center")
+        self.set_default_size(980, 680)
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
+        self.set_content(self._build())
+
+    def _build(self):
+        page = Gtk.ScrolledWindow()
+        page.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        box.set_margin_top(24)
+        box.set_margin_bottom(24)
+        box.set_margin_start(24)
+        box.set_margin_end(24)
+
+        title = Gtk.Label(label="Shani Control Center")
+        title.add_css_class("title-1")
+        title.set_halign(Gtk.Align.START)
+        box.append(title)
+
+        grid = Gtk.Grid(column_spacing=18, row_spacing=18)
+        grid.set_row_homogeneous(True)
+        grid.set_column_homogeneous(True)
+
+        actions = [
+            ("input-gaming", "Return to game mode", "Switch to Steam Big Picture",
+             lambda: spawn("sudo gamescope-session-select steam", True)),
+            ("software-update-available", "Update system", "Run shani-deploy",
+             lambda: spawn("sudo shani-deploy", True)),
+            ("system-file-manager", "Files", "Browse the system",
+             lambda: spawn("thunar")),
+            ("network-workgroup", "Network", "Wi-Fi and Ethernet",
+             lambda: spawn("nmtui", True)),
+            ("audio-volume-high", "Audio", "Volume and devices",
+             lambda: spawn("pavucontrol")),
+            ("text-x-generic", "Logs", "Boot and system logs",
+             lambda: spawn("journalctl -b", True)),
+        ]
+
+        for i, (icon, label, sub, cb) in enumerate(actions):
+            btn = Gtk.Button()
+            btn.set_size_request(-1, 150)
+            btn.add_css_class("card")
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            img = Gtk.Image.new_from_icon_name(icon)
+            img.set_pixel_size(48)
+            v.append(img)
+            l = Gtk.Label(label=label)
+            l.add_css_class("heading")
+            v.append(l)
+            s = Gtk.Label(label=sub)
+            s.add_css_class("dim-label")
+            s.set_wrap(True)
+            v.append(s)
+            btn.set_child(v)
+            btn.connect("clicked", lambda _b, cb=cb: cb())
+            grid.attach(btn, i % 3, i // 3, 1, 1)
+
+        box.append(grid)
+
+        power = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        power.set_halign(Gtk.Align.END)
+        for label, cmd in (("Power off", "sudo systemctl poweroff"),
+                           ("Reboot", "sudo systemctl reboot")):
+            b = Gtk.Button(label=label)
+            b.add_css_class("destructive-action")
+            b.connect("clicked", lambda _b, c=cmd: spawn(c, True))
+            power.append(b)
+        logout = Gtk.Button(label="Log out")
+        logout.connect("clicked", lambda _b: spawn("swaymsg exit"))
+        power.append(logout)
+        box.append(power)
+
+        page.set_child(box)
+        return page
+
+
+class ControlApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id="dev.shani.gamescope-control")
+
+    def do_activate(self):
+        ControlWindow(self).present()
+
+
+if __name__ == "__main__":
+    ControlApp().run(sys.argv)
