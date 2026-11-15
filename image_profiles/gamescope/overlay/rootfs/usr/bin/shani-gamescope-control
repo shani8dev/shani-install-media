@@ -144,8 +144,10 @@ class ControlWindow(Adw.ApplicationWindow):
              lambda: spawn("flatpak run io.missioncenter.MissionCenter")),
             ("web-browser", "Browser", "Firefox",
              lambda: spawn("flatpak run org.mozilla.firefox")),
-            ("applications-multimedia", "Media", "VLC",
-             lambda: spawn("flatpak run org.videolan.VLC")),
+            ("system-software-install", "Store", "Flatpak app store",
+             lambda: spawn("flatpak run io.github.kolunmi.Bazaar")),
+            ("drive-harddisk", "Storage", "Disks and partitions",
+             lambda: spawn("gnome-disk-utility")),
             ("text-x-generic", "Logs", "Boot and system logs",
              lambda: spawn("journalctl -b", True)),
         ]

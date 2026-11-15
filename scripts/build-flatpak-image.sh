@@ -414,6 +414,10 @@ gaming_apps=(
     ["com.spotify.Client"]="xdg-music,/mnt,/media,/run/media"
     ["io.missioncenter.MissionCenter"]="xdg-download:create"
     ["io.github.berarma.Oversteer"]="xdg-download:create"
+    ["io.github.antimicrox.antimicrox"]="~/.config/antimicrox:create,~/.var/app/io.github.antimicrox.antimicrox:create"
+    ["org.openrgb.OpenRGB"]="~/.config/OpenRGB:create"
+    ["org.freedesktop.Piper"]="~/.config/piper:create"
+    ["io.github.benjamimgois.goverlay"]="~/.config/goverlay:create"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)

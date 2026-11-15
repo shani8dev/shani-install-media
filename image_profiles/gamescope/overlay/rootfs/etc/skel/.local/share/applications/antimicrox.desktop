@@ -2,8 +2,8 @@
 Type=Application
 Name=AntiMicroX
 Comment=Map a game controller to keyboard and mouse
-Exec=antimicrox
-Icon=antimicrox
+Exec=flatpak-spawn --host flatpak run io.github.antimicrox.antimicrox
+Icon=io.github.antimicrox.antimicrox
 Terminal=false
 Categories=Game;Settings;
 Keywords=gamepad;controller;antimicrox;mapping;
