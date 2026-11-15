@@ -1,0 +1,35 @@
+name: Tests
+
+# This repo's own host-side tests (tests/): the boot-failover decision, the
+# promote-stable gate's byte checks, and that every command the 99shanios
+# dracut hooks run is declared in module-setup.sh - a missing one is no build
+# or boot error, the hook just silently does nothing. Harness self-tests live
+# in shani-testbed; the real boots are its iso-install/gate.
+on:
+  push:
+    paths:
+      - 'tests/**'
+      - 'scripts/promote-stable.sh'
+      - 'image_profiles/shared/overlay/rootfs/usr/lib/dracut/modules.d/**'
+      - '.github/workflows/tests.yml'
+  pull_request:
+    paths:
+      - 'tests/**'
+      - 'scripts/promote-stable.sh'
+      - 'image_profiles/shared/overlay/rootfs/usr/lib/dracut/modules.d/**'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch: {}
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: boot-failover decision
+        run: bash tests/test-boot-failover.sh
+      - name: promote-stable gate
+        run: bash tests/test-promote-gate.sh
+      - name: dracut hooks declare every command they run
+        run: python3 tests/test-dracut-hook-deps.py

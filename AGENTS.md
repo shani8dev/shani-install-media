@@ -119,20 +119,15 @@ thousands of files, partly permission-restricted), not source.
 
 ## Environment facts that affect what you can test here
 
-- **Five `test-env/*.sh` files are byte-identical duplicates of the live
-  copies in `shani-testbed/slot-tests/` (verified `diff`-identical
-  2026-10-06).** They are `check-boot-failure-flock-test.sh`,
-  `finalize-boot-entries-test.sh`, `in-chroot-test.sh`,
-  `self-update-test.sh`, and `sign-efi-binary-test.sh`. No code invokes the
-  `test-env/` copies — the harness runs the `shani-testbed` set (mounted at
-  `/mnt/testbed/slot-tests`, and the `slot-tests/*` list in
-  `shani-testbed/README.md` names them) — but they remain tracked and
-  executable, so they are two sources of truth for the same test and the next
-  edit will silently diverge them. `test-env/test.sh` itself is a deliberately
-  kept shim (execs `../shani-testbed/testbed`), and `test-env/README.md` is a
-  short pointer, both legitimate. **Do not edit the `test-env/` copies** — edit
-  the `shani-testbed/slot-tests/` one — and treat the duplicates as removal
-  candidates, not as files to keep in sync by hand.
+- **`test-env/` holds only the shim and outputs (2026-11-15).** The five
+  byte-identical duplicates of `shani-testbed/slot-tests/` scripts were
+  removed; the harness always ran the testbed copies. `test-env/test.sh` is
+  the shim (execs `../shani-testbed/testbed`), `test-env/README.md` a pointer,
+  and everything else there is git-ignored run output (`disk/`, `shots/`,
+  `mout*/`, sweep JSON). Tests of this repo's own code live in `tests/`
+  (`test-boot-failover*.sh`, `test-promote-gate.sh`, `test-dracut-hook-deps.py`);
+  harness self-tests stay in shani-testbed. See shani-testbed's README
+  "Where each kind of file lives".
 
 - Docker is available; you may also use podman, distrobox, lxd,
   apptainer, or install anything via `apt` if a better tool fits — pick
@@ -555,6 +550,14 @@ here before (the AMI/packer path).
 
 ## Audit-verified known issues (confirmed present)
 
+- **The base image no longer carries a machine identity (2026-11-15).**
+  `/etc/machine-id` is emptied at the end of the chroot step (systemd treats
+  the boot as a first boot and commits a fresh id), and there is no
+  `/etc/hostname` (shani-first-boot names the machine). Both were baked in:
+  configure.sh replaced the machine-id on install, but a factory reset wipes
+  /etc's overlay and fell back to the image's, so every reset machine shared
+  one machine-id and the name "shanios". Needs an image build to take effect.
+
 - **The boot-failover hook's candidate guard could not match a correctly-configured
   machine, and its `+3-0` marker is load-bearing — both settled on real firmware
   2026-10-18.** The entry above records this hook as fixed and describes its guard
@@ -602,7 +605,7 @@ here before (the AMI/packer path).
   Verified on real firmware, from an unbootable default on a first-install ESP:
   three boots to an unattended `shanios login:` on the good slot, both entries
   intact, nothing deleted, marker and `switched_from` cleared. Full record in
-  `shani-testbed/POWER-CUT-STATE.md`.
+  `shani-testbed/powercut/STATE.md`.
 
 
 - **`promote-stable.sh` verified reachability, not bytes — and the validator
@@ -807,7 +810,7 @@ here before (the AMI/packer path).
   comment and in the test — that "an efivarfs node is deleted by writing zero
   bytes to it". Measured on real efivarfs in a real firmware boot (edk2-ovmf,
   installed image, `iso-install --boot-only --console-exec`; the measurement is
-  `shani-testbed/tests/efivar-proof.sh`):
+  `shani-testbed/boot-probes/efivar-proof.sh`):
 
   | operation | rc | the node afterwards |
   |---|---|---|

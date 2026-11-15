@@ -41,14 +41,14 @@ test-env/mout*
 test-env/shots/
 
 # Harnessed Chronoa evaluations (testbed `app`/`slot-test` runs writing their
-# evidence outside DATA_DIR): chronoa-matrix/ and chronoa-sing/ hold the
+# evidence outside DATA_DIR): test-env/chronoa-matrix/ and chronoa-sing/ hold the
 # cli_matrix.py and singing sweeps (14M + 424K), test-env/matrix-out/ and
 # test-env/eval-out/ their JSON. Generated, regenerable by re-running the
 # sweep, and useless in history - and test-env/disk-plasma/ next to them is a
 # 6.2G loop-backed install image, the exact class of file the rules above
 # exist to keep out of a commit.
-chronoa-matrix/
-chronoa-sing/
+test-env/chronoa-matrix/
+test-env/chronoa-sing/
 test-env/matrix-out/
 test-env/eval-out/
 test-env/disk-*/
@@ -60,3 +60,6 @@ test-env/disk-*/
 # into a scratch dir outside the repo instead. Guarded here so an accident
 # cannot become a commit.
 hookroot*/
+
+# a measurement scratch folder (btrfs image of a slot, ~5 GB; regenerable)
+test-env/measure/

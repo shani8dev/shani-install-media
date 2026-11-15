@@ -4,3 +4,6 @@ set $term foot
 exec os-installer
 bindsym $mod+Return exec $term
 bindsym Ctrl+Alt+t exec $term
+# the screen reader, on the shortcut GNOME uses: Super+Alt+S starts Orca, and
+# again stops it
+bindsym $mod+Alt+s exec sh -c 'pkill -x orca || orca --replace'

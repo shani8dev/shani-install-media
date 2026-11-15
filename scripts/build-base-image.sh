@@ -366,11 +366,17 @@ echo "KEYMAP=us" > /etc/vconsole.conf
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 hwclock --systohc
 
+# A machine-id for the build's own steps below; emptied again at the end.
 systemd-machine-id-setup --commit
 
-echo "${OS_NAME}" > /etc/hostname
+# No /etc/hostname: a machine names itself. shani-first-boot gives one with
+# no name a unique shanios-xxxx - on a new install, and after a factory reset,
+# which wipes /etc's overlay and used to fall back to this image's "shanios",
+# the same name on every machine (mDNS answers shanios.local for one of them).
+# nss-myhostname resolves the machine's own name, so /etc/hosts needs no line.
+rm -f /etc/hostname
 echo "PRETTY_HOSTNAME=${OS_NAME}" > /etc/machine-info
-printf '127.0.0.1 localhost\n::1       localhost\n127.0.1.1 %s\n' "${OS_NAME}" > /etc/hosts
+printf '127.0.0.1 localhost\n::1       localhost\n' > /etc/hosts
 echo "${BUILD_DATE}" > /etc/shani-version
 echo "${PROFILE}" > /etc/shani-profile
 echo "stable" > /etc/shani-channel
@@ -418,6 +424,13 @@ if [[ -f /etc/shani-keys/signing.asc ]]; then
 fi
 
 chmod 0440 /etc/sudoers.d/path
+
+# Empty, not removed: systemd reads an empty /etc/machine-id as "first boot"
+# and generates this machine's own id, committing it into /etc. A committed id
+# here was shared by every machine - configure.sh replaced it on install, but a
+# factory reset wipes /etc's overlay and fell back to the image's, so every
+# reset machine had the same journal, D-Bus and DHCP client identity.
+: > /etc/machine-id
 EOF
 
 # ---------------------------------------------------------------------------

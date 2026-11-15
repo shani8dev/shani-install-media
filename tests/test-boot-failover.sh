@@ -165,7 +165,7 @@ CLR=$(printf '%s' "$OUT" | sed -n 2p)
 #
 # That accommodation was the bug's hiding place, and it was wrong on the
 # kernel's own terms. Measured in a real firmware boot on real efivarfs
-# (tests/efivar-proof.sh, edk2-ovmf via iso-install --boot-only):
+# (boot-probes/efivar-proof.sh, edk2-ovmf via iso-install --boot-only):
 #
 #     printf '' > $node   rc=0  still there, size UNCHANGED (180 bytes)
 #     truncate -s 0 $node  rc=0  still there

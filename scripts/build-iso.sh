@@ -316,6 +316,11 @@ link_or_copy() {
 
 log "Linking base image → rootfs.zst..."
 link_or_copy "${OUTPUT_SUBDIR}/${base_image}" "${ISO_DIR}/rootfs.zst" "base image"
+# Which image rootfs.zst is (shanios-<date>-<profile>.zst): the installer
+# compares it with the web's newest of the same channel and installs that one
+# when it is newer and verifies (os-installer-config install.sh,
+# fetch_newer_image). rootfs.zst's own name says nothing.
+printf '%s\n' "${base_image}" > "${ISO_DIR}/image.txt"
 
 if [[ -f "${OUTPUT_SUBDIR}/flatpakfs.zst" ]]; then
   log "Linking flatpakfs.zst..."

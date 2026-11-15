@@ -62,7 +62,7 @@ install() {
     # entirely. `chattr` and `sync` were the two that mattered: `sync` silently
     # absent meant the hook's flush never ran, and `chattr` absent would have
     # meant the same for the clearing. Both are cheap and both are load-bearing.
-    inst_multiple blkid mount umount mountpoint mkdir rmdir rm printf sed \
+    inst_multiple blkid mount umount mountpoint mkdir rmdir rm mv printf sed \
                   cat cp ls readlink tr head basename sync chattr \
                   grep systemctl sleep reboot
 

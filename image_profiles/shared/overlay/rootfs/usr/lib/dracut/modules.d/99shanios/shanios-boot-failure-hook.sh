@@ -305,7 +305,7 @@ if [ -s "$DATA_MNT/boot_hard_failure" ]; then
                             #
                             # MEASURED, on real efivarfs in a real firmware
                             # boot (edk2-ovmf via iso-install --boot-only,
-                            # tests/efivar-proof.sh):
+                            # boot-probes/efivar-proof.sh):
                             #
                             #   printf '' > $node   rc=0  node still there
                             #                                size UNCHANGED
