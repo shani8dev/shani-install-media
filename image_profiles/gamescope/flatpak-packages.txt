@@ -30,3 +30,7 @@ com.obsproject.Studio.Plugin.GStreamerVaapi
 tv.kodi.Kodi
 com.github.iwalton3.jellyfin-media-player
 org.qbittorrent.qBittorrent
+org.mozilla.firefox
+org.videolan.VLC
+io.missioncenter.MissionCenter
+com.spotify.Client

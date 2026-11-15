@@ -40,6 +40,20 @@ window#waybar {
   padding: 0 10px;
 }
 
+#backlight,
+#custom-weather {
+  padding: 0 10px;
+}
+
+#custom-power {
+  background: #f7768e;
+  color: #0e1116;
+  border-radius: 8px;
+  padding: 0 12px;
+  margin: 4px;
+  font-weight: bold;
+}
+
 #tray {
   padding: 0 8px;
 }

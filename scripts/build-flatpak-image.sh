@@ -410,6 +410,10 @@ gaming_apps=(
     ["tv.kodi.Kodi"]="~/Media:create,xdg-videos,xdg-music,xdg-pictures,/mnt,/media,/run/media"
     ["com.github.iwalton3.jellyfin-media-player"]="xdg-videos,xdg-music,/mnt,/media,/run/media"
     ["org.qbittorrent.qBittorrent"]="~/Downloads:create,xdg-download,/mnt,/media,/run/media"
+    ["org.mozilla.firefox"]="xdg-download,xdg-documents,xdg-music,xdg-pictures,xdg-videos,/mnt,/media,/run/media"
+    ["org.videolan.VLC"]="xdg-videos,xdg-download,/mnt,/media,/run/media"
+    ["com.spotify.Client"]="xdg-music,/mnt,/media,/run/media"
+    ["io.missioncenter.MissionCenter"]="xdg-download:create"
     ["io.github.antimicrox.antimicrox"]="~/.config/antimicrox:create,~/.var/app/io.github.antimicrox.antimicrox:create"
 )
 

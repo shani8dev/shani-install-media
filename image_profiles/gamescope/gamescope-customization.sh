@@ -25,6 +25,14 @@ install -d "${SUBVOL_MOUNT}/etc/sudoers.d"
 chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-wheel"
 # The control center is a Python script; the overlay copy is 0644.
 chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-gamescope-control"
+chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-screenshot"
+# A simple dark gradient wallpaper; swaybg falls back to a solid color if
+# ImageMagick is not present in the builder.
+if command -v convert >/dev/null 2>&1; then
+  install -d "${SUBVOL_MOUNT}/usr/share/backgrounds/shani"
+  convert -size 1920x1080 gradient:'#0e1116-#1a1b26' \
+    "${SUBVOL_MOUNT}/usr/share/backgrounds/shani/shani.png" || true
+fi
 if [ ! -f "$BOOTSTRAP" ]; then
     manifest="$(mktemp)"
     if curl -fsSL --retry 5 --retry-all-errors --max-time 60 \

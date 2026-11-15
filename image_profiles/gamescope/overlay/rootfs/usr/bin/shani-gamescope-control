@@ -140,6 +140,12 @@ class ControlWindow(Adw.ApplicationWindow):
              lambda: spawn("blueman")),
             ("video-display", "Display", "Resolution and scale",
              lambda: spawn("wdisplays")),
+            ("utilities-system-monitor", "System", "CPU, memory, processes",
+             lambda: spawn("flatpak run io.missioncenter.MissionCenter")),
+            ("web-browser", "Browser", "Firefox",
+             lambda: spawn("flatpak run org.mozilla.firefox")),
+            ("applications-multimedia", "Media", "VLC",
+             lambda: spawn("flatpak run org.videolan.VLC")),
             ("text-x-generic", "Logs", "Boot and system logs",
              lambda: spawn("journalctl -b", True)),
         ]

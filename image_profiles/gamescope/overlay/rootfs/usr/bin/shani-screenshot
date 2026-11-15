@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Region screenshot -> clipboard + notification.
+set -euo pipefail
+file="$(mktemp /tmp/shani-screenshot-XXXXXX.png)"
+if grim -g "$(slurp)" "$file"; then
+  wl-copy < "$file"
+  notify-send "Screenshot" "Copied to clipboard"
+  rm -f "$file"
+else
+  rm -f "$file"
+  exit 1
+fi

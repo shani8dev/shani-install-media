@@ -36,9 +36,10 @@ slurp
 wl-clipboard
 brightnessctl
 # Console UI: Waybar panel, Fuzzel launcher, Mako notifications, and the
-# Shani Control Center (GTK4/libadwaiti).
+# Shani Control Center (GTK4/libadwaita).
 waybar
 fuzzel
+wlogout
 mako
 playerctl
 pavucontrol
@@ -46,9 +47,14 @@ thunar
 blueman
 wdisplays
 gtk4
-libadwaiti
+libadwaita
 python-gobject
 python-evdev
 ttf-jetbrains-mono-nerd
 papirus-icon-theme
 adw-gtk-theme
+wf-recorder
+cliphist
+libnotify
+mousepad
+qalculate-gtk
