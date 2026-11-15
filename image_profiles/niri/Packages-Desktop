@@ -10,6 +10,11 @@ shani-desktop-niri
 # (see Packages-Base). PipeWire's own host runs the SC4 compressor without
 # the DAW.
 pipewire-audio
+# pipewire-jack provides the virtual `jack` that ffmpeg (pulled in by the
+# desktop stack) depends on. Name it here so pacman resolves that virtual to
+# PipeWire instead of jack2, which conflicts with the pipewire-jack that
+# shani-multimedia requires. Same provider-pinning rule as pipewire-audio.
+pipewire-jack
 shani-accessibility
 shani-fonts
 shani-multimedia
