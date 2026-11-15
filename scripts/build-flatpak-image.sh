@@ -408,7 +408,6 @@ gaming_apps=(
     ["org.libretro.RetroArch"]="~/Games:create,xdg-download,/mnt,/media,/run/media"
     ["com.usebottles.bottles"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
     ["tv.kodi.Kodi"]="~/Media:create,xdg-videos,xdg-music,xdg-pictures,/mnt,/media,/run/media"
-    ["com.github.iwalton3.jellyfin-media-player"]="xdg-videos,xdg-music,/mnt,/media,/run/media"
     ["org.qbittorrent.qBittorrent"]="~/Downloads:create,xdg-download,/mnt,/media,/run/media"
     ["org.mozilla.firefox"]="xdg-download,xdg-documents,xdg-music,xdg-pictures,xdg-videos,/mnt,/media,/run/media"
     ["com.spotify.Client"]="xdg-music,/mnt,/media,/run/media"
@@ -457,7 +456,6 @@ media_apps=(
     ["org.gnome.Evince"]="xdg-documents,xdg-download,/mnt,/media,/run/media"
     ["org.keepassxc.KeePassXC"]="xdg-documents:create"
     ["org.telegram.desktop"]="xdg-download,xdg-documents,xdg-pictures,xdg-music,xdg-videos,/mnt,/media,/run/media"
-    ["com.stremio.Stremio"]="xdg-videos,xdg-music,xdg-download,/mnt,/media,/run/media"
 )
 for app in "${!media_apps[@]}"; do
     if grep -Fxq "$app" <<< "$installed_apps"; then

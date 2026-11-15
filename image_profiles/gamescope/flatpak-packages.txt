@@ -19,16 +19,18 @@ runtime/org.freedesktop.Platform.VulkanLayer.vkBasalt/x86_64/25.08
 com.github.Matoking.protontricks
 com.vysp3r.ProtonPlus
 com.valvesoftware.Steam.CompatibilityTool.Proton-GE
+# Streaming/recording: OBS itself, plus the Vulkan capture layer that lets it
+# see a game. The gstreamer plugins are not here: OBS's own FFmpeg backends
+# cover recording and hardware encoding, and each plugin drags a whole extra
+# runtime into the image.
 com.obsproject.Studio
 runtime/org.freedesktop.Platform.VulkanLayer.OBSVkCapture/x86_64/25.08
 com.obsproject.Studio.Plugin.OBSVkCapture
-com.obsproject.Studio.Plugin.Gstreamer
-com.obsproject.Studio.Plugin.GStreamerVaapi
-# Media centers / front-ends. Kodi and the Jellyfin Media Player are GUI
-# Flatpaks; the Jellyfin server and the *arr services run as containers via
-# the optional shani-arr.service (see /etc/shani-arr/podman-compose.yml).
+# Media. Kodi is the media center and the Jellyfin client: the optional *arr
+# stack (etc/shani-arr) runs a Jellyfin SERVER, and Kodi's Jellyfin add-on is
+# how a console talks to it, so a second Jellyfin client is one more app for
+# the same job. Stremio is out for the same reason — Kodi covers it.
 tv.kodi.Kodi
-com.github.iwalton3.jellyfin-media-player
 org.qbittorrent.qBittorrent
 org.mozilla.firefox
 io.missioncenter.MissionCenter
@@ -39,14 +41,15 @@ org.gnome.Loupe
 org.gnome.Evince
 org.keepassxc.KeePassXC
 org.telegram.desktop
+# Flatpak management: Bazaar installs, Flatseal edits permissions. Warehouse
+# is out — it is a second installed-apps manager, and Bazaar already lists,
+# updates and removes.
 io.github.kolunmi.Bazaar
-com.discordapp.Discord
 com.github.tchx84.Flatseal
+com.discordapp.Discord
+# GPU control: AMD, Intel and NVIDIA fans, clocks and overclocking. GreenWithEnvy
+# is archived upstream and CoreCtrl is AMD-only.
 io.github.ilya_zlobintsev.LACT
-im.riot.Riot
 # Audio effects for gaming headsets (surround, compressor, EQ) - the PipeWire
 # filter chain runs host-side, so this applies to the whole system.
 com.github.wwmm.easyeffects
-# Media streaming client (Kodi/Jellyfin cover local playback; Stremio covers
-# the streaming catalogs).
-com.stremio.Stremio
