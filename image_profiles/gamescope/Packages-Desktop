@@ -29,6 +29,7 @@ shani-backup
 sway
 swaybg
 swaylock
+swayidle
 foot
 grim
 slurp
@@ -45,5 +46,6 @@ thunar
 gtk4
 libadwaiti
 python-gobject
+python-evdev
 ttf-jetbrains-mono-nerd
 papirus-icon-theme

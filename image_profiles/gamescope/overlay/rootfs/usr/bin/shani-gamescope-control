@@ -12,7 +12,84 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, Gtk  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
+
+try:
+    import evdev
+    from evdev import ecodes
+
+    HAVE_EVDEV = True
+except Exception:
+    HAVE_EVDEV = False
+
+
+if HAVE_EVDEV:
+    import threading
+
+    class GamepadNav:
+        """Map a connected controller to GTK focus/activate/close.
+
+        D-pad / left stick -> move focus; A -> activate; B/Start/Select ->
+        close. Runs in a daemon thread and pushes actions to the GTK main
+        loop with GLib.idle_add.
+        """
+
+        def __init__(self, window):
+            self.window = window
+            self.dev = None
+            for path in evdev.list_devices():
+                try:
+                    d = evdev.InputDevice(path)
+                    keys = d.capabilities().get(ecodes.EV_KEY, [])
+                    if ecodes.BTN_A in keys or getattr(ecodes, "BTN_SOUTH", -1) in keys:
+                        self.dev = d
+                        break
+                except OSError:
+                    continue
+            self.thread = None
+            if self.dev:
+                self.thread = threading.Thread(target=self._run, daemon=True)
+                self.thread.start()
+
+        def _run(self):
+            try:
+                for ev in self.dev.read_loop():
+                    if ev.type == ecodes.EV_KEY and ev.value == 1:
+                        GLib.idle_add(self._key, ev.code)
+            except OSError:
+                pass
+
+        def _key(self, code):
+            if code in (ecodes.BTN_DPAD_UP, ecodes.KEY_UP):
+                self._focus(Gtk.DirectionType.TAB_BACKWARD)
+            elif code in (ecodes.BTN_DPAD_DOWN, ecodes.KEY_DOWN):
+                self._focus(Gtk.DirectionType.TAB_FORWARD)
+            elif code in (ecodes.BTN_DPAD_LEFT, ecodes.KEY_LEFT):
+                self._focus(Gtk.DirectionType.LEFT)
+            elif code in (ecodes.BTN_DPAD_RIGHT, ecodes.KEY_RIGHT):
+                self._focus(Gtk.DirectionType.RIGHT)
+            elif code in (ecodes.BTN_A, getattr(ecodes, "BTN_SOUTH", ecodes.BTN_A)):
+                self._activate()
+            elif code in (
+                ecodes.BTN_B,
+                getattr(ecodes, "BTN_EAST", ecodes.BTN_B),
+                ecodes.BTN_START,
+                ecodes.BTN_SELECT,
+            ):
+                self.window.close()
+            return False
+
+        def _focus(self, direction):
+            w = self.window.get_focus()
+            if w:
+                w.child_focus(direction)
+            return False
+
+        def _activate(self):
+            w = self.window.get_focus()
+            if w and hasattr(w, "activate"):
+                w.activate()
+            return False
 
 
 def spawn(cmd, terminal=False):
@@ -28,6 +105,7 @@ class ControlWindow(Adw.ApplicationWindow):
         self.set_default_size(980, 680)
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.PREFER_DARK)
         self.set_content(self._build())
+        self.nav = GamepadNav(self) if HAVE_EVDEV else None
 
     def _build(self):
         page = Gtk.ScrolledWindow()
@@ -83,17 +161,23 @@ class ControlWindow(Adw.ApplicationWindow):
 
         box.append(grid)
 
-        power = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        power.set_halign(Gtk.Align.END)
-        for label, cmd in (("Power off", "sudo systemctl poweroff"),
-                           ("Reboot", "sudo systemctl reboot")):
+        power = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        power.set_halign(Gtk.Align.CENTER)
+        for label, cmd in (("Sleep", "systemctl suspend"),
+                           ("Lock", "swaylock"),
+                           ("Power off", "systemctl poweroff"),
+                           ("Reboot", "systemctl reboot")):
             b = Gtk.Button(label=label)
-            b.add_css_class("destructive-action")
-            b.connect("clicked", lambda _b, c=cmd: spawn(c, True))
+            if label in ("Power off", "Reboot"):
+                b.add_css_class("destructive-action")
+            b.connect("clicked", lambda _b, c=cmd: spawn(c))
             power.append(b)
         logout = Gtk.Button(label="Log out")
         logout.connect("clicked", lambda _b: spawn("swaymsg exit"))
         power.append(logout)
+        close = Gtk.Button(label="Close")
+        close.connect("clicked", lambda _b: self.close())
+        power.append(close)
         box.append(power)
 
         page.set_child(box)
