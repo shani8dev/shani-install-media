@@ -162,4 +162,23 @@ btrfs_send_snapshot "$AI_MOUNT" "${OUTPUT_FILE}"
 btrfs property set -f -ts "$AI_MOUNT" ro false \
     || die "Failed to reset subvolume properties"
 
+# Detach the Btrfs image; clear LOOP_DEVICE BEFORE calling detach so the
+# EXIT trap never attempts a second detach if detach_btrfs_image fails
+# partway through.
+LOOP_DEVICE_TMP="$LOOP_DEVICE"
+LOOP_DEVICE=""
+detach_btrfs_image "$AI_MOUNT" "$LOOP_DEVICE_TMP"
+
+# Checksum and sign, same as the base/Flatpak/Snap layers: build-iso.sh
+# requires .sha256 and .asc sidecars for any layer it embeds, and a locally
+# built layer has no R2 copy to download them from.
+gpg_prepare_keyring
+
+pushd "${OUTPUT_SUBDIR}" > /dev/null
+sha256sum "aimodelsfs.zst" > "aimodelsfs.zst.sha256" \
+    || die "Checksum generation failed"
+popd > /dev/null
+
+gpg_sign_file "${OUTPUT_FILE}"
+
 log "AI models image layer complete: ${OUTPUT_FILE}"
