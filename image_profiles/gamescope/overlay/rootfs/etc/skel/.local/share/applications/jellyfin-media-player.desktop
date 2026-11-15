@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Jellyfin Media Player
+Comment=Jellyfin client (movies, TV, music)
+Exec=flatpak-spawn --host flatpak run com.github.iwalton3.jellyfin-media-player
+Icon=com.github.iwalton3.jellyfin-media-player
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=media;player;jellyfin;video;music;

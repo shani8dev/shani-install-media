@@ -1,0 +1,15 @@
+[Unit]
+Description=Shani *arr media stack (Podman Compose)
+Documentation=file:/etc/shani-arr/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/podman-compose -f /etc/shani-arr/podman-compose.yml up -d
+ExecStop=/usr/bin/podman-compose -f /etc/shani-arr/podman-compose.yml down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

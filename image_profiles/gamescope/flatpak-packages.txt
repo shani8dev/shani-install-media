@@ -24,3 +24,9 @@ runtime/org.freedesktop.Platform.VulkanLayer.OBSVkCapture/x86_64/25.08
 com.obsproject.Studio.Plugin.OBSVkCapture
 com.obsproject.Studio.Plugin.Gstreamer
 com.obsproject.Studio.Plugin.GStreamerVaapi
+# Media centers / front-ends. Kodi and the Jellyfin Media Player are GUI
+# Flatpaks; the Jellyfin server and the *arr services run as containers via
+# the optional shani-arr.service (see /etc/shani-arr/podman-compose.yml).
+tv.kodi.Kodi
+com.github.iwalton3.jellyfin-media-player
+org.qbittorrent.qBittorrent

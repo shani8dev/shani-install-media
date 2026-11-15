@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=qBittorrent
+Comment=BitTorrent client
+Exec=flatpak-spawn --host flatpak run org.qbittorrent.qBittorrent
+Icon=org.qbittorrent.qBittorrent
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=torrent;download;bittorrent;

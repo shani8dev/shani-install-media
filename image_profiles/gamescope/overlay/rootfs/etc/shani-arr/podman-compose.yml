@@ -1,0 +1,110 @@
+# Optional Shani *arr media stack (Podman Compose).
+#
+# Not started by default. Enable it when you have media storage mounted:
+#   sudo systemctl enable --now shani-arr.service
+#
+# Media paths (the host paths the gamescope image mounts via shani-storage):
+#   /mnt/media      -> /media      (library: Radarr/Sonarr/Jellyfin)
+#   /mnt/downloads  -> /downloads  (download client: qBittorrent)
+# Config lives in /var/lib/shani-arr/<app> so it survives image updates.
+#
+# Web UIs (host ports):
+#   Radarr       7878
+#   Sonarr       8989
+#   Prowlarr     9696
+#   Bazarr       6767
+#   qBittorrent  8080
+#   Jellyfin     8096
+#
+# The linuxserver images run as PUID/PGID 1000 (the gamescope user). If the
+# gamescope UID differs, change PUID/PGID below (id gamescope).
+#
+# First start pulls the images; the *arr apps need their API keys/indexers
+# configured through their web UIs. Jellyfin's library points at /media.
+
+services:
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /var/lib/shani-arr/radarr:/config
+      - /mnt/media:/media
+      - /mnt/downloads:/downloads
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /var/lib/shani-arr/sonarr:/config
+      - /mnt/media:/media
+      - /mnt/downloads:/downloads
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /var/lib/shani-arr/prowlarr:/config
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /var/lib/shani-arr/bazarr:/config
+      - /mnt/media:/media
+    ports:
+      - "6767:6767"
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+      - WEBUI_PORT=8080
+    volumes:
+      - /var/lib/shani-arr/qbittorrent:/config
+      - /mnt/downloads:/downloads
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kolkata
+    volumes:
+      - /var/lib/shani-arr/jellyfin:/config
+      - /mnt/media:/media
+    ports:
+      - "8096:8096"
+    restart: unless-stopped

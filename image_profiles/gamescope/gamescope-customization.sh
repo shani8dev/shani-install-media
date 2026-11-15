@@ -17,6 +17,7 @@ ln -sfn ../gamescope-session-config.service "$WANTS/gamescope-session-config.ser
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOTSTRAP_DIR="${SUBVOL_MOUNT}/usr/share/gamescope-session-plus"
 BOOTSTRAP="${BOOTSTRAP_DIR}/bootstrap_steam.tar.zst"
+install -d "${SUBVOL_MOUNT}/etc/shani-arr" "${SUBVOL_MOUNT}/var/lib/shani-arr"
 if [ ! -f "$BOOTSTRAP" ]; then
     manifest="$(mktemp)"
     if curl -fsSL --retry 5 --retry-all-errors --max-time 60 \

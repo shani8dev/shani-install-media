@@ -407,6 +407,9 @@ gaming_apps=(
     ["net.lutris.Lutris"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
     ["org.libretro.RetroArch"]="~/Games:create,xdg-download,/mnt,/media,/run/media"
     ["com.usebottles.bottles"]="~/Games:create,xdg-download,xdg-documents,/mnt,/media,/run/media"
+    ["tv.kodi.Kodi"]="~/Media:create,xdg-videos,xdg-music,xdg-pictures,/mnt,/media,/run/media"
+    ["com.github.iwalton3.jellyfin-media-player"]="xdg-videos,xdg-music,/mnt,/media,/run/media"
+    ["org.qbittorrent.qBittorrent"]="~/Downloads:create,xdg-download,/mnt,/media,/run/media"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)
