@@ -419,6 +419,8 @@ gaming_apps=(
     ["org.freedesktop.Piper"]="~/.config/piper:create"
     ["io.github.benjamimgois.goverlay"]="~/.config/goverlay:create"
     ["com.discordapp.Discord"]="xdg-download,xdg-pictures,/mnt,/media,/run/media"
+    ["io.github.ilya_zlobintsev.LACT"]="~/.config/lact:create"
+    ["com.github.wwmm.easyeffects"]="~/.config/easyeffects:create,~/.var/app/com.github.wwmm.easyeffects:create"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)
@@ -455,6 +457,7 @@ media_apps=(
     ["org.gnome.Evince"]="xdg-documents,xdg-download,/mnt,/media,/run/media"
     ["org.keepassxc.KeePassXC"]="xdg-documents:create"
     ["org.telegram.desktop"]="xdg-download,xdg-documents,xdg-pictures,xdg-music,xdg-videos,/mnt,/media,/run/media"
+    ["com.stremio.Stremio"]="xdg-videos,xdg-music,xdg-download,/mnt,/media,/run/media"
 )
 for app in "${!media_apps[@]}"; do
     if grep -Fxq "$app" <<< "$installed_apps"; then

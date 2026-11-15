@@ -43,3 +43,11 @@ io.github.kolunmi.Bazaar
 com.discordapp.Discord
 com.github.tchx84.Flatseal
 io.github.flattool.Warehouse
+io.github.ilya_zlobintsev.LACT
+im.riot.Riot
+# Audio effects for gaming headsets (surround, compressor, EQ) - the PipeWire
+# filter chain runs host-side, so this applies to the whole system.
+com.github.wwmm.easyeffects
+# Media streaming client (Kodi/Jellyfin cover local playback; Stremio covers
+# the streaming catalogs).
+com.stremio.Stremio

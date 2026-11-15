@@ -65,4 +65,8 @@ syncthing
 squeekboard
 swappy
 kanshi
-evtest
+# Gaming tuning/monitoring/diagnostics (lm_sensors, thermald, nvtop,
+# mesa-utils, vulkan-tools, vkmark, glmark2, stress-ng, smartmontools,
+# nvme-cli, usbutils, evtest) are dependencies of shani-desktop-gamescope
+# above - listing them again here would only duplicate the pacman
+# transaction.
