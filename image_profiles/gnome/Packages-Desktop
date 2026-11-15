@@ -6,6 +6,11 @@ shani-desktop-gnome
 # in the future) never pulls a DAW like ardour. Already in the
 # image via shani-multimedia - this line is the provider choice.
 pipewire-audio
+# pipewire-jack provides the virtual `jack` that ffmpeg (pulled in by the
+# desktop stack) depends on; named here so pacman resolves it to PipeWire, not
+# jack2, which conflicts with the pipewire-jack shani-multimedia requires (the
+# same provider pin as niri's; only a package on the pacstrap line counts).
+pipewire-jack
 shani-accessibility
 # input methods (split out of shani-accessibility 1.3): IBus and its engines
 shani-input-ibus
