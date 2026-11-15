@@ -390,7 +390,10 @@ if [[ "$PROFILE" == "gamescope" ]]; then
     --filesystem=home \
     --filesystem=/mnt \
     --filesystem=/media \
-    --filesystem=/run/media
+    --filesystem=/run/media \
+    --talk-name=org.freedesktop.Flatpak \
+    --filesystem=/var/lib/flatpak/exports/share/steam/compatibilitytools.d \
+    --env=STEAM_EXTRA_COMPAT_TOOLS_PATHS=/app/share/steam/compatibilitytools.d:/app/utils/share/steam/compatibilitytools.d:/run/parent/app/share/steam/compatibilitytools.d:/var/lib/flatpak/exports/share/steam/compatibilitytools.d
   log "Overrides applied."
 fi
 
@@ -412,6 +415,11 @@ for app in "${!gaming_apps[@]}"; do
     if grep -Fxq "$app" <<< "$installed_apps"; then
         perms="${gaming_apps[$app]}"
         log "Setting permissions for $app"
+
+        # Controllers, wheels, and VR/AR need raw device access inside the
+        # sandbox. Steam gets --device=all in the gamescope block above; the
+        # other gaming apps rely on this pass, so set it here for all of them.
+        flatpak override --system "$app" --device=all
 
         IFS=',' read -ra perm_list <<< "$perms"
 
