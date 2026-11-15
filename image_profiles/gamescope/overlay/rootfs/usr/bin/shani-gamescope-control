@@ -136,6 +136,10 @@ class ControlWindow(Adw.ApplicationWindow):
              lambda: spawn("nmtui", True)),
             ("audio-volume-high", "Audio", "Volume and devices",
              lambda: spawn("pavucontrol")),
+            ("bluetooth-active", "Bluetooth", "Controllers, audio, devices",
+             lambda: spawn("blueman")),
+            ("video-display", "Display", "Resolution and scale",
+             lambda: spawn("wdisplays")),
             ("text-x-generic", "Logs", "Boot and system logs",
              lambda: spawn("journalctl -b", True)),
         ]

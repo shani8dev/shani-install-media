@@ -43,9 +43,12 @@ mako
 playerctl
 pavucontrol
 thunar
+blueman
+wdisplays
 gtk4
 libadwaiti
 python-gobject
 python-evdev
 ttf-jetbrains-mono-nerd
 papirus-icon-theme
+adw-gtk-theme

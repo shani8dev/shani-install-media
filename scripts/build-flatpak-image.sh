@@ -410,6 +410,7 @@ gaming_apps=(
     ["tv.kodi.Kodi"]="~/Media:create,xdg-videos,xdg-music,xdg-pictures,/mnt,/media,/run/media"
     ["com.github.iwalton3.jellyfin-media-player"]="xdg-videos,xdg-music,/mnt,/media,/run/media"
     ["org.qbittorrent.qBittorrent"]="~/Downloads:create,xdg-download,/mnt,/media,/run/media"
+    ["io.github.antimicrox.antimicrox"]="~/.config/antimicrox:create,~/.var/app/io.github.antimicrox.antimicrox:create"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)
