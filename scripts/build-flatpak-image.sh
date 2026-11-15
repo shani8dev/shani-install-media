@@ -418,6 +418,7 @@ gaming_apps=(
     ["org.openrgb.OpenRGB"]="~/.config/OpenRGB:create"
     ["org.freedesktop.Piper"]="~/.config/piper:create"
     ["io.github.benjamimgois.goverlay"]="~/.config/goverlay:create"
+    ["com.discordapp.Discord"]="xdg-download,xdg-pictures,/mnt,/media,/run/media"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)

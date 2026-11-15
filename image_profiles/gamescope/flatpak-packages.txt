@@ -40,3 +40,6 @@ org.gnome.Evince
 org.keepassxc.KeePassXC
 org.telegram.desktop
 io.github.kolunmi.Bazaar
+com.discordapp.Discord
+com.github.tchx84.Flatseal
+io.github.flattool.Warehouse
