@@ -411,10 +411,9 @@ gaming_apps=(
     ["com.github.iwalton3.jellyfin-media-player"]="xdg-videos,xdg-music,/mnt,/media,/run/media"
     ["org.qbittorrent.qBittorrent"]="~/Downloads:create,xdg-download,/mnt,/media,/run/media"
     ["org.mozilla.firefox"]="xdg-download,xdg-documents,xdg-music,xdg-pictures,xdg-videos,/mnt,/media,/run/media"
-    ["org.videolan.VLC"]="xdg-videos,xdg-download,/mnt,/media,/run/media"
     ["com.spotify.Client"]="xdg-music,/mnt,/media,/run/media"
     ["io.missioncenter.MissionCenter"]="xdg-download:create"
-    ["io.github.antimicrox.antimicrox"]="~/.config/antimicrox:create,~/.var/app/io.github.antimicrox.antimicrox:create"
+    ["io.github.berarma.Oversteer"]="xdg-download:create"
 )
 
 installed_apps=$(flatpak list --system --app --columns=application)
@@ -441,6 +440,31 @@ for app in "${!gaming_apps[@]}"; do
 done
 
 log "Gaming app permissions configured"
+
+# Media/text apps are Flatpak-first, but they are not gaming apps: give them
+# filesystems only, not --device=all.
+declare -A media_apps
+media_apps=(
+    ["org.gnome.TextEditor"]="xdg-documents:create,xdg-download:create"
+    ["org.gnome.Loupe"]="xdg-pictures,xdg-download,/mnt,/media,/run/media"
+    ["org.gnome.Evince"]="xdg-documents,xdg-download,/mnt,/media,/run/media"
+    ["org.keepassxc.KeePassXC"]="xdg-documents:create"
+    ["org.telegram.desktop"]="xdg-download,xdg-documents,xdg-pictures,xdg-music,xdg-videos,/mnt,/media,/run/media"
+)
+for app in "${!media_apps[@]}"; do
+    if grep -Fxq "$app" <<< "$installed_apps"; then
+        perms="${media_apps[$app]}"
+        log "Setting media app permissions for $app"
+        IFS=',' read -ra perm_list <<< "$perms"
+        for perm in "${perm_list[@]}"; do
+            flatpak override --system "$app" --filesystem="$perm"
+        done
+    else
+        log "Skipping $app (not installed)"
+    fi
+done
+
+log "Media app permissions configured"
 
 # ---------------------------------------------------------------------------
 # Verify the installed set matches the profile list exactly.

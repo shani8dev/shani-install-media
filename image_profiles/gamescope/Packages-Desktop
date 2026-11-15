@@ -39,7 +39,6 @@ brightnessctl
 # Shani Control Center (GTK4/libadwaita).
 waybar
 fuzzel
-wlogout
 mako
 playerctl
 pavucontrol
@@ -56,20 +55,12 @@ adw-gtk-theme
 wf-recorder
 cliphist
 libnotify
-mousepad
 qalculate-gtk
 btop
 fastfetch
 yazi
 helix
-imv
-mpv
-zathura
-keepassxc
-telegram-desktop
 gnome-disk-utility
-gparted
-loupe
 syncthing
 squeekboard
 swappy
