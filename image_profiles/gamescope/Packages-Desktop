@@ -3,6 +3,13 @@
 # purpose-built for gaming, not a full desktop environment — no GNOME/Plasma
 # deps, just the gamescope session + the gaming stack.
 #
+# The console's whole app set — sway, waybar, fuzzel, mako, swaylock, the
+# Control Center, the tuning and diagnostics tools, the themes and fonts —
+# is a dependency of shani-desktop-gamescope below, which is also where its
+# configuration lives (etc/sway, etc/waybar, etc/mako, usr/bin/shani-*-*).
+# Listing those names here as well would only duplicate the pacman
+# transaction.
+#
 # gamescope / mangohud come from Arch [extra]. gamescope-session-plus is a
 # ShaniOS PKGBUILD (shani-pkgbuilds/gamescope-session-plus/, a portable
 # reimplementation of ChimeraOS's MIT gamescope-session-plus framework).
@@ -13,60 +20,14 @@ shani-desktop-gamescope
 # virtual provider so a package that needs one (e.g. swh-plugins)
 # in the future) never pulls a DAW like ardour. Already in the
 # image via shani-multimedia - this line is the provider choice.
+#
+# These two have to be listed at THIS level, not in a metapackage's
+# depends=(): a provider reached through a metapackage still prompts, because
+# only a package named on the pacstrap command line counts as a chosen
+# provider. --noconfirm does not help either; it answers install
+# confirmations, not provider selection, so with no tty the prompt reads EOF
+# and silently takes the default.
 pipewire-audio
-# pipewire-jack provides the virtual `jack` that ffmpeg (pulled in by the
-# desktop/video stack) depends on. Name it here so pacman resolves that
-# virtual to PipeWire instead of jack2, which conflicts with the
-# pipewire-jack that shani-desktop-gamescope requires.
 pipewire-jack
-shani-fonts
 desktop-entry-hider
 shani-backup
-
-# Maintenance desktop: sway + foot for updates/troubleshooting. Steam's
-# "Switch to Desktop" (and gamescope-session-plus desktop) launches this;
-# the gamescope session remains the default boot.
-sway
-swaybg
-swaylock
-swayidle
-foot
-grim
-slurp
-wl-clipboard
-brightnessctl
-# Console UI: Waybar panel, Fuzzel launcher, Mako notifications, and the
-# Shani Control Center (GTK4/libadwaita).
-waybar
-fuzzel
-mako
-playerctl
-pavucontrol
-thunar
-blueman
-wdisplays
-gtk4
-libadwaita
-python-gobject
-python-evdev
-ttf-jetbrains-mono-nerd
-papirus-icon-theme
-adw-gtk-theme
-wf-recorder
-cliphist
-libnotify
-qalculate-gtk
-btop
-fastfetch
-yazi
-helix
-gnome-disk-utility
-syncthing
-squeekboard
-swappy
-kanshi
-# Gaming tuning/monitoring/diagnostics (lm_sensors, thermald, nvtop,
-# mesa-utils, vulkan-tools, vkmark, glmark2, stress-ng, smartmontools,
-# nvme-cli, usbutils, evtest) are dependencies of shani-desktop-gamescope
-# above - listing them again here would only duplicate the pacman
-# transaction.

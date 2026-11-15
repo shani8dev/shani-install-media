@@ -1,14 +1,14 @@
 #!/bin/bash
-# Gamescope profile: wire the gamescope user/home units into sysinit.target.
-# The gamescope session is a tiling Wayland compositor purpose-built for
-# gaming — no GNOME/Plasma deps, just the gamescope session + the gaming
-# stack. $1 = image rootfs mountpoint.
+# Gamescope profile: image-assembly for the gaming console.
+#
+# The console's own contents live in the shani-desktop-gamescope package (the
+# session units, the sway/waybar/mako/fuzzel/swaylock configuration, the
+# Control Center, the greetd config and the console's sudoers grant), so this
+# script only does what a package cannot: prepare the image itself.
+#
+# $1 = image rootfs mountpoint.
 set -euo pipefail
 SUBVOL_MOUNT="${1:?usage: gamescope-customization.sh <rootfs-mount>}"
-WANTS="${SUBVOL_MOUNT}/etc/systemd/system/sysinit.target.wants"
-install -d "$WANTS"
-ln -sfn ../gamescope-session-user.service   "$WANTS/gamescope-session-user.service"
-ln -sfn ../gamescope-session-config.service "$WANTS/gamescope-session-config.service"
 
 # Pre-download the Steam client so the first launch is offline, like
 # SteamOS/Bazzite. gamescope-session-plus unpacks this into the gamescope
@@ -18,27 +18,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOTSTRAP_DIR="${SUBVOL_MOUNT}/usr/share/gamescope-session-plus"
 BOOTSTRAP="${BOOTSTRAP_DIR}/bootstrap_steam.tar.zst"
 install -d "${SUBVOL_MOUNT}/etc/shani-arr" "${SUBVOL_MOUNT}/var/lib/shani-arr"
-# The wheel sudoers drop-in must be 0440 or visudo rejects it. The gamescope
-# user is in wheel (gamescope-session-user.service); it has an empty password
-# until the user sets one on a TTY, then sudo works for updates.
-install -d "${SUBVOL_MOUNT}/etc/sudoers.d"
-chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-wheel"
-# The console user's own grant (session switch, update, factory reset). visudo
-# rejects a sudoers file that is not exactly 0440, so set it here rather than
-# trusting the copy's mode.
-if [[ -f "${SUBVOL_MOUNT}/etc/sudoers.d/10-gamescope-console" ]]; then
-    chown root:root "${SUBVOL_MOUNT}/etc/sudoers.d/10-gamescope-console"
-    chmod 0440 "${SUBVOL_MOUNT}/etc/sudoers.d/10-gamescope-console"
-fi
-# The control center is a Python script; the overlay copy is 0644.
-chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-gamescope-control"
-chmod 755 "${SUBVOL_MOUNT}/usr/bin/shani-screenshot"
+
+# The optional *arr media stack (podman compose), off by default.
+install -d "${SUBVOL_MOUNT}/etc/shani-arr"
+
 # A simple dark gradient wallpaper; swaybg falls back to a solid color if
 # ImageMagick is not present in the builder.
 if command -v convert >/dev/null 2>&1; then
-  install -d "${SUBVOL_MOUNT}/usr/share/backgrounds/shani"
-  convert -size 1920x1080 gradient:'#0e1116-#1a1b26' \
-    "${SUBVOL_MOUNT}/usr/share/backgrounds/shani/shani.png" || true
+    install -d "${SUBVOL_MOUNT}/usr/share/backgrounds/shani"
+    convert -size 1920x1080 gradient:'#0e1116-#1a1b26' \
+        "${SUBVOL_MOUNT}/usr/share/backgrounds/shani/shani.png" || true
 fi
 if [ ! -f "$BOOTSTRAP" ]; then
     manifest="$(mktemp)"

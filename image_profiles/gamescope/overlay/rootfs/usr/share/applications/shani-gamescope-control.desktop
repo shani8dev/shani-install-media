@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Shani Control Center
-Comment=Console settings, updates, and power
-Exec=shani-gamescope-control
-Icon=preferences-system
-Terminal=false
-Categories=System;Settings;
-Keywords=shani;control;settings;console;gamescope;
