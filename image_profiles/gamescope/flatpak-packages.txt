@@ -30,6 +30,8 @@ com.obsproject.Studio.Plugin.OBSVkCapture
 # stack (etc/shani-arr) runs a Jellyfin SERVER, and Kodi's Jellyfin add-on is
 # how a console talks to it, so a second Jellyfin client is one more app for
 # the same job. Stremio is out for the same reason — Kodi covers it.
+# Game streaming from a gaming PC (Sunshine / GeForce host) to the console.
+com.moonlight_stream.Moonlight
 tv.kodi.Kodi
 org.qbittorrent.qBittorrent
 org.mozilla.firefox

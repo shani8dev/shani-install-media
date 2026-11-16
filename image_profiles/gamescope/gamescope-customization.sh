@@ -3,7 +3,7 @@
 #
 # The console's own contents live in the shani-desktop-gamescope package (the
 # session units, the sway/waybar/mako/fuzzel/swaylock configuration, the
-# Control Center, the greetd config and the console's sudoers grant), so this
+# Control Center, the greetd config and the console password helper), so this
 # script only does what a package cannot: prepare the image itself.
 #
 # $1 = image rootfs mountpoint.
