@@ -12,6 +12,7 @@ on:
     paths:
       - 'tests/**'
       - 'scripts/promote-stable.sh'
+      - 'scripts/gen-var-tmpfiles.sh'
       - 'image_profiles/shared/overlay/rootfs/usr/lib/dracut/modules.d/**'
       - 'image_profiles/*/overlay/rootfs/etc/fstab'
       - 'image_profiles/*/overlay/rootfs/usr/lib/tmpfiles.d/**'
@@ -20,6 +21,7 @@ on:
     paths:
       - 'tests/**'
       - 'scripts/promote-stable.sh'
+      - 'scripts/gen-var-tmpfiles.sh'
       - 'image_profiles/shared/overlay/rootfs/usr/lib/dracut/modules.d/**'
       - 'image_profiles/*/overlay/rootfs/etc/fstab'
       - 'image_profiles/*/overlay/rootfs/usr/lib/tmpfiles.d/**'
@@ -41,3 +43,5 @@ jobs:
         run: python3 tests/test-dracut-hook-deps.py
       - name: fstab lines well-formed, every /data bind made by tmpfiles
         run: bash tests/test-fstab-binds.sh
+      - name: packaged /var folders, files and links come back on a volatile boot
+        run: bash tests/test-gen-var-tmpfiles.sh

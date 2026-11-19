@@ -1761,7 +1761,30 @@ behind every entry in "Audit-verified known issues" above.
   tmpfs on purpose gets a `# ram: <path> - <why>` line at the end of fstab.
   `tests/test-fstab-binds.sh` (CI) keeps it that way; shani-testbed
   `boot-probes/var-lib-survey.sh --check` fails a boot with an undeclared,
-  non-empty /var folder. Open: packages that ship files WITH CONTENT under /var
-  (rkhunter's db, krb5's kdc.conf) are invisible at runtime - gen-var-tmpfiles.sh
-  recreates only folders and empty files; /usr/share/factory/var + tmpfiles `C`
-  is systemd's mechanism for it.
+  non-empty /var folder. shani-testbed `slot-test <slot> var-state-coverage`
+  asks the IMAGE instead of a boot (StateDirectory=, system users' homes,
+  tmpfiles lines), so an off-by-default service's folder is covered too.
+
+  Fixed the same day, each measured in a slot (`slot-test var-state-coverage`
+  FAILs on any of them in an older image):
+  - **Packaged files with content under /var were absent at runtime** (43 on
+    cosmic: rkhunter's db, BIND's zone files, krb5's kdc.conf, arpwatch's
+    ethercodes.dat). gen-var-tmpfiles.sh now copies each to
+    /usr/share/factory/<path> and writes a `C` line: copied in only when
+    missing, so a kept file the service changed is never reset.
+  - **Packaged symlinks under /var were absent** (filesystem's /var/lock and
+    /var/mail; a real boot had only systemd's /var/run): now `L` lines.
+  - **Bind sources had the wrong mode/owner.** The installer and shani-deploy
+    make them root 0755 and the ':'-prefixed mtree lines only apply on create,
+    so /var/spool/samba and /var/spool/mail lost 1777, /var/named its
+    root:named 0770, /var/spool/cups its root:cups 0710, NetworkManager and
+    rkhunter their 0700. `shanios-data-binds.conf` now carries the image's
+    own mode and owner for each source (names from the image's passwd, not
+    numbers - see the next point), without ':' so existing installs are fixed.
+  - Open: the image's pacman database is under the tmpfs, so `pacman -Q`
+    finds nothing on a booted system (Cassini pages call it). Proposed:
+    move it to /usr/lib/pacman/local at build with an `L` line back.
+  - Open: /etc/passwd and /etc/group live in the /etc overlay's upper layer
+    from install on, so a later image's NEW system users get IDs from
+    runtime systemd-sysusers, which may differ from the numeric owners
+    baked into that image's files (factory copies included).

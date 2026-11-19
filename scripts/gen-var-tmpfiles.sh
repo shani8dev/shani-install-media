@@ -72,8 +72,16 @@ done | awk '
         if (g == "") g = 0
         if (t == "dir")                           printf "d %s :%04d :%s :%s -\n", p, mode, u, g
         else if (t == "file" && e["size"] == "0") printf "f %s :%04d :%s :%s -\n", p, mode, u, g
-        # non-empty files and symlinks are not recreated: their content is the
-        # package payload, which belongs to the package, not to boot-time setup
+        # a non-empty file: its content is copied to /usr/share/factory/<path>
+        # below, and C copies it back when (and only when) it is missing - so a
+        # file the service has since changed in a kept folder is never reset.
+        # Measured 2026-11-19: 43 such files (rkhunter db, named zones, krb5
+        # kdc.conf, arpwatch ethercodes.dat) were simply absent on every boot.
+        else if (t == "file" && p !~ /^\/var\/(cache|log)\//) printf "C %s - - - -\n", p
+        # a symlink (filesystem: /var/lock -> ../run/lock, /var/mail -> spool/mail;
+        # both were missing on a real boot, 2026-11-19) - L never replaces an
+        # existing path
+        else if (t == "link" && e["link"] != "") printf "L %s - - - - %s\n", p, unesc(e["link"])
     }
 ' | sort -u -k2,2 > "$declared.all"
 
@@ -82,12 +90,23 @@ lines=$(awk 'NR==FNR { skip[$1] = 1; next }
              $2 ~ /^\/var\/?$/ { next }
              !($2 in skip)' "$declared" "$declared.all")
 
+# the factory copies the C lines restore from (systemd's own convention:
+# C with no argument copies from /usr/share/factory/<same path>)
+FACTORY="$ROOT/usr/share/factory"
+while read -r _ p _; do
+    [[ -f "$ROOT$p" ]] || { echo "gen-var-tmpfiles: $p is in the mtree but not in the image" >&2; exit 1; }
+    mkdir -p "$FACTORY$(dirname "$p")"
+    cp -a "$ROOT$p" "$FACTORY$p"
+done < <(grep '^C ' <<< "$lines")
+
 mkdir -p "$(dirname "$OUT")"
 {
     echo "# Generated at image build by shani-install-media scripts/gen-var-tmpfiles.sh"
     echo "# from pacman's per-package mtree: every directory and empty file a package"
     echo "# ships under /var, which systemd.volatile=state and the empty /data/varlib"
     echo "# bind sources would otherwise leave missing. ':' = applied only on create."
+    echo "# C lines: a non-empty packaged file, copied from /usr/share/factory when missing."
+    echo "# L lines: a packaged symlink."
     printf '%s\n' "$lines"
 } > "$OUT"
-echo "gen-var-tmpfiles: $(grep -c '^[df] ' "$OUT") entries -> ${OUT#"$ROOT"}"
+echo "gen-var-tmpfiles: $(grep -c '^[dfCL] ' "$OUT") entries ($(grep -c '^C ' "$OUT") from /usr/share/factory) -> ${OUT#"$ROOT"}"

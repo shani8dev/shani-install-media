@@ -342,9 +342,25 @@ bash "${SCRIPT_DIR}/gen-var-tmpfiles.sh" "${SUBVOL_MOUNT}" \
 # is silently skipped (nofail) and the service's state stays on the tmpfs.
 {
     echo "# Generated at image build from /etc/fstab by build-base-image.sh - do not edit."
-    echo "# Every /data folder fstab bind-mounts under /var (systemd.volatile=state)."
-    awk '/[[:space:]]bind[,[:space:]]/ && !/^[[:space:]]*#/ { if ($4 ~ /bind/ && $1 ~ /^\/data\//) print $1 }' \
-        "${SUBVOL_MOUNT}/etc/fstab" | sort -u | sed 's/^/d /; s/$/ - - - -/'
+    echo "# Every /data folder fstab bind-mounts under /var (systemd.volatile=state),"
+    echo "# with the mode and owner the image gives the folder it is mounted on: the"
+    echo "# installer and shani-deploy make the source as root 0755, and what shows"
+    echo "# at /var/... is the source's (no ':' - an existing source is corrected)."
+    # Measured 2026-11-19: /var/spool/samba and /var/spool/mail (1777),
+    # /var/named (root:named 0770), /var/spool/cups (root:cups 0710) and
+    # NetworkManager (0700) were all root 0755 at runtime.
+    awk '/[[:space:]]bind[,[:space:]]/ && !/^[[:space:]]*#/ { if ($4 ~ /bind/ && $1 ~ /^\/data\//) print $1, $2 }' \
+        "${SUBVOL_MOUNT}/etc/fstab" | sort -u | while read -r src dst; do
+        if [[ -d "${SUBVOL_MOUNT}${dst}" && ! -L "${SUBVOL_MOUNT}${dst}" ]]; then
+            read -r mode uid gid < <(stat -c '%a %u %g' "${SUBVOL_MOUNT}${dst}")
+            # names from the IMAGE's passwd/group (not the build container's)
+            u=$(awk -F: -v id="$uid" '$3 == id {print $1; exit}' "${SUBVOL_MOUNT}/etc/passwd")
+            g=$(awk -F: -v id="$gid" '$3 == id {print $1; exit}' "${SUBVOL_MOUNT}/etc/group")
+            printf 'd %s %04d %s %s -\n' "$src" "$mode" "${u:-$uid}" "${g:-$gid}"
+        else
+            printf 'd %s - - - -\n' "$src"
+        fi
+    done
 } > "${SUBVOL_MOUNT}/usr/lib/tmpfiles.d/shanios-data-binds.conf" \
     || die "Generating the /data bind source tmpfiles.d entries failed"
 
