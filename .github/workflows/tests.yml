@@ -45,3 +45,5 @@ jobs:
         run: bash tests/test-fstab-binds.sh
       - name: packaged /var folders, files and links come back on a volatile boot
         run: bash tests/test-gen-var-tmpfiles.sh
+      - name: System Changes restore never deletes the accounts
+        run: bash tests/test-etc-restore-hook.sh

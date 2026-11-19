@@ -74,6 +74,11 @@ if [ -s "$PENDING" ]; then
         case "$RLINE" in
             ""|/*|..|../*|*/..|*/../*)
                 warn "shanios-overlay-etc: refused restore line '${RLINE}'"; continue ;;
+            # the accounts and this computer's identity: shani-etc-changes never
+            # queues them (its PROTECTED list); refused here too, so a queue
+            # file written any other way cannot delete every account
+            passwd|shadow|group|gshadow|subuid|subgid|machine-id|crypttab|secureboot/*|ssh/ssh_host_*)
+                warn "shanios-overlay-etc: /etc/${RLINE} is protected - not restored"; continue ;;
         esac
         RTARGET="${OVERLAY_UPPER}/${RLINE}"
         if [ -d "$RTARGET" ] && [ ! -L "$RTARGET" ]; then
