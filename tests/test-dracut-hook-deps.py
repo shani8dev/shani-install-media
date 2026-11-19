@@ -120,6 +120,16 @@ def strip_for_wordlists(text):
     return "".join(out)
 
 
+def strip_case_labels(text):
+    """Blank a `case` label at the start of a line - `passwd|shadow|crypttab)` or
+    `""|/*|..)` - which is a list of patterns, not commands. A label has no
+    spaces, `(`, `$`, `=` or `;` before its `)`, which no command line starts
+    with; anything after the `)` on the same line is still scanned (2026-11-19:
+    the protected-name label in shanios-overlay-etc.sh read as ten commands)."""
+    return re.sub(r"^([ \t]*)([^\s()$`;&=]+)\)",
+                  lambda m: m.group(1) + " " * (len(m.group(2)) + 1), text, flags=re.M)
+
+
 # re.M matters: `^` must match the start of each LINE, or a command that sits on
 # its own indented line - which is how `sync` is written - is invisible to this.
 # The trailing (?![a-zA-Z0-9_.-]) forces the WHOLE token to be consumed: without
@@ -138,7 +148,7 @@ if not hooks:
 
 used = set()
 for s in hooks:
-    body = strip_for_wordlists(strip_strings(strip_comments(s.read_text())))
+    body = strip_case_labels(strip_for_wordlists(strip_strings(strip_comments(s.read_text()))))
     funcs = set(re.findall(r"^\s*([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\(\)\s*\{", body, re.M))
     for m in COMMAND_POS.finditer(body):
         tok = m.group(1)
