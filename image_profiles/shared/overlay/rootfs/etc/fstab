@@ -543,6 +543,8 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 /data/varlib/lastlog             /var/lib/lastlog              none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
 # /var/ipp-usb — ipp-usb device state: each USB printer keeps its port and DNS-SD name
 /data/varlib/ipp-usb             /var/ipp-usb                  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/plasmalogin — Plasma's login manager: its user's home and state (as sddm and gdm)
+/data/varlib/plasmalogin  /var/lib/plasmalogin  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
 
 ##############################################################################
 # SECTION 18: JOB SCHEDULING
@@ -581,3 +583,21 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Keeps the mail queue persistent across blue/green root switches.
 # Requires: mkdir -p /data/varspool/postfix
 /data/varspool/postfix        /var/spool/postfix        none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+
+##############################################################################
+# DELIBERATELY NOT KEPT (stay on the /var tmpfs)
+##############################################################################
+# One line each, '# ram: <path> - <why>'. shani-testbed's
+# boot-probes/var-lib-survey.sh --check reads these: a /var folder that is
+# neither mounted by a line above nor declared here fails the check, so a new
+# package's state is noticed instead of silently lost at every boot.
+# ram: /var/tmp - temporary files; FHS allows clearing, and they should not fill /data
+# ram: /var/snap - snaps' own writable data - snaps are kept (@snapd), their data is reset at boot
+# ram: /var/lib/private - DynamicUser= service state (dnscrypt-proxy); nothing needs it across boots
+# ram: /var/lib/udisks2 - udisks' record of what is mounted now
+# ram: /var/lib/passim - a LAN cache of fwupd metadata
+# ram: /var/lib/rpcbind - rpcbind warm-start files
+# ram: /var/lib/libuuid - uuidd clock state
+# ram: /var/lib/BrlAPI - BrlAPI's key, made again when brltty starts
+# ram: /var/lib/plymouth - boot splash timing
+# ram: /var/spool/plymouth - boot splash spool

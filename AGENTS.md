@@ -1750,3 +1750,18 @@ behind every entry in "Audit-verified known issues" above.
   whitespace as a command). Measured on a real overlay in a container:
   modified → factory, added → gone, deleted (whiteout) → back, directory
   untouched, `../../outside/victim` and `/etc/a` refused.
+
+- **/var persistence: /etc/fstab is the ONE list (2026-11-19).** ShaniOS keeps
+  `systemd.volatile=state`; a /var folder survives a boot only if an fstab line
+  mounts it. To keep a new one, add ONE bind line to the shared and server
+  fstab - nothing else: the /data source folders are made by
+  `shanios-data-binds.conf`, generated from fstab by `build-base-image.sh`; by the
+  installer (`create_bind_sources`, from the installed image's fstab); and by
+  shani-deploy at every update (`parse_fstab_bind_dirs`). A folder left on the
+  tmpfs on purpose gets a `# ram: <path> - <why>` line at the end of fstab.
+  `tests/test-fstab-binds.sh` (CI) keeps it that way; shani-testbed
+  `boot-probes/var-lib-survey.sh --check` fails a boot with an undeclared,
+  non-empty /var folder. Open: packages that ship files WITH CONTENT under /var
+  (rkhunter's db, krb5's kdc.conf) are invisible at runtime - gen-var-tmpfiles.sh
+  recreates only folders and empty files; /usr/share/factory/var + tmpfiles `C`
+  is systemd's mechanism for it.

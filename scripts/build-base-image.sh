@@ -335,6 +335,19 @@ fi
 bash "${SCRIPT_DIR}/gen-var-tmpfiles.sh" "${SUBVOL_MOUNT}" \
     || die "Generating /var tmpfiles.d entries failed"
 
+# The /data source of every bind in the image's fstab, as tmpfiles.d lines,
+# generated from that fstab so it is the one list (the installer and
+# shani-deploy read the same fstab with the same rule). They used to be written
+# by hand beside the fstab and drifted from it; a bind whose source is missing
+# is silently skipped (nofail) and the service's state stays on the tmpfs.
+{
+    echo "# Generated at image build from /etc/fstab by build-base-image.sh - do not edit."
+    echo "# Every /data folder fstab bind-mounts under /var (systemd.volatile=state)."
+    awk '/[[:space:]]bind[,[:space:]]/ && !/^[[:space:]]*#/ { if ($4 ~ /bind/ && $1 ~ /^\/data\//) print $1 }' \
+        "${SUBVOL_MOUNT}/etc/fstab" | sort -u | sed 's/^/d /; s/$/ - - - -/'
+} > "${SUBVOL_MOUNT}/usr/lib/tmpfiles.d/shanios-data-binds.conf" \
+    || die "Generating the /data bind source tmpfiles.d entries failed"
+
 # Optional OEM/private-mirror injection (integration-map Product 6, Option A).
 # Rewrites shani-deploy's compile-time constants inside the image before the
 # btrfs snapshot — preserves immutability at runtime (no /etc override file).
