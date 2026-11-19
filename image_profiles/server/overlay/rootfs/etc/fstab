@@ -260,7 +260,8 @@ LABEL=shani_root              /var/log                  btrfs   defaults,nofail,
 # Create: btrfs subvolume create /@flatpak
 LABEL=shani_root              /var/lib/flatpak          btrfs   nofail,defaults,noatime,subvol=@flatpak,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount,x-systemd.before=local-fs.target   0 0
 
-# /var/lib/snapd — Snap package storage, revisions, and writable snap data
+# /var/lib/snapd — Snap package storage, revisions and snapd's state
+# (each snap's own writable data is in /var/snap, which is not kept)
 # Persistent across blue/green root switches.
 # Create : btrfs subvolume create /@snapd
 LABEL=shani_root   /var/lib/snapd   btrfs   nofail,defaults,noatime,subvol=@snapd,rw,compress=zstd,space_cache=v2,autodefrag,x-systemd.after=var.mount,x-systemd.requires=var.mount,x-systemd.before=local-fs.target   0 0
@@ -517,6 +518,26 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Preserves AppImage desktop integration across blue/green root switches.
 # Requires: mkdir -p /data/varlib/appimage
 /data/varlib/appimage         /var/lib/appimage         none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+
+# Lost at every boot before 2026-11-19 (found by shani-testbed
+# boot-probes/var-lib-survey.sh; each checked against what the service
+# stores - see shani-deploy/docs/dragon-os-assessment.md).
+# /var/lib/power-profiles-daemon — state.ini: the power mode the person chose (reset at every boot without this)
+/data/varlib/power-profiles-daemon  /var/lib/power-profiles-daemon  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/vnstat — vnstat's traffic database (vnstat.service is enabled)
+/data/varlib/vnstat              /var/lib/vnstat               none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/malcontent-timerd — parental controls: screen time already used today
+/data/varlib/malcontent-timerd   /var/lib/malcontent-timerd    none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/malcontent-webd — parental controls: web filter lists (/var/lib/malcontent-nss is systemd's symlink to it)
+/data/varlib/malcontent-webd     /var/lib/malcontent-webd      none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/gnome-remote-desktop — Remote Login: the service user's home - TLS key/cert and credentials.ini (0700, set by the package's tmpfiles)
+/data/varlib/gnome-remote-desktop  /var/lib/gnome-remote-desktop  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/brltty — brltty.prefs: a braille user's settings
+/data/varlib/brltty              /var/lib/brltty               none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/lastlog — lastlog2's last-login records
+/data/varlib/lastlog             /var/lib/lastlog              none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/ipp-usb — ipp-usb device state: each USB printer keeps its port and DNS-SD name
+/data/varlib/ipp-usb             /var/ipp-usb                  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
 
 ##############################################################################
 # SECTION 18: JOB SCHEDULING
