@@ -1737,3 +1737,16 @@ whether it could just be one `shani-settings` file first.
 and "What this does NOT simulate" section there in sync with reality when
 you add or close a testing gap. `AUDIT-HISTORY.md` has the full narrative
 behind every entry in "Audit-verified known issues" above.
+
+- **`99shanios/shanios-overlay-etc.sh` applies queued /etc restores
+  (2026-11-19).** Before it mounts the /etc overlay it removes, for each line
+  of `@data/etc-restore-pending` (written by shani-deploy's
+  `shani-etc-changes restore`, from Shani Cassini's System Changes page), that
+  path's copy in the upper layer — the only moment the upper layer may change.
+  Files and whiteouts only, never a directory; absolute paths and `..` are
+  refused; done ones are logged to `@data/etc-restore-done`. `date` was added
+  to `inst_multiple` for it (`tests/test-dracut-hook-deps.py` PASS — its loop
+  variables are uppercase because that test reads any lowercase word after
+  whitespace as a command). Measured on a real overlay in a container:
+  modified → factory, added → gone, deleted (whiteout) → back, directory
+  untouched, `../../outside/victim` and `/etc/a` refused.

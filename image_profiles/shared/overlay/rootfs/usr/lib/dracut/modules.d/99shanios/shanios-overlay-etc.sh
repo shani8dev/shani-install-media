@@ -60,6 +60,39 @@ fi
 
 # Mount the OverlayFS directly onto the new root's /etc.
 # $NEWROOT is set by dracut to the mountpoint of the new root filesystem.
+# Restores queued by `shani-etc-changes restore` (Shani Cassini, System
+# Changes): each line of etc-restore-pending is a path under /etc whose own
+# copy in the upper layer is removed here, so the slot's factory version shows
+# through again (or, for a file the image does not have, the file goes; for a
+# deleted file, its whiteout goes and the file is back). This is the only safe
+# moment: the upper layer must not be changed under a mounted overlay. Files and
+# whiteouts only, never a directory; a line that is absolute or climbs out with
+# .. is refused. What was done is appended to etc-restore-done for the page.
+PENDING="${DATA_MNT}/etc-restore-pending"
+if [ -s "$PENDING" ]; then
+    while IFS= read -r RLINE || [ -n "$RLINE" ]; do
+        case "$RLINE" in
+            ""|/*|..|../*|*/..|*/../*)
+                warn "shanios-overlay-etc: refused restore line '${RLINE}'"; continue ;;
+        esac
+        RTARGET="${OVERLAY_UPPER}/${RLINE}"
+        if [ -d "$RTARGET" ] && [ ! -L "$RTARGET" ]; then
+            warn "shanios-overlay-etc: /etc/${RLINE} is a directory - not restored"
+            continue
+        fi
+        if [ -e "$RTARGET" ] || [ -L "$RTARGET" ]; then
+            if rm -f "$RTARGET" 2>/dev/null; then
+                printf '%s restored %s\n' "$(date +%s 2>/dev/null)" "$RLINE" >> "${DATA_MNT}/etc-restore-done"
+                warn "shanios-overlay-etc: restored /etc/${RLINE} to the factory version"
+            else
+                warn "shanios-overlay-etc: could not restore /etc/${RLINE}"
+            fi
+        fi
+    done < "$PENDING"
+    rm -f "$PENDING"
+    sync
+fi
+
 if ! mount -t overlay overlay \
         -o "rw,lowerdir=${TARGET_ETC},upperdir=${OVERLAY_UPPER},workdir=${OVERLAY_WORK},index=off,metacopy=off" \
         "${TARGET_ETC}"; then

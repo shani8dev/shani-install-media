@@ -64,7 +64,7 @@ install() {
     # meant the same for the clearing. Both are cheap and both are load-bearing.
     inst_multiple blkid mount umount mountpoint mkdir rmdir rm mv printf sed \
                   cat cp ls readlink tr head basename sync chattr \
-                  grep systemctl sleep reboot
+                  grep systemctl sleep reboot date
 
     # Emergency-mode recovery. shanios-recover-default.sh runs inside the
     # initramfs's emergency shell after a failed root mount and puts the boot
