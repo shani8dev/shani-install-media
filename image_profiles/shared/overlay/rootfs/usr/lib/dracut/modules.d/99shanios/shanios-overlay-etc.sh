@@ -93,8 +93,22 @@ if [ -s "$PENDING" ]; then
     sync
 fi
 
+# The lower layer is the booted slot's /etc, so it is a DIFFERENT tree after
+# every deploy. The kernel allows offline changes to the lower layer only when
+# none of index, metacopy, redirect_dir and xino was used (overlayfs.rst,
+# "Changes to underlying filesystems"); otherwise the behaviour is undefined.
+# Arch's kernel turns all four on (measured on 7.2.6-arch2-1: /sys/module/
+# overlay/parameters redirect_dir=Y index=Y xino_auto=Y metacopy=Y), and this
+# mount turned off only two. redirect_dir=follow creates no new redirects but
+# still follows any an earlier mount made, so a directory someone renamed keeps
+# its contents; renaming a shipped directory now copies it (mv does that by
+# itself on EXDEV). Measured in a container: all three behaviours hold. xino is
+# not used while both layers are on one filesystem - @data and the slot are
+# subvolumes of the same btrfs, and the kernel does not even list xino then
+# (measured) - so xino=off is explicit for the day they are not. The idea
+# is Ananta OS's (an ESTALE /etc after an update, implementation-notes §6).
 if ! mount -t overlay overlay \
-        -o "rw,lowerdir=${TARGET_ETC},upperdir=${OVERLAY_UPPER},workdir=${OVERLAY_WORK},index=off,metacopy=off" \
+        -o "rw,lowerdir=${TARGET_ETC},upperdir=${OVERLAY_UPPER},workdir=${OVERLAY_WORK},index=off,metacopy=off,redirect_dir=follow,xino=off" \
         "${TARGET_ETC}"; then
     warn "shanios-overlay-etc: overlay mount on ${TARGET_ETC} failed — /etc will be read-only"
     umount "$DATA_MNT" 2>/dev/null || true
