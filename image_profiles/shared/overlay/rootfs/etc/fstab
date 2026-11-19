@@ -333,6 +333,9 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # Preserves unit states, timer schedules, and the persistent random seed.
 # Requires: mkdir -p /data/varlib/systemd
 /data/varlib/systemd          /var/lib/systemd          none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# System extensions (systemd-sysext), merged over /usr at every boot; kept
+# across updates like every other /data/varlib folder.
+/data/varlib/extensions       /var/lib/extensions       none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
 
 ##############################################################################
 # SECTION 9: FONT RENDERING
