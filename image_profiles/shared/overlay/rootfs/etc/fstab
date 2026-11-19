@@ -129,6 +129,12 @@
 #   /data/varspool/samba         => /var/spool/samba
 #   /data/varspool/postfix       => /var/spool/postfix
 
+# /var/spool/mail — local mailboxes (cron and system mail delivered by the MTA)
+/data/varspool/mail              /var/spool/mail                none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+
+# /var/spool/exim — exim's mail queue (exim is installed as the smtp-forwarder)
+/data/varspool/exim              /var/spool/exim                none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+
 ##############################################################################
 # MOUNT OPTIONS REFERENCE
 ##############################################################################
@@ -545,6 +551,28 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 /data/varlib/ipp-usb             /var/ipp-usb                  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
 # /var/lib/plasmalogin — Plasma's login manager: its user's home and state (as sddm and gdm)
 /data/varlib/plasmalogin  /var/lib/plasmalogin  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/cosmic-greeter — COSMIC's login screen: its user's home - the last user and each user's last session (as sddm, gdm, plasmalogin)
+/data/varlib/cosmic-greeter      /var/lib/cosmic-greeter        none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/linux-hello — face sign-in: the faces people enrolled (its service drop-in says so)
+/data/varlib/linux-hello         /var/lib/linux-hello           none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/plocate — plocate.db - without it locate finds nothing until the daily timer runs again
+/data/varlib/plocate             /var/lib/plocate               none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/alsa — asound.state: sound card mixer switches, saved at shutdown by alsa-store
+/data/varlib/alsa                /var/lib/alsa                  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/portables — portable service images an admin placed here (portablectl)
+/data/varlib/portables           /var/lib/portables             none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/misc — dnsmasq.leases and other small daemon state
+/data/varlib/misc                /var/lib/misc                  none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/rkhunter — rkhunter's file-property baseline (--propupd) and the databases --update fetches
+/data/varlib/rkhunter            /var/lib/rkhunter              none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/arpwatch — arp.dat: the stations arpwatch has seen (else every host is "new" after a boot)
+/data/varlib/arpwatch            /var/lib/arpwatch              none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/openldap — slapd's directory database, when slapd is run
+/data/varlib/openldap            /var/lib/openldap              none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/lib/krb5kdc — a Kerberos KDC's principal database, when krb5kdc is run
+/data/varlib/krb5kdc             /var/lib/krb5kdc               none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
+# /var/named — named's zone files and its dynamic-update journals, when BIND is run
+/data/varlib/named               /var/named                     none    bind,nofail,x-systemd.after=var.mount,x-systemd.after=data.mount,x-systemd.before=local-fs.target   0 0
 
 ##############################################################################
 # SECTION 18: JOB SCHEDULING
@@ -601,3 +629,20 @@ LABEL=shani_root              /swap                     btrfs   nofail,noatime,s
 # ram: /var/lib/BrlAPI - BrlAPI's key, made again when brltty starts
 # ram: /var/lib/plymouth - boot splash timing
 # ram: /var/spool/plymouth - boot splash spool
+# ram: /var/lib/nut - NUT's driver sockets and upssched timers; runtime only
+# ram: /var/lib/dkms - dkms build trees; modules are built into the image, /usr is read-only at runtime
+# ram: /var/lib/apptainer - apptainer's per-session mount points
+# ram: /var/lib/openvpn - the openvpn user's empty home; its configs live in /etc/openvpn
+# ram: /var/lib/gssproxy - gssproxy's replay cache
+# ram: /var/lib/hp - hplip.state - records a plugin install that cannot happen on a read-only /usr
+# ram: /var/lib/lirc - lirc's shipped docs images; lircd keeps no state here
+# ram: /var/lib/usb_modeswitch - usb_modeswitch keeps nothing across boots
+# ram: /var/lib/xkb - compiled keymap cache
+# ram: /var/lib/xfsprogs - xfs_scrub_all's run state
+# ram: /var/lib/bsdgames - game score files
+# ram: /var/lib/dnscrypt-proxy - DynamicUser= link into /var/lib/private
+# ram: /var/db - nothing on ShaniOS writes here
+# ram: /var/empty - sshd's privilege-separation root; must stay empty
+# ram: /var/games - game score files
+# ram: /var/local - state of /usr/local software; nothing installs there
+# ram: /var/opt - state of /opt software; nothing installs there
