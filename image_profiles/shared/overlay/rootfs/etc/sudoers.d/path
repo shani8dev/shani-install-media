@@ -1,1 +1,5 @@
-Defaults secure_path="/usr/abin:/usr/local/sbin:/usr/local/bin:/usr/bin"
+# ShaniOS: sudo's secure_path. /usr/abin holds ShaniOS's wrapper scripts;
+# /var/lib/snapd/snap/bin is where snapd puts the commands of installed snaps
+# (the Arch Wiki's Snap page: without it `sudo <snap command>` is "command not
+# found"). It is root-owned and only snapd writes it.
+Defaults secure_path="/usr/abin:/usr/local/sbin:/usr/local/bin:/usr/bin:/var/lib/snapd/snap/bin"
